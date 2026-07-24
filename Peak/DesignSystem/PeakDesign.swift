@@ -54,37 +54,34 @@ enum PeakFormat {
 
 struct PeakMaterialBackground: View {
     var body: some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                // Liquid Glass-friendly system background; glass materials applied on chrome.
-                Color.clear
-                    .background(.background)
-            } else {
-                Color(.systemGroupedBackground)
-            }
-        }
-        .ignoresSafeArea()
+        Color(.systemGroupedBackground)
+            .ignoresSafeArea()
     }
 }
 
 extension View {
+    /// Content sections sit on solid/grouped surfaces — not Liquid Glass (HIG: glass is for chrome).
+    func peakContentCard() -> some View {
+        self
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// Floating controls only — Liquid Glass on iOS 26+.
     @ViewBuilder
-    func peakGlassCard() -> some View {
+    func peakFloatingChrome() -> some View {
         if #available(iOS 26.0, *) {
-            self
-                .padding(14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            self.glassEffect(.regular.interactive(), in: .capsule)
         } else {
-            self
-                .padding(14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            self.background(.regularMaterial, in: Capsule())
         }
     }
 
     @ViewBuilder
     func peakChrome() -> some View {
         if #available(iOS 26.0, *) {
-            self.toolbarBackground(.visible, for: .navigationBar, .tabBar)
+            self.toolbarBackground(.automatic, for: .navigationBar, .tabBar)
         } else {
             self
         }

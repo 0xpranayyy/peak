@@ -6,7 +6,7 @@ Share.xyz–inspired: minimal, clean, Apple HIG / Liquid Glass (iOS 26 gated wit
 
 ## Open in Xcode
 
-1. Open `Peak.xcodeproj` in Xcode 16+ (iOS 17 deployment target).
+1. Open `Peak.xcodeproj` in Xcode 16+ (iOS 18 deployment target; Liquid Glass gated for iOS 26).
 2. Select an iPhone simulator or device.
 3. Set your Development Team under Signing & Capabilities if needed (`PRODUCT_BUNDLE_IDENTIFIER` is `com.pranay.peak`).
 4. Run (⌘R).

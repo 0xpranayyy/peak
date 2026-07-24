@@ -244,6 +244,27 @@ struct EventDetailView: View {
 
     private func header(_ event: PeakEvent) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let url = event.imageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        Color.secondary.opacity(0.12)
+                    case .empty:
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    @unknown default:
+                        Color.secondary.opacity(0.12)
+                    }
+                }
+                .frame(height: 160)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .accessibilityHidden(true)
+            }
+
             Text(event.title)
                 .font(.title2.weight(.bold))
                 .fixedSize(horizontal: false, vertical: true)
@@ -307,7 +328,7 @@ struct EventDetailView: View {
                 metric("Ends", PeakFormat.shortDate(market.endDate))
             }
         }
-        .peakGlassCard()
+        .peakContentCard()
     }
 
     private func metric(_ title: String, _ value: String) -> some View {
@@ -378,7 +399,7 @@ struct EventDetailView: View {
                 .frame(height: 200)
             }
         }
-        .peakGlassCard()
+        .peakContentCard()
     }
 
     private var bookSection: some View {
@@ -397,7 +418,7 @@ struct EventDetailView: View {
                 }
             }
         }
-        .peakGlassCard()
+        .peakContentCard()
     }
 
     private func bookColumn(title: String, levels: [OrderBookLevel], emphasize: Bool) -> some View {

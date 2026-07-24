@@ -9,7 +9,7 @@ struct ProbabilityBadge: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.thinMaterial, in: Capsule())
+            .peakFloatingChrome()
             .accessibilityLabel("Probability \(PeakFormat.percent(probability))")
     }
 }
