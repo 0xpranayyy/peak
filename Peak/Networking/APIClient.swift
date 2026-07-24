@@ -44,7 +44,9 @@ actor APIClient {
     ) async throws -> T {
         var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if !query.isEmpty {
-            comps?.queryItems = (comps?.queryItems ?? []) + query
+            var items = comps?.queryItems ?? []
+            items.append(contentsOf: query)
+            comps?.queryItems = items
         }
         guard let final = comps?.url else { throw APIError.invalidURL }
         var request = URLRequest(url: final)
@@ -65,7 +67,9 @@ actor APIClient {
     func getData(_ url: URL, query: [URLQueryItem] = []) async throws -> Data {
         var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if !query.isEmpty {
-            comps?.queryItems = (comps?.queryItems ?? []) + query
+            var items = comps?.queryItems ?? []
+            items.append(contentsOf: query)
+            comps?.queryItems = items
         }
         guard let final = comps?.url else { throw APIError.invalidURL }
         var request = URLRequest(url: final)
