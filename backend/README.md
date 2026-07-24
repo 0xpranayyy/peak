@@ -30,5 +30,6 @@ On a physical iPhone, use your Mac’s LAN IP (e.g. `http://192.168.1.20:8080`) 
 | GET | `/orders` | Open orders + trades |
 | POST | `/orders` | Place order `{ tokenID, price, size, side, orderType? }` |
 | DELETE | `/orders/:id` | Cancel |
+| POST | `/deposit-address` | Bridge deposit address `{ chain?, token? }` |
 
 All routes require `Authorization: Bearer <APP_TOKEN>`.

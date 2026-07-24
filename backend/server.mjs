@@ -25,6 +25,7 @@ if (!APP_TOKEN || !PRIVATE_KEY || !FUNDER_ADDRESS) {
 
 const HOST = "https://clob.polymarket.com";
 const DATA = "https://data-api.polymarket.com";
+const BRIDGE = "https://bridge.polymarket.com";
 const CHAIN_ID = 137;
 
 const account = privateKeyToAccount(PRIVATE_KEY);
@@ -74,8 +75,8 @@ const wrap = (fn) => (req, res) =>
     res.status(500).json({ error: String(e?.message ?? e) });
   });
 
-const getJSON = async (url) => {
-  const r = await fetch(url);
+const getJSON = async (url, opts) => {
+  const r = await fetch(url, opts);
   if (!r.ok) throw new Error(`${url} → ${r.status}: ${await r.text()}`);
   return r.json();
 };
@@ -135,7 +136,30 @@ app.post("/orders", wrap(async (req, res) => {
 }));
 
 app.delete("/orders/:id", wrap(async (req, res) => {
-  res.json(await client.cancelOrder(req.params.id));
+  const id = req.params.id;
+  // clob-client-v2 accepts orderID string or object depending on version
+  try {
+    res.json(await client.cancelOrder(id));
+  } catch {
+    res.json(await client.cancelOrder({ orderID: id }));
+  }
+}));
+
+// Deposit: bridge addresses for funding the funder wallet
+app.post("/deposit-address", wrap(async (req, res) => {
+  const payload = {
+    address: FUNDER_ADDRESS,
+    ...(req.body ?? {}),
+  };
+  const data = await getJSON(`${BRIDGE}/deposit`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(POLY_BUILDER_CODE ? { "X-Builder-Code": POLY_BUILDER_CODE } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  res.json(data);
 }));
 
 initClient()
