@@ -45,8 +45,10 @@ final class PortfolioViewModel: ObservableObject {
 
 struct PortfolioView: View {
     @EnvironmentObject private var env: AppEnvironment
+    @EnvironmentObject private var tradingConfig: TradingConfigStore
     @StateObject private var model = PortfolioViewModel()
     @State private var showWalletEditor = false
+    @State private var showTradingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -74,6 +76,14 @@ struct PortfolioView: View {
             .navigationTitle("Portfolio")
             .peakChrome()
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showTradingSettings = true
+                    } label: {
+                        Image(systemName: tradingConfig.isConfigured ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
+                    }
+                    .accessibilityLabel("Trading settings")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         model.syncDraft(from: env.wallet)
@@ -86,6 +96,9 @@ struct PortfolioView: View {
             }
             .sheet(isPresented: $showWalletEditor) {
                 walletEditor
+            }
+            .sheet(isPresented: $showTradingSettings) {
+                TradingSettingsView()
             }
             .task(id: env.wallet.address) {
                 model.syncDraft(from: env.wallet)

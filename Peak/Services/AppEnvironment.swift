@@ -6,16 +6,19 @@ final class AppEnvironment: ObservableObject {
     let watchlist: WatchlistStore
     let wallet: WalletStore
     let recentSearches: RecentSearchStore
+    let tradingConfig: TradingConfigStore
 
     init(
-        trading: any TradingService = StubTradingService(),
+        trading: (any TradingService)? = nil,
         watchlist: WatchlistStore = .shared,
         wallet: WalletStore = .shared,
-        recentSearches: RecentSearchStore = .shared
+        recentSearches: RecentSearchStore = .shared,
+        tradingConfig: TradingConfigStore = .shared
     ) {
-        self.trading = trading
+        self.trading = trading ?? RemoteTradingService()
         self.watchlist = watchlist
         self.wallet = wallet
         self.recentSearches = recentSearches
+        self.tradingConfig = tradingConfig
     }
 }
