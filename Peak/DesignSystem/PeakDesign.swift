@@ -7,18 +7,19 @@ enum PeakFormat {
     }
 
     static func percent(_ probability: Double, digits: Int = 1) -> String {
-        String(format: "%.\(digits)f%%", probability * 100)
+        let format = "%.\(digits)f%%"
+        return String(format: format, probability * 100)
     }
 
     static func usd(_ value: Double, compact: Bool = false) -> String {
         if compact {
             return compactCurrency(value)
         }
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = value >= 100 ? 0 : 2
-        return f.string(from: NSNumber(value: value)) ?? "$0"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        formatter.maximumFractionDigits = value >= 100 ? 0 : 2
+        return formatter.string(from: NSNumber(value: value)) ?? "$0"
     }
 
     static func compactCurrency(_ value: Double) -> String {
@@ -26,22 +27,26 @@ enum PeakFormat {
         let sign = value < 0 ? "-" : ""
         switch absValue {
         case 1_000_000_000...:
-            return "\(sign)$(String(format: "%.1f", absValue / 1_000_000_000))B"
+            let amount = String(format: "%.1f", absValue / 1_000_000_000)
+            return "\(sign)$\(amount)B"
         case 1_000_000...:
-            return "\(sign)$(String(format: "%.1f", absValue / 1_000_000))M"
+            let amount = String(format: "%.1f", absValue / 1_000_000)
+            return "\(sign)$\(amount)M"
         case 1_000...:
-            return "\(sign)$(String(format: "%.1f", absValue / 1_000))K"
+            let amount = String(format: "%.1f", absValue / 1_000)
+            return "\(sign)$\(amount)K"
         default:
-            return "\(sign)$\(String(format: "%.0f", absValue))"
+            let amount = String(format: "%.0f", absValue)
+            return "\(sign)$\(amount)"
         }
     }
 
     static func shortDate(_ date: Date?) -> String {
         guard let date else { return "—" }
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f.string(from: date)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
     }
 
     static func relativeEnd(_ date: Date?) -> String {
