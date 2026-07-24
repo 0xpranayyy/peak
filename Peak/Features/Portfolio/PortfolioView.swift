@@ -4,16 +4,26 @@ import SwiftUI
 final class PortfolioViewModel: ObservableObject {
     @Published var positions: [PortfolioPosition] = []
     @Published var activity: [PortfolioActivity] = []
+    @Published var openOrders: [OpenOrder] = []
+    @Published var cash: Double?
+    @Published var reportedValue: Double?
+    @Published var funder: String?
+    @Published var usingTradingProxy = false
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var draftAddress = ""
+    @Published var statusBanner: String?
 
     var totalValue: Double {
-        positions.reduce(0) { $0 + $1.currentValue }
+        reportedValue ?? positions.reduce(0) { $0 + $1.currentValue }
     }
 
     var totalPnl: Double {
         positions.reduce(0) { $0 + $1.cashPnl }
+    }
+
+    var isEmpty: Bool {
+        positions.isEmpty && activity.isEmpty && openOrders.isEmpty
     }
 
     func syncDraft(from wallet: WalletStore) {
@@ -22,15 +32,48 @@ final class PortfolioViewModel: ObservableObject {
         }
     }
 
-    func load(wallet: WalletStore) async {
-        guard wallet.isValid, let address = wallet.address else {
+    func load(env: AppEnvironment) async {
+        isLoading = true
+        defer { isLoading = false }
+        statusBanner = nil
+
+        if env.tradingConfig.isConfigured {
+            do {
+                let snap = try await env.trading.fetchTradingPortfolio()
+                usingTradingProxy = true
+                positions = snap.positions
+                activity = snap.activity
+                openOrders = snap.openOrders
+                cash = snap.cash
+                reportedValue = snap.totalValue
+                funder = snap.funder
+                errorMessage = nil
+                if let funder = snap.funder, !env.wallet.isValid {
+                    env.wallet.save(funder)
+                    draftAddress = funder
+                }
+                return
+            } catch {
+                // Fall through to public wallet lookup if proxy fails.
+                statusBanner = "Trading proxy unavailable — showing public wallet data."
+                usingTradingProxy = false
+            }
+        } else {
+            usingTradingProxy = false
+            openOrders = []
+            cash = nil
+            reportedValue = nil
+            funder = nil
+        }
+
+        guard env.wallet.isValid, let address = env.wallet.address else {
             positions = []
             activity = []
+            openOrders = []
             errorMessage = nil
             return
         }
-        isLoading = true
-        defer { isLoading = false }
+
         do {
             async let positionsTask = DataAPI.fetchPositions(wallet: address)
             async let activityTask = DataAPI.fetchActivity(wallet: address, limit: 20)
@@ -41,6 +84,16 @@ final class PortfolioViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func cancelOrder(id: String, env: AppEnvironment) async {
+        do {
+            try await env.trading.cancelOrder(id: id)
+            openOrders.removeAll { $0.id == id }
+            statusBanner = "Order canceled."
+        } catch {
+            statusBanner = error.localizedDescription
+        }
+    }
 }
 
 struct PortfolioView: View {
@@ -49,24 +102,27 @@ struct PortfolioView: View {
     @StateObject private var model = PortfolioViewModel()
     @State private var showWalletEditor = false
     @State private var showTradingSettings = false
+    @State private var showDeposit = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if !env.wallet.isValid {
+                if !tradingConfig.isConfigured && !env.wallet.isValid {
                     walletPrompt
-                } else if model.isLoading && model.positions.isEmpty && model.activity.isEmpty {
-                    ProgressView("Loading positions…")
+                } else if model.isLoading && model.isEmpty {
+                    ProgressView("Loading portfolio…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = model.errorMessage, model.positions.isEmpty {
+                } else if let error = model.errorMessage, model.isEmpty {
                     LoadingErrorView(message: error) {
-                        Task { await model.load(wallet: env.wallet) }
+                        Task { await model.load(env: env) }
                     }
-                } else if model.positions.isEmpty && model.activity.isEmpty {
+                } else if model.isEmpty {
                     EmptyStateView(
                         systemImage: "briefcase",
                         title: "No open positions",
-                        message: "This wallet has no positions on Polymarket right now."
+                        message: tradingConfig.isConfigured
+                            ? "Your trading wallet has no positions yet. Deposit pUSD to get started."
+                            : "This wallet has no positions on Polymarket right now."
                     )
                 } else {
                     positionsList
@@ -84,7 +140,15 @@ struct PortfolioView: View {
                     }
                     .accessibilityLabel("Trading settings")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if tradingConfig.isConfigured {
+                        Button {
+                            showDeposit = true
+                        } label: {
+                            Image(systemName: "arrow.down.to.line.circle")
+                        }
+                        .accessibilityLabel("Deposit")
+                    }
                     Button {
                         model.syncDraft(from: env.wallet)
                         showWalletEditor = true
@@ -100,12 +164,16 @@ struct PortfolioView: View {
             .sheet(isPresented: $showTradingSettings) {
                 TradingSettingsView()
             }
-            .task(id: env.wallet.address) {
+            .sheet(isPresented: $showDeposit) {
+                DepositSheet()
+                    .environmentObject(env)
+            }
+            .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)") {
                 model.syncDraft(from: env.wallet)
-                await model.load(wallet: env.wallet)
+                await model.load(env: env)
             }
             .refreshable {
-                await model.load(wallet: env.wallet)
+                await model.load(env: env)
             }
         }
     }
@@ -114,29 +182,54 @@ struct PortfolioView: View {
         ContentUnavailableView {
             Label("Add a wallet", systemImage: "wallet.pass")
         } description: {
-            Text("Peak shows a read-only Polymarket portfolio for any wallet address. Nothing is signed or stored beyond the address.")
+            Text("Paste any Polymarket wallet for a read-only view, or connect the trading proxy to manage live orders.")
         } actions: {
             Button("Add Wallet") {
                 model.draftAddress = ""
                 showWalletEditor = true
             }
             .buttonStyle(.borderedProminent)
+            Button("Set up trading") {
+                showTradingSettings = true
+            }
+            .buttonStyle(.bordered)
         }
     }
 
     private var positionsList: some View {
         List {
+            if let banner = model.statusBanner {
+                Section {
+                    Text(banner)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Portfolio value")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Text(model.usingTradingProxy ? "Trading portfolio" : "Portfolio value")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if model.usingTradingProxy {
+                            Spacer()
+                            Text("Live")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
+                    }
                     Text(PeakFormat.usd(model.totalValue))
                         .font(.largeTitle.weight(.bold).monospacedDigit())
+                    if let cash = model.cash {
+                        Text("Cash \(PeakFormat.usd(cash))")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                     Text("PnL \(PeakFormat.usd(model.totalPnl))")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(model.totalPnl >= 0 ? Color.green : Color.red)
-                    if let address = env.wallet.address {
+                    if let address = model.funder ?? env.wallet.address {
                         Text(shorten(address))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
@@ -144,6 +237,33 @@ struct PortfolioView: View {
                 }
                 .padding(.vertical, 4)
                 .accessibilityElement(children: .combine)
+            }
+
+            if !model.openOrders.isEmpty {
+                Section("Open orders") {
+                    ForEach(model.openOrders) { order in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("\(order.side) · \(PeakFormat.cents(order.price))")
+                                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                                Spacer()
+                                Button("Cancel", role: .destructive) {
+                                    Task { await model.cancelOrder(id: order.id, env: env) }
+                                }
+                                .font(.caption.weight(.semibold))
+                            }
+                            Text("Size \(String(format: "%.2f", order.remaining)) left of \(String(format: "%.2f", order.originalSize))")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            if let status = order.status {
+                                Text(status)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
             }
 
             if !model.positions.isEmpty {
@@ -228,7 +348,7 @@ struct PortfolioView: View {
                 } header: {
                     Text("Wallet address")
                 } footer: {
-                    Text("Stored securely in Keychain on this device. Peak never places orders.")
+                    Text("Used for public portfolio lookup when the trading proxy isn’t connected.")
                 }
 
                 if env.wallet.address != nil {
@@ -238,6 +358,7 @@ struct PortfolioView: View {
                             model.draftAddress = ""
                             model.positions = []
                             model.activity = []
+                            model.openOrders = []
                             showWalletEditor = false
                         }
                     }

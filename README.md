@@ -2,48 +2,42 @@
 
 Native SwiftUI iOS app for [Polymarket](https://polymarket.com) prediction markets.
 
-Share.xyz–inspired: minimal, clean, Apple HIG / Liquid Glass (iOS 26 gated with `#available`). Browse markets, live prices, charts, watchlist, read-only portfolio, and **Phase 2 trading via a local proxy**.
+Share.xyz–inspired: minimal, clean, Apple HIG / Liquid Glass (iOS 26 gated with `#available`).
+
+## Phases
+
+| Phase | Status | What |
+| --- | --- | --- |
+| **1** Browse | Done | Markets, search, charts, order book, WS prices, watchlist, read-only portfolio |
+| **2** Trade | Done | Place FOK/GTC orders via Node proxy (keys off-device) |
+| **3** Trading ops | This branch | Open orders + cancel, live proxy portfolio/cash, deposit address |
+| **4** Polish | Next | App icon, widgets / Live Activities, TestFlight |
+| **5** Social | Later | Wallet follow / activity feed (Share-like) |
 
 ## Open in Xcode
 
-1. Open `Peak.xcodeproj` in Xcode 16+ (iOS 18 deployment target; Liquid Glass gated for iOS 26).
-2. Select an iPhone simulator or device.
-3. Set your Development Team under Signing & Capabilities if needed (`PRODUCT_BUNDLE_IDENTIFIER` is `com.pranay.peak`).
-4. Run (⌘R).
+1. Open `Peak.xcodeproj` in Xcode 16+ (iOS 18+).
+2. Select a simulator → set Development Team → ⌘R.
 
-The project uses `PBXFileSystemSynchronizedRootGroup` — everything under `Peak/` is picked up automatically.
+## Trading (Phases 2–3)
 
-## Features
+```bash
+cd backend
+cp .env.example .env   # APP_TOKEN, PRIVATE_KEY, FUNDER_ADDRESS
+npm install && npm start
+```
 
-| Tab | What it does |
-| --- | --- |
-| **Markets** | Gamma events with tags, sort, infinite scroll |
-| **Search** | Gamma `public-search` + recent queries |
-| **Event detail** | Charts, order book, live WS prices, Yes/No trade sheet |
-| **Watchlist** | Local star list |
-| **Portfolio** | Read-only positions + activity; trading proxy settings |
+In Peak: **Portfolio → bolt → Trading** → proxy URL + token.
 
-## Phase 2 trading
-
-Private keys **never** enter the iOS app. Orders go through `backend/` (Node + `@polymarket/clob-client-v2`):
-
-1. Configure `backend/.env` from `.env.example` and `npm start`.
-2. In Peak: **Portfolio → bolt icon → Trading** — set proxy URL + `APP_TOKEN`.
-3. On a market, tap Buy Yes/No → Place order.
+Then you can:
+- Place orders from event detail
+- See **open orders** and cancel them
+- View **cash / live portfolio** from the proxy
+- **Deposit** via Polymarket Bridge address sheet
 
 See [backend/README.md](backend/README.md).
 
-`TradingService` / `RemoteTradingService` is the seam; swap implementations without rewriting the trade UI.
+## APIs
 
-## APIs (read path)
-
-- **Gamma** `https://gamma-api.polymarket.com`
-- **CLOB** `https://clob.polymarket.com` (public reads + proxy for signed orders)
-- **Data** `https://data-api.polymarket.com`
-- **WebSocket** `wss://ws-subscriptions-clob.polymarket.com/ws/market`
-
-## Limitations
-
-- Native in-app key import / EIP-712 signing is not shipped (proxy model instead).
-- App icon is a placeholder; add a 1024×1024 asset when ready.
-- Full Xcode is required to build/run on simulator.
+- Gamma / CLOB public reads / Data API / market WebSocket
+- Authenticated CLOB via `backend/` proxy only

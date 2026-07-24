@@ -1,6 +1,33 @@
 import Foundation
 
-/// Phase-2 trading surface.
+struct OpenOrder: Identifiable, Hashable, Sendable {
+    let id: String
+    let tokenID: String
+    let market: String?
+    let side: String
+    let price: Double
+    let originalSize: Double
+    let sizeMatched: Double
+    let status: String?
+
+    var remaining: Double { max(0, originalSize - sizeMatched) }
+}
+
+struct TradingPortfolioSnapshot: Sendable {
+    let funder: String?
+    let cash: Double?
+    let totalValue: Double?
+    let positions: [PortfolioPosition]
+    let activity: [PortfolioActivity]
+    let openOrders: [OpenOrder]
+}
+
+struct DepositAddressResult: @unchecked Sendable {
+    let address: String?
+    let raw: [String: Any]
+}
+
+/// Phase 2+ trading surface (proxy-backed).
 protocol TradingService: Sendable {
     func placeOrder(
         tokenID: String,
@@ -10,6 +37,11 @@ protocol TradingService: Sendable {
         negRisk: Bool?,
         orderType: String
     ) async throws -> TradeResult
+
+    func fetchOpenOrders() async throws -> [OpenOrder]
+    func cancelOrder(id: String) async throws
+    func fetchTradingPortfolio() async throws -> TradingPortfolioSnapshot
+    func requestDepositAddress(chain: String, token: String) async throws -> DepositAddressResult
 }
 
 enum TradeSide: String, Sendable {
@@ -57,9 +89,16 @@ struct StubTradingService: TradingService {
     ) async throws -> TradeResult {
         throw TradingError.notConfigured
     }
+
+    func fetchOpenOrders() async throws -> [OpenOrder] { throw TradingError.notConfigured }
+    func cancelOrder(id: String) async throws { throw TradingError.notConfigured }
+    func fetchTradingPortfolio() async throws -> TradingPortfolioSnapshot { throw TradingError.notConfigured }
+    func requestDepositAddress(chain: String, token: String) async throws -> DepositAddressResult {
+        throw TradingError.notConfigured
+    }
 }
 
-/// Posts orders to the Peak Node proxy (`backend/`). Private keys never leave the proxy.
+/// Posts to the Peak Node proxy (`backend/`). Private keys never leave the proxy.
 struct RemoteTradingService: TradingService, @unchecked Sendable {
     func placeOrder(
         tokenID: String,
@@ -69,22 +108,9 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         negRisk: Bool?,
         orderType: String
     ) async throws -> TradeResult {
-        let snapshot = await MainActor.run { () -> (URL?, String?) in
-            let config = TradingConfigStore.shared
-            return (config.baseURL, config.appToken())
-        }
-        guard let base = snapshot.0, let token = snapshot.1, !token.isEmpty else {
-            throw TradingError.notConfigured
-        }
         guard !tokenID.isEmpty, size > 0, price > 0, price < 1 else {
             throw TradingError.invalidAmount
         }
-
-        var request = URLRequest(url: base.appendingPathComponent("orders"))
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 45
 
         var body: [String: Any] = [
             "tokenID": tokenID,
@@ -96,21 +122,9 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         if let negRisk {
             body["negRisk"] = negRisk
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-                ?? String(data: data, encoding: .utf8)
-                ?? "HTTP \(http.statusCode)"
-            throw TradingError.server(message)
-        }
-
-        let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        let orderID =
-            (root["orderID"] as? String)
-            ?? (root["id"] as? String)
-            ?? ""
+        let root = try await TradingProxyClient.jsonObject(path: "orders", method: "POST", jsonBody: body)
+        let orderID = (root["orderID"] as? String) ?? (root["id"] as? String) ?? ""
         let status = (root["status"] as? String) ?? "submitted"
         let success = (root["success"] as? Bool) ?? !status.lowercased().contains("error")
         if let error = root["error"] as? String, !error.isEmpty, orderID.isEmpty {
@@ -121,5 +135,110 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
             status: status,
             success: success
         )
+    }
+
+    func fetchOpenOrders() async throws -> [OpenOrder] {
+        let data = try await TradingProxyClient.request(path: "orders")
+        let root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        let rows = root["open"] as? [[String: Any]] ?? []
+        return rows.compactMap(Self.mapOpenOrder)
+    }
+
+    func cancelOrder(id: String) async throws {
+        _ = try await TradingProxyClient.request(path: "orders/\(id)", method: "DELETE")
+    }
+
+    func fetchTradingPortfolio() async throws -> TradingPortfolioSnapshot {
+        async let portfolioData = TradingProxyClient.request(path: "portfolio")
+        async let activityData = TradingProxyClient.request(
+            path: "activity",
+            query: [.init(name: "limit", value: "20")]
+        )
+        async let ordersData = TradingProxyClient.request(path: "orders")
+
+        let portfolioRoot = (try? JSONSerialization.jsonObject(with: try await portfolioData) as? [String: Any]) ?? [:]
+        let activityRows = (try? JSONSerialization.jsonObject(with: try await activityData) as? [[String: Any]]) ?? []
+        let ordersRoot = (try? JSONSerialization.jsonObject(with: try await ordersData) as? [String: Any]) ?? [:]
+
+        let positionRows = portfolioRoot["positions"] as? [[String: Any]] ?? []
+        let positions: [PortfolioPosition] = positionRows.compactMap { row in
+            guard let data = try? JSONSerialization.data(withJSONObject: row),
+                  let dto = try? JSONDecoder().decode(DataAPI.PositionDTO.self, from: data) else {
+                return nil
+            }
+            return dto.asPosition()
+        }
+
+        let activity: [PortfolioActivity] = activityRows.compactMap { row in
+            guard let data = try? JSONSerialization.data(withJSONObject: row),
+                  let dto = try? JSONDecoder().decode(DataAPI.ActivityDTO.self, from: data) else {
+                return nil
+            }
+            return dto.asActivity()
+        }
+
+        let open = (ordersRoot["open"] as? [[String: Any]] ?? []).compactMap(Self.mapOpenOrder)
+
+        var cash: Double?
+        if let balance = portfolioRoot["balance"] as? [String: Any] {
+            cash = Self.double(balance["balance"]).map { raw in
+                raw > 100_000 ? raw / 1_000_000 : raw
+            }
+        }
+
+        var totalValue: Double?
+        if let value = portfolioRoot["value"] as? [String: Any] {
+            totalValue = Self.double(value["value"])
+        } else if let arr = portfolioRoot["value"] as? [[String: Any]], let first = arr.first {
+            totalValue = Self.double(first["value"])
+        }
+
+        return TradingPortfolioSnapshot(
+            funder: portfolioRoot["funder"] as? String,
+            cash: cash,
+            totalValue: totalValue,
+            positions: positions,
+            activity: activity,
+            openOrders: open
+        )
+    }
+
+    func requestDepositAddress(chain: String, token: String) async throws -> DepositAddressResult {
+        let root = try await TradingProxyClient.jsonObject(
+            path: "deposit-address",
+            method: "POST",
+            jsonBody: [
+                "chain": chain,
+                "token": token,
+            ]
+        )
+        let address =
+            (root["address"] as? String)
+            ?? (root["depositAddress"] as? String)
+            ?? ((root["address"] as? [String: Any])?["address"] as? String)
+        return DepositAddressResult(address: address, raw: root)
+    }
+
+    private static func mapOpenOrder(_ row: [String: Any]) -> OpenOrder? {
+        let id = (row["id"] as? String) ?? (row["orderID"] as? String) ?? (row["order_id"] as? String)
+        guard let id else { return nil }
+        return OpenOrder(
+            id: id,
+            tokenID: (row["asset_id"] as? String) ?? (row["tokenID"] as? String) ?? "",
+            market: row["market"] as? String,
+            side: ((row["side"] as? String) ?? "BUY").uppercased(),
+            price: double(row["price"]) ?? 0,
+            originalSize: double(row["original_size"]) ?? double(row["size"]) ?? 0,
+            sizeMatched: double(row["size_matched"]) ?? double(row["matched"]) ?? 0,
+            status: row["status"] as? String
+        )
+    }
+
+    private static func double(_ value: Any?) -> Double? {
+        if let d = value as? Double { return d }
+        if let i = value as? Int { return Double(i) }
+        if let s = value as? String { return Double(s) }
+        if let n = value as? NSNumber { return n.doubleValue }
+        return nil
     }
 }
