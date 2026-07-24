@@ -11,17 +11,17 @@ final class AppEnvironment: ObservableObject {
 
     init(
         trading: (any TradingService)? = nil,
-        watchlist: WatchlistStore = .shared,
-        wallet: WalletStore = .shared,
-        recentSearches: RecentSearchStore = .shared,
-        tradingConfig: TradingConfigStore = .shared,
-        follows: FollowStore = .shared
+        watchlist: WatchlistStore? = nil,
+        wallet: WalletStore? = nil,
+        recentSearches: RecentSearchStore? = nil,
+        tradingConfig: TradingConfigStore? = nil,
+        follows: FollowStore? = nil
     ) {
         self.trading = trading ?? RemoteTradingService()
-        self.watchlist = watchlist
-        self.wallet = wallet
-        self.recentSearches = recentSearches
-        self.tradingConfig = tradingConfig
-        self.follows = follows
+        self.watchlist = watchlist ?? WatchlistStore.shared
+        self.wallet = wallet ?? WalletStore.shared
+        self.recentSearches = recentSearches ?? RecentSearchStore.shared
+        self.tradingConfig = tradingConfig ?? TradingConfigStore.shared
+        self.follows = follows ?? FollowStore.shared
     }
 }

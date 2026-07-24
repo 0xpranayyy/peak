@@ -25,11 +25,18 @@ enum TradingProxyClient {
         jsonBody: [String: Any]? = nil
     ) async throws -> Data {
         let auth = try await auth()
-        var comps = URLComponents(url: auth.base.appendingPathComponent(path), resolvingAgainstBaseURL: false)
-        if !query.isEmpty {
-            comps?.queryItems = (comps?.queryItems ?? []) + query
+        guard var components = URLComponents(
+            url: auth.base.appendingPathComponent(path),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw TradingError.server("Invalid proxy URL")
         }
-        guard let url = comps?.url else { throw TradingError.server("Invalid proxy URL") }
+        if !query.isEmpty {
+            var items = components.queryItems ?? []
+            items.append(contentsOf: query)
+            components.queryItems = items
+        }
+        guard let url = components.url else { throw TradingError.server("Invalid proxy URL") }
 
         var request = URLRequest(url: url)
         request.httpMethod = method
