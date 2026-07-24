@@ -18,40 +18,28 @@ The project uses `PBXFileSystemSynchronizedRootGroup` — everything under `Peak
 | Tab | What it does |
 | --- | --- |
 | **Markets** | Gamma events with tags, sort (trending / volume / new / ending / liquidity), infinite scroll |
-| **Search** | Gamma `public-search` across events & markets |
+| **Search** | Gamma `public-search` + recent queries |
 | **Event detail** | Outcome prices, Charts price history, CLOB order book / midpoint / spread, live WS prices |
 | **Watchlist** | Local star list (UserDefaults) |
-| **Portfolio** | Read-only positions via Data API; wallet address in Keychain |
+| **Portfolio** | Read-only positions + recent activity via Data API; wallet in Keychain |
 | **Trade** | Yes/No opens a **Phase 2 stub sheet** — `TradingService` protocol is stubbed only |
 
 ## APIs
 
 - **Gamma** `https://gamma-api.polymarket.com` — `/events`, `/markets`, `/public-search`, `/tags`
-- **CLOB** `https://clob.polymarket.com` — `/price`, `/book`, `/prices-history`, `/midpoint`, `/spread`, `/clob-markets/{condition_id}`
-- **Data** `https://data-api.polymarket.com` — `/positions?user=`
+- **CLOB** `https://clob.polymarket.com` — `/price`, `/prices` (via concurrent `/price`), `/book`, `/prices-history`, `/midpoint`, `/spread`, `/clob-markets/{condition_id}`
+- **Data** `https://data-api.polymarket.com` — `/positions?user=`, `/activity?user=`
 - **WebSocket** `wss://ws-subscriptions-clob.polymarket.com/ws/market` — `assets_ids` subscribe, `PING` every 10s
 
 Gamma fields like `outcomes`, `outcomePrices`, and `clobTokenIds` are decoded carefully (JSON-encoded strings or native arrays).
 
-## Project layout
+## Phase 2 (not in this branch)
 
-```
-Peak.xcodeproj/
-Peak/
-  PeakApp.swift
-  Info.plist
-  App/RootTabView.swift
-  Features/Markets Search EventDetail Watchlist Portfolio
-  DesignSystem/
-  Networking/
-  Models/
-  Services/
-  Assets.xcassets/
-```
+Order placement against CLOB V2 needs wallet auth, EIP-712 order signing, and pUSD collateral. Peak exposes `TradingService` / `StubTradingService` so a future client can plug in without rewriting the trade sheet UI.
 
 ## Limitations
 
 - Trading is intentionally unavailable (`StubTradingService` throws `TradingError.notAvailable`).
-- Portfolio is wallet lookup only — no auth, balances beyond positions, or deposits.
+- Portfolio is wallet lookup only — positions + recent activity; no deposits or balances beyond Data API.
 - App icon is a placeholder asset slot; add a 1024×1024 image in `Assets.xcassets/AppIcon`.
 - Requires a Mac with Xcode to build/run; Command Line Tools alone are not enough for a full simulator run.

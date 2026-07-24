@@ -140,10 +140,15 @@ final class EventDetailViewModel: ObservableObject {
         async let bookTask = CLOBAPI.fetchBook(tokenID: token)
         async let midTask = CLOBAPI.fetchMidpoint(tokenID: token)
         async let spreadTask = CLOBAPI.fetchSpread(tokenID: token)
+        async let priceTask = CLOBAPI.fetchPrice(tokenID: token, side: "buy")
         if let b = try? await bookTask { book = b }
-        midpoint = try? await midTask
+        let mid = try? await midTask
+        let quote = try? await priceTask
+        midpoint = mid ?? quote ?? book.midpoint
         spread = try? await spreadTask
-        if midpoint == nil { midpoint = book.midpoint }
+        if let condition = selectedMarket?.conditionId, !condition.isEmpty {
+            _ = try? await CLOBAPI.fetchClobMarketInfo(conditionID: condition)
+        }
     }
 
     private func reconnectSocket() {
@@ -455,6 +460,7 @@ struct EventDetailView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Buy \(market.yesLabel) at \(PeakFormat.cents(market.yesPrice)). Opens trade sheet; ordering comes in Phase 2.")
 
             Button {
                 tradeSide = TradeSidePresentation(sideLabel: market.noLabel, market: market, isYes: false)
@@ -469,6 +475,7 @@ struct EventDetailView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.bordered)
+            .accessibilityLabel("Buy \(market.noLabel) at \(PeakFormat.cents(market.noPrice)). Opens trade sheet; ordering comes in Phase 2.")
         }
     }
 }

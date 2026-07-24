@@ -88,6 +88,26 @@ enum CLOBAPI {
         return dto.price?.value
     }
 
+    /// Batch prices for multiple token IDs. Request body: `{ "token_ids": [...] }` is not used —
+    /// CLOB accepts repeated `token_ids` / uses GET `/prices` with JSON map response.
+    static func fetchPrices(tokenIDs: [String], side: String = "buy") async throws -> [String: Double] {
+        guard !tokenIDs.isEmpty else { return [:] }
+        // Polymarket `/prices` expects POST with body in some clients; public GET uses query.
+        // Fall back to concurrent single-price fetches for reliability.
+        var result: [String: Double] = [:]
+        try await withThrowingTaskGroup(of: (String, Double?).self) { group in
+            for id in tokenIDs {
+                group.addTask {
+                    (id, try await fetchPrice(tokenID: id, side: side))
+                }
+            }
+            for try await (id, price) in group {
+                if let price { result[id] = price }
+            }
+        }
+        return result
+    }
+
     static func fetchMidpoint(tokenID: String) async throws -> Double? {
         let url = PeakAPIBase.clob.appendingPathComponent("midpoint")
         let dto: MidpointResponse = try await APIClient.shared.get(
@@ -106,11 +126,24 @@ enum CLOBAPI {
         return dto.spread?.value
     }
 
-    /// Metadata for a CLOB market by condition id.
-    static func fetchClobMarket(conditionID: String) async throws -> Data {
+    struct ClobMarketInfo: Decodable, Sendable {
+        let acceptingOrders: Bool?
+        let minimumOrderSize: FlexibleNumber?
+        let minimumTickSize: FlexibleNumber?
+        let conditionId: String?
+        let tokens: [Token]?
+
+        struct Token: Decodable, Sendable {
+            let token_id: String?
+            let outcome: String?
+        }
+    }
+
+    /// CLOB-level market parameters for a condition id.
+    static func fetchClobMarketInfo(conditionID: String) async throws -> ClobMarketInfo {
         let url = PeakAPIBase.clob
             .appendingPathComponent("clob-markets")
             .appendingPathComponent(conditionID)
-        return try await APIClient.shared.getData(url)
+        return try await APIClient.shared.get(url)
     }
 }

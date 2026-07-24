@@ -10,6 +10,7 @@ struct PeakApp: App {
                 .environmentObject(environment)
                 .environmentObject(environment.watchlist)
                 .environmentObject(environment.wallet)
+                .environmentObject(environment.recentSearches)
         }
     }
 }

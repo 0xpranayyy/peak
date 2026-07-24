@@ -68,14 +68,10 @@ extension View {
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Floating controls only — Liquid Glass on iOS 26+.
+    /// Floating controls only — Liquid Glass on iOS 26+ when transparency is allowed.
     @ViewBuilder
     func peakFloatingChrome() -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            self.background(.regularMaterial, in: Capsule())
-        }
+        modifier(PeakFloatingChromeModifier())
     }
 
     @ViewBuilder
@@ -84,6 +80,20 @@ extension View {
             self.toolbarBackground(.automatic, for: .navigationBar, .tabBar)
         } else {
             self
+        }
+    }
+}
+
+private struct PeakFloatingChromeModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content.background(.regularMaterial, in: Capsule())
         }
     }
 }

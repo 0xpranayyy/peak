@@ -123,3 +123,15 @@ struct PortfolioPosition: Identifiable, Hashable, Sendable {
     let conditionId: String?
     let asset: String?
 }
+
+struct PortfolioActivity: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let outcome: String?
+    let type: String
+    let side: String?
+    let size: Double
+    let price: Double
+    let usdcSize: Double
+    let timestamp: Date?
+}

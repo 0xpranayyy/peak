@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class PortfolioViewModel: ObservableObject {
     @Published var positions: [PortfolioPosition] = []
+    @Published var activity: [PortfolioActivity] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var draftAddress = ""
@@ -24,13 +25,17 @@ final class PortfolioViewModel: ObservableObject {
     func load(wallet: WalletStore) async {
         guard wallet.isValid, let address = wallet.address else {
             positions = []
+            activity = []
             errorMessage = nil
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
-            positions = try await DataAPI.fetchPositions(wallet: address)
+            async let positionsTask = DataAPI.fetchPositions(wallet: address)
+            async let activityTask = DataAPI.fetchActivity(wallet: address, limit: 20)
+            positions = try await positionsTask
+            activity = (try? await activityTask) ?? []
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -48,14 +53,14 @@ struct PortfolioView: View {
             Group {
                 if !env.wallet.isValid {
                     walletPrompt
-                } else if model.isLoading && model.positions.isEmpty {
+                } else if model.isLoading && model.positions.isEmpty && model.activity.isEmpty {
                     ProgressView("Loading positions…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = model.errorMessage, model.positions.isEmpty {
                     LoadingErrorView(message: error) {
                         Task { await model.load(wallet: env.wallet) }
                     }
-                } else if model.positions.isEmpty {
+                } else if model.positions.isEmpty && model.activity.isEmpty {
                     EmptyStateView(
                         systemImage: "briefcase",
                         title: "No open positions",
@@ -125,32 +130,73 @@ struct PortfolioView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                .accessibilityElement(children: .combine)
             }
 
-            Section("Positions") {
-                ForEach(model.positions) { position in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(position.title)
-                            .font(.body.weight(.semibold))
-                            .lineLimit(2)
-                        HStack {
-                            Text(position.outcome)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(PeakFormat.usd(position.currentValue))
-                                .font(.body.monospacedDigit().weight(.medium))
+            if !model.positions.isEmpty {
+                Section("Positions") {
+                    ForEach(model.positions) { position in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(position.title)
+                                .font(.body.weight(.semibold))
+                                .lineLimit(2)
+                            HStack {
+                                Text(position.outcome)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(PeakFormat.usd(position.currentValue))
+                                    .font(.body.monospacedDigit().weight(.medium))
+                            }
+                            .font(.subheadline)
+                            HStack {
+                                Text("Avg \(PeakFormat.cents(position.avgPrice)) · Now \(PeakFormat.cents(position.currentPrice))")
+                                Spacer()
+                                Text(String(format: "%+.1f%%", position.percentPnl))
+                                    .foregroundStyle(position.percentPnl >= 0 ? Color.green : Color.red)
+                            }
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
                         }
-                        .font(.subheadline)
-                        HStack {
-                            Text("Avg \(PeakFormat.cents(position.avgPrice)) · Now \(PeakFormat.cents(position.currentPrice))")
-                            Spacer()
-                            Text(String(format: "%+.1f%%", position.percentPnl))
-                                .foregroundStyle(position.percentPnl >= 0 ? Color.green : Color.red)
-                        }
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
                     }
-                    .padding(.vertical, 2)
+                }
+            }
+
+            if !model.activity.isEmpty {
+                Section("Recent activity") {
+                    ForEach(model.activity) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(item.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(2)
+                                Spacer()
+                                Text(item.type.capitalized)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack {
+                                if let side = item.side {
+                                    Text("\(side.uppercased()) \(item.outcome ?? "")")
+                                } else if let outcome = item.outcome {
+                                    Text(outcome)
+                                }
+                                Spacer()
+                                if item.usdcSize != 0 {
+                                    Text(PeakFormat.usd(item.usdcSize))
+                                        .font(.caption.monospacedDigit())
+                                } else if item.price > 0 {
+                                    Text(PeakFormat.cents(item.price))
+                                        .font(.caption.monospacedDigit())
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
+                    }
                 }
             }
         }
@@ -178,6 +224,7 @@ struct PortfolioView: View {
                             env.wallet.clear()
                             model.draftAddress = ""
                             model.positions = []
+                            model.activity = []
                             showWalletEditor = false
                         }
                     }
