@@ -9,6 +9,9 @@ struct RootTabView: View {
             Tab("Search", systemImage: "magnifyingglass") {
                 SearchView()
             }
+            Tab("Social", systemImage: "person.2") {
+                SocialView()
+            }
             Tab("Watchlist", systemImage: "star") {
                 WatchlistView()
             }

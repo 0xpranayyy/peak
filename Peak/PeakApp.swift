@@ -12,6 +12,7 @@ struct PeakApp: App {
                 .environmentObject(environment.wallet)
                 .environmentObject(environment.recentSearches)
                 .environmentObject(environment.tradingConfig)
+                .environmentObject(environment.follows)
         }
     }
 }
