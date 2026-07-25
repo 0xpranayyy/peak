@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct PeakApp: App {
+    init() {
+        CrashReporting.start()
+    }
+
     @StateObject private var environment = AppEnvironment()
     @StateObject private var privyAuth = PrivyAuthService.shared
     @StateObject private var categoryPrefs = CategoryPreferencesStore.shared

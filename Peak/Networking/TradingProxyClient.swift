@@ -81,6 +81,7 @@ enum TradingProxyClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            CrashReporting.capture(error, context: ["path": path, "method": method])
             let friendly = PeakUserCopy.fromError(error, fallback: PeakUserCopy.couldNotConnect)
             throw TradingError.server(friendly)
         }
@@ -92,6 +93,14 @@ enum TradingProxyClient {
                 ?? String(data: data, encoding: .utf8)
                 ?? "HTTP \(http.statusCode)"
             let code = json["code"] as? String
+            if http.statusCode >= 500 {
+                // 4xx here is expected business validation (insufficient funds, market closed, …);
+                // a 5xx means the backend itself broke — worth surfacing.
+                CrashReporting.capture(
+                    TradingError.fromServerMessage(message, code: code),
+                    context: ["path": path, "method": method, "status": String(http.statusCode)]
+                )
+            }
             if http.statusCode == 401 || message.lowercased().contains("unauthorized") {
                 throw TradingError.notConfigured
             }
@@ -137,8 +146,75 @@ enum TradingProxyClient {
         )
     }
 
+    /// HTTP failure that still carries a JSON body (flags like `syncReady` / `builderConfigured`).
+    struct HTTPBodyError: Error, LocalizedError {
+        let status: Int
+        let tradingError: TradingError
+        let body: [String: Any]
+
+        var errorDescription: String? { tradingError.errorDescription }
+    }
+
     static func setupTrading() async throws -> [String: Any] {
-        try await jsonObject(path: "trading/setup", method: "POST", jsonBody: [:])
+        try await jsonObjectKeepingBody(path: "trading/setup", method: "POST", jsonBody: [:])
+    }
+
+    /// POST/GET that returns JSON on success, or `HTTPBodyError` (with body) on failure.
+    static func jsonObjectKeepingBody(
+        path: String,
+        method: String = "POST",
+        jsonBody: [String: Any]? = nil
+    ) async throws -> [String: Any] {
+        let auth = try await auth()
+        let requestURL = auth.base.appendingPathComponent(path)
+
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = method
+        request.setValue("Bearer \(auth.token)", forHTTPHeaderField: "Authorization")
+        if auth.mode == .privy {
+            request.setValue("privy", forHTTPHeaderField: "X-Peak-Auth")
+        }
+        request.timeoutInterval = 45
+        if let jsonBody {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            CrashReporting.capture(error, context: ["path": path, "method": method])
+            let friendly = PeakUserCopy.fromError(error, fallback: PeakUserCopy.couldNotConnect)
+            throw TradingError.server(friendly)
+        }
+
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let message =
+                (json["error"] as? String)
+                ?? (json["errorMsg"] as? String)
+                ?? (json["message"] as? String)
+                ?? String(data: data, encoding: .utf8)
+                ?? "HTTP \(http.statusCode)"
+            let code = json["code"] as? String
+            if http.statusCode >= 500 {
+                CrashReporting.capture(
+                    TradingError.fromServerMessage(message, code: code),
+                    context: ["path": path, "method": method, "status": String(http.statusCode)]
+                )
+            }
+            if http.statusCode == 401 || message.lowercased().contains("unauthorized") {
+                throw TradingError.notConfigured
+            }
+            throw HTTPBodyError(
+                status: http.statusCode,
+                tradingError: TradingError.fromServerMessage(message, code: code),
+                body: json
+            )
+        }
+        return json
     }
 
     /// Import private key or mnemonic via backend (not stored on device).

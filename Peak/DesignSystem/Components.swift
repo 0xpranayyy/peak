@@ -23,6 +23,10 @@ struct PeakCategoryChip: View {
     let selected: Bool
     let action: () -> Void
 
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+    }
+
     var body: some View {
         Button {
             PeakHaptics.selection()
@@ -36,16 +40,16 @@ struct PeakCategoryChip: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
             .frame(minHeight: 36)
-            .background(selected ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+            .background(selected ? Color.accentColor : Color.secondary.opacity(0.12), in: shape)
             .foregroundStyle(selected ? Color.white : Color.primary)
+            .contentShape(shape)
             .animation(PeakMotion.snappy, value: selected)
         }
         .peakPressable(haptic: false)
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
+        .frame(minHeight: PeakLayout.minTap)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -60,11 +64,11 @@ struct EventRowView: View {
     }
 
     private var probability: Double? {
-        displayedProbability ?? event.displayProbability
+        event.resolvedDisplayProbability(enriched: displayedProbability)
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 if let categoryLabel {
                     Text(categoryLabel.uppercased())
@@ -96,7 +100,7 @@ struct EventRowView: View {
                 ProbabilityBadge(probability: p)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
     }
 }
@@ -127,7 +131,7 @@ struct MarketOutcomeBar: View {
                     Capsule()
                         .fill(Color.secondary.opacity(0.15))
                     Capsule()
-                        .fill(Color.accentColor.opacity(0.85))
+                        .fill(PeakTradeStyle.buy.opacity(0.92))
                         .frame(width: geo.size.width * width)
                         .animation(PeakMotion.soft, value: yes)
                 }
@@ -136,7 +140,7 @@ struct MarketOutcomeBar: View {
 
             HStack {
                 Text("\(market.yesLabel) \(PeakFormat.cents(yes))")
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(PeakTradeStyle.buy)
                     .peakNumeric(value: yes)
                 Spacer()
                 Text("\(market.noLabel) \(PeakFormat.cents(no))")

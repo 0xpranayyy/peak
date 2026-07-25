@@ -115,7 +115,9 @@ final class TradingConfigStore: ObservableObject {
         return trimmed
     }
 
-    private static func isLocalhost(_ url: String) -> Bool {
+    /// Pure string predicate — nonisolated so it doesn't require actor hops, and
+    /// internal (not private) so PeakTests can regression-test it directly.
+    nonisolated static func isLocalhost(_ url: String) -> Bool {
         guard let host = URL(string: url)?.host?.lowercased() else {
             let lower = url.lowercased()
             return lower.contains("127.0.0.1") || lower.contains("localhost")
@@ -124,7 +126,9 @@ final class TradingConfigStore: ObservableObject {
     }
 
     /// Release accepts only non-local HTTPS backends.
-    private static func isReleaseAllowedBackendURL(_ url: String) -> Bool {
+    /// Pure string predicate — nonisolated so it doesn't require actor hops, and
+    /// internal (not private) so PeakTests can regression-test it directly.
+    nonisolated static func isReleaseAllowedBackendURL(_ url: String) -> Bool {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.lowercased().hasPrefix("https://"), !isLocalhost(trimmed) else { return false }
         return URL(string: trimmed) != nil

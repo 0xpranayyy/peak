@@ -73,6 +73,7 @@ struct TradingPathSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .peakSheetChrome()
     }
 
     private var existingExtras: some View {
@@ -102,7 +103,10 @@ struct TradingPathSheet: View {
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
                         .padding(12)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(
+                            Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                        )
 
                     Button("Save address") {
                         Task { await linkProfileAddress() }
@@ -151,7 +155,10 @@ struct TradingPathSheet: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
+            )
         }
         .peakPressable()
         .disabled(isBusy)
@@ -173,8 +180,15 @@ struct TradingPathSheet: View {
                 tradingPath: tradingPath
             )
             statusMessage = result
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            dismiss()
+            if tradingPath.snapshot.syncReady {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                dismiss()
+            } else {
+                // Path saved but deposit wallet not ready — keep sheet open with actionable copy.
+                statusMessage = result.isEmpty
+                    ? "Almost there. Try again in a moment, or check Account for status."
+                    : result
+            }
         } catch {
             statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t finish setup. Try again.")
         }

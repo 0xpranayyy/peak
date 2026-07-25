@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9C6BC8CD0C1B10F7AE8B06BC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3075EF805F260D65C36702F /* Foundation.framework */; };
 		CRYPT00000000000000000003 /* CryptoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CRYPT00000000000000000002 /* CryptoSwift */; };
 		P20000000000000000000004 /* PeakWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = P20000000000000000000005 /* PeakWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		PRIVY00000000000000000003 /* Privy in Frameworks */ = {isa = PBXBuildFile; productRef = PRIVY00000000000000000002 /* Privy */; };
@@ -17,6 +18,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		92E54BA0EB3313125CE4A936 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = P1000000000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = P10000000000000000000006;
+			remoteInfo = Peak;
+		};
 		P20000000000000000000002 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = P1000000000000000000000A /* Project object */;
@@ -41,6 +49,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		9DAC6A4DDF28BDB8E16A01A0 /* PeakTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PeakTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C3075EF805F260D65C36702F /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		P10000000000000000000005 /* Peak.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peak.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		P20000000000000000000005 /* PeakWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PeakWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -63,6 +73,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		237FE9B8BEA1F889EE14DDCB /* PeakTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PeakTests;
+			sourceTree = "<group>";
+		};
 		P10000000000000000000001 /* Peak */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -82,6 +97,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		80CF6B7B3709392F7056F296 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C6BC8CD0C1B10F7AE8B06BC /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		P10000000000000000000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -105,12 +128,30 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		51A56A06845C4D7A42D11F6A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B290D60218F1CD6C0C0E79BA /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		B290D60218F1CD6C0C0E79BA /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				C3075EF805F260D65C36702F /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
 		P10000000000000000000003 = {
 			isa = PBXGroup;
 			children = (
 				P10000000000000000000001 /* Peak */,
 				P20000000000000000000001 /* PeakWidget */,
 				P10000000000000000000004 /* Products */,
+				51A56A06845C4D7A42D11F6A /* Frameworks */,
+				237FE9B8BEA1F889EE14DDCB /* PeakTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -119,6 +160,7 @@
 			children = (
 				P10000000000000000000005 /* Peak.app */,
 				P20000000000000000000005 /* PeakWidgetExtension.appex */,
+				9DAC6A4DDF28BDB8E16A01A0 /* PeakTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -126,6 +168,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		E17621FF80E622B02C06BA4E /* PeakTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6F54A45DABF22CC9295B9F00 /* Build configuration list for PBXNativeTarget "PeakTests" */;
+			buildPhases = (
+				DC2221B9B09FF8E2F77D8D6E /* Sources */,
+				80CF6B7B3709392F7056F296 /* Frameworks */,
+				D2575071CDBFC046D85E3B06 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7E101D1C6F81B4611DD77133 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				237FE9B8BEA1F889EE14DDCB /* PeakTests */,
+			);
+			name = PeakTests;
+			productName = PeakTests;
+			productReference = 9DAC6A4DDF28BDB8E16A01A0 /* PeakTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		P10000000000000000000006 /* Peak */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = P10000000000000000000007 /* Build configuration list for PBXNativeTarget "Peak" */;
@@ -173,8 +236,6 @@
 				P20000000000000000000001 /* PeakWidget */,
 			);
 			name = PeakWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = PeakWidgetExtension;
 			productReference = P20000000000000000000005 /* PeakWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -220,11 +281,19 @@
 			targets = (
 				P10000000000000000000006 /* Peak */,
 				P20000000000000000000006 /* PeakWidgetExtension */,
+				E17621FF80E622B02C06BA4E /* PeakTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D2575071CDBFC046D85E3B06 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		P10000000000000000000009 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -264,6 +333,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		DC2221B9B09FF8E2F77D8D6E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		P10000000000000000000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -281,6 +357,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		7E101D1C6F81B4611DD77133 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Peak;
+			target = P10000000000000000000006 /* Peak */;
+			targetProxy = 92E54BA0EB3313125CE4A936 /* PBXContainerItemProxy */;
+		};
 		P20000000000000000000003 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = P20000000000000000000006 /* PeakWidgetExtension */;
@@ -289,6 +371,63 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4A61C02DCC5652500A65412E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 49BZ7S974W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pranay.peak.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Peak.app/Peak";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		EB59394C2AEC5129995F745E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 49BZ7S974W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pranay.peak.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Peak.app/Peak";
+			};
+			name = Debug;
+		};
 		P1000000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -519,6 +658,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		6F54A45DABF22CC9295B9F00 /* Build configuration list for PBXNativeTarget "PeakTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A61C02DCC5652500A65412E /* Release */,
+				EB59394C2AEC5129995F745E /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		P10000000000000000000007 /* Build configuration list for PBXNativeTarget "Peak" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

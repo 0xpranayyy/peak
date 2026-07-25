@@ -15,6 +15,7 @@ xcuserdata/
 # SwiftPM
 .build/
 .swiftpm/
+.spm-cache/
 
 # Peak trading proxy secrets
 backend/.env

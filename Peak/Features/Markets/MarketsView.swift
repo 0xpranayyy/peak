@@ -234,14 +234,24 @@ final class MarketsViewModel: ObservableObject {
         }
     }
 
+    /// Enrich digest / rail events without clearing the main list map.
+    func ensureDisplayOdds(for events: [PeakEvent]) {
+        guard !events.isEmpty else { return }
+        enrichDisplayOdds(for: events, replace: false)
+    }
+
     /// Refresh list badges from CLOB mid/spread (same rule as event detail).
     /// Merges into `displayOdds` without replacing dictionary identity on each tick.
     private func enrichDisplayOdds(for page: [PeakEvent], replace: Bool) {
-        oddsTask?.cancel()
         let targets: [(eventID: String, tokenID: String, fallback: Double)] = page.compactMap { event in
             guard let market = event.primaryMarket,
                   let token = market.yesTokenID, !token.isEmpty else { return nil }
-            return (event.id, token, market.yesPrice)
+            let fallback: Double = {
+                if market.yesPrice > 0, market.yesPrice <= 1 { return market.yesPrice }
+                if let open = market.outcomePrices.first(where: { $0 > 0 && $0 < 1 }) { return open }
+                return 0.5
+            }()
+            return (event.id, token, fallback)
         }
         if replace, targets.isEmpty {
             displayOdds = [:]
@@ -249,7 +259,12 @@ final class MarketsViewModel: ObservableObject {
         }
         guard !targets.isEmpty else { return }
 
-        oddsTask = Task(priority: .utility) {
+        // Digest/rail merges must not cancel an in-flight list enrich.
+        if replace {
+            oddsTask?.cancel()
+        }
+
+        let work = Task(priority: .utility) {
             var updates: [String: Double] = [:]
             await withTaskGroup(of: (String, Double).self) { group in
                 for target in targets {
@@ -283,6 +298,9 @@ final class MarketsViewModel: ObservableObject {
                     displayOdds.merge(updates) { _, new in new }
                 }
             }
+        }
+        if replace {
+            oddsTask = work
         }
     }
 }
@@ -353,6 +371,10 @@ struct MarketsView: View {
             .onAppear { model.onAppear() }
             .task {
                 await digest.refreshMovers(interests: categoryPrefs.interestedCategories)
+                model.ensureDisplayOdds(for: digest.movers)
+            }
+            .onChange(of: digest.movers.map(\.id)) { _, _ in
+                model.ensureDisplayOdds(for: digest.movers)
             }
         }
     }
@@ -365,11 +387,13 @@ struct MarketsView: View {
                         events: digest.movers,
                         title: "Morning digest",
                         subtitle: "Top movers in your categories",
+                        displayedOdds: model.displayOdds,
                         onSelect: { path.append($0) },
                         onDismiss: { digest.dismissBanner() }
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 6, trailing: 12))
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             } else if !digest.movers.isEmpty {
                 Section {
@@ -379,15 +403,17 @@ struct MarketsView: View {
                         subtitle: categoryPrefs.interestedCategories.isEmpty
                             ? "Trending across Peak"
                             : "Pinned to your interests",
+                        displayedOdds: model.displayOdds,
                         onSelect: { path.append($0) }
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 6, trailing: 12))
                     .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             } else if !model.isLoading {
                 Section {
                     marketsHeroFallback
-                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -458,6 +484,9 @@ struct MarketsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .listSectionSpacing(12)
+        .contentMargins(.top, 4, for: .scrollContent)
         .navigationDestination(for: PeakEvent.self) { event in
             EventDetailView(eventID: event.id, seed: event)
         }
@@ -484,13 +513,19 @@ struct MarketsView: View {
 
     @ViewBuilder
     private var marketsSectionHeader: some View {
-        if let selected = model.selectedCategory {
-            Text("\(selected.title) · \(model.sort.title)")
-        } else if !categoryPrefs.interestedCategories.isEmpty {
-            Text("For you · \(model.sort.title)")
-        } else {
-            Text(model.sort.title)
-        }
+        let title: String = {
+            if let selected = model.selectedCategory {
+                return "\(selected.title) · \(model.sort.title)"
+            }
+            if !categoryPrefs.interestedCategories.isEmpty {
+                return "For you · \(model.sort.title)"
+            }
+            return model.sort.title
+        }()
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .textCase(nil)
     }
 
     private var skeletonList: some View {
@@ -540,8 +575,9 @@ struct MarketsView: View {
                 }
                 .padding(.vertical, 4)
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
     }
 }

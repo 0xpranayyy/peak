@@ -1,6 +1,7 @@
 // Peak trading API — legacy one-wallet proxy + Privy per-user sessions.
 // Builder credentials unlock Deposit Wallet deploy / CLOB for Privy users.
 import "dotenv/config";
+import crypto from "crypto";
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -9,13 +10,13 @@ import { ClobClient, Side, OrderType, SignatureTypeV2, AssetType } from "@polyma
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolvePolymarketAccount } from "./polymarketAccount.mjs";
-import { loadSessions, getSession, setSession, sessions } from "./sessionStore.mjs";
+import { loadSessions, getSession, setSession, sessions, sessionStorePath } from "./sessionStore.mjs";
 import {
   deployOrLinkDepositWallet,
   createUserClobClient,
   signatureTypeFromWalletName,
 } from "./tradingSetup.mjs";
-import { createPrivyWalletClient, findEmbeddedWalletId } from "./privyViemAccount.mjs";
+import { createPrivyWalletClient, findEmbeddedWalletId, ensureEmbeddedWallet } from "./privyViemAccount.mjs";
 import { mountLegalPages } from "./legalPages.mjs";
 
 const {
@@ -95,7 +96,7 @@ async function initLegacyClient() {
   if (!creds) {
     const temp = new ClobClient({ host: HOST, chain: CHAIN_ID, signer });
     creds = await temp.createOrDeriveApiKey();
-    console.log("Derived CLOB API key:", creds.key);
+    console.log("Derived CLOB API key (credential redacted from logs)");
   }
 
   const signatureType =
@@ -182,31 +183,105 @@ app.use((req, res, next) => {
   next();
 });
 
+function timingSafeEqualStrings(a, b) {
+  const bufA = Buffer.from(String(a ?? ""));
+  const bufB = Buffer.from(String(b ?? ""));
+  if (bufA.length !== bufB.length) {
+    // Still run a compare of equal-length buffers so failure timing doesn't
+    // depend on the length mismatch itself.
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
+    // Log full detail server-side only — never echo raw internal error text
+    // (which can include upstream SDK/URL/path detail) back to the client.
     console.error(e?.message ?? e);
-    res.status(500).json({ error: String(e?.message ?? e) });
+    const status = Number(e?.httpStatus || e?.status) || 500;
+    const code = e?.code || (status >= 500 ? "internal_error" : "request_failed");
+    const publicFields =
+      e?.publicFields && typeof e.publicFields === "object" ? e.publicFields : {};
+    // Prefer explicit safe client copy; never leak upstream URLs/stacks on 5xx.
+    const error =
+      typeof e?.safeMessage === "string" && e.safeMessage.trim()
+        ? e.safeMessage.trim()
+        : status >= 500
+          ? "Internal error. Try again."
+          : String(e?.message ?? "Request failed");
+    res.status(status).json({ error, code, ...publicFields });
   });
 
 /** Resolve a Privy-backed viem wallet client for the session. */
 async function walletClientForSession(session) {
+  if (!privy) {
+    const err = new Error("Privy is not configured");
+    err.code = "setup_failed";
+    err.httpStatus = 503;
+    err.safeMessage = "Trading isn’t ready yet. Try again in a moment.";
+    throw err;
+  }
+
   let walletId = session.walletId;
-  if (!walletId && privy) {
-    walletId = await findEmbeddedWalletId(privy, session.userId, session.eoa);
-    if (walletId) {
-      setSession(session.userId, { ...session, walletId });
-      session.walletId = walletId;
+  let signingAddress = session.eoa;
+
+  if (!walletId) {
+    try {
+      const ensured = await ensureEmbeddedWallet(privy, session.userId, session.eoa);
+      walletId = ensured.walletId;
+      signingAddress = ensured.address;
+      const patch = {
+        ...session,
+        walletId,
+        eoa: signingAddress,
+      };
+      // Keep the login wallet if it differed (WalletConnect / external).
+      if (
+        session.eoa &&
+        String(session.eoa).toLowerCase() !== String(signingAddress).toLowerCase()
+      ) {
+        patch.loginEoa = session.eoa;
+      }
+      setSession(session.userId, patch);
+      Object.assign(session, patch);
+    } catch (e) {
+      console.error("ensureEmbeddedWallet failed:", e?.message ?? e);
+      const err = new Error(e?.message ?? "Could not create Peak trading wallet");
+      err.code = "embedded_wallet_required";
+      err.httpStatus = 501;
+      err.safeMessage =
+        "Couldn’t create a Peak trading wallet for this account. Sign in with email or Apple, then try again.";
+      err.publicFields = {
+        needsDeploy: true,
+        syncReady: false,
+        builderConfigured,
+        relayerConfigured,
+      };
+      throw err;
     }
   }
-  if (!walletId) {
-    throw new Error(
-      "No Privy embedded wallet id for this user. Social/email users need an embedded wallet; WalletConnect users must use an existing Polymarket account or import a key."
-    );
+
+  if (!walletId || !signingAddress) {
+    const err = new Error("No Privy embedded wallet id for this user");
+    err.code = "embedded_wallet_required";
+    err.httpStatus = 501;
+    err.safeMessage =
+      "Peak needs a trading wallet to continue. Sign in with email or Apple, or choose “I already trade elsewhere”.";
+    err.publicFields = {
+      needsDeploy: true,
+      syncReady: false,
+      builderConfigured,
+      relayerConfigured,
+    };
+    throw err;
   }
+
   return createPrivyWalletClient({
     privy,
     walletId,
-    address: session.eoa,
+    address: signingAddress,
     rpcUrl: POLYGON_RPC_URL,
     authorizationKey: PEAK_PRIVY_AUTH_KEY,
   });
@@ -439,8 +514,8 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  // Legacy static token
-  if (legacyEnabled && token === APP_TOKEN) {
+  // Legacy static token (constant-time compare — avoids leaking a timing side-channel)
+  if (legacyEnabled && timingSafeEqualStrings(token, APP_TOKEN)) {
     req.auth = { mode: "legacy" };
     return next();
   }
@@ -473,7 +548,7 @@ app.get("/health", (_req, res) => {
     relayer: relayerConfigured,
     funder: legacyEnabled ? FUNDER_ADDRESS : null,
     sessions: sessions.size,
-    sessionStore: "file",
+    sessionStore: sessionStorePath,
     cors: corsOrigins.length ? "allowlist" : "off",
     uptimeSec: Math.floor(process.uptime()),
   });
@@ -505,15 +580,45 @@ app.post("/auth/session", wrap(async (req, res) => {
   const existing = getSession(req.auth.userId);
   const resolvedPath = path || existing?.path || "new";
 
+  let walletId = existing?.walletId || null;
+  let eoaForSession = eoa;
+  let loginEoa = existing?.loginEoa || null;
+  if (privy && resolvedPath === "new") {
+    try {
+      const ensured = await ensureEmbeddedWallet(privy, req.auth.userId, eoa);
+      walletId = ensured.walletId;
+      if (String(ensured.address).toLowerCase() !== eoa.toLowerCase()) {
+        loginEoa = eoa;
+        eoaForSession = ensured.address;
+      } else {
+        eoaForSession = ensured.address;
+      }
+    } catch (e) {
+      console.warn("auth/session ensureEmbeddedWallet:", e?.message ?? e);
+    }
+  } else if (privy && !walletId) {
+    try {
+      const found = await findEmbeddedWalletId(privy, req.auth.userId, eoa);
+      if (found?.walletId) {
+        walletId = found.walletId;
+        if (found.address) eoaForSession = found.address;
+      }
+    } catch (e) {
+      console.warn("auth/session findEmbeddedWalletId:", e?.message ?? e);
+    }
+  }
+
   const resolved = await resolvePolymarketAccount({
-    signer: eoa,
+    signer: eoaForSession,
     path: resolvedPath,
     accountWalletHint: accountWalletHint || existing?.accountWallet || null,
   });
 
   const session = {
     userId: req.auth.userId,
-    eoa,
+    eoa: eoaForSession,
+    loginEoa,
+    walletId,
     accountWallet: resolved.accountWallet,
     safeAddress: resolved.accountWallet,
     walletType: resolved.walletType,
@@ -526,7 +631,7 @@ app.post("/auth/session", wrap(async (req, res) => {
 
   res.json({
     ...session,
-    signer: eoa,
+    signer: eoaForSession,
     syncReady: resolved.syncReady,
     builderConfigured,
     relayerConfigured,
@@ -770,14 +875,22 @@ app.post("/trading/setup", wrap(async (req, res) => {
 
   if (!builderConfigured) {
     return res.status(503).json({
-      error: "Builder credentials are not configured on the server yet",
+      error: "Trading isn’t ready yet. Try again in a moment.",
+      code: "builder_not_ready",
       builderConfigured: false,
       relayerConfigured,
       needsDeploy: true,
+      syncReady: false,
       signer: session.eoa,
       path: session.path,
-      message: "Add Builder and Relayer keys to backend/.env to deploy a trading wallet.",
+      accountWallet: session.accountWallet ?? null,
+      message: "Server is still finishing trading setup. Try again shortly.",
     });
+  }
+
+  if (!relayerConfigured) {
+    // RelayClient auth is Builder-signed; RELAYER_* is advisory. Still warn so ops can fill keys.
+    console.warn("trading/setup: RELAYER_API_KEY / RELAYER_API_KEY_ADDRESS unset (Builder-only auth)");
   }
 
   // New path: deploy Deposit Wallet via Relayer.
@@ -818,16 +931,31 @@ app.post("/trading/setup", wrap(async (req, res) => {
       status: deploy.status,
     });
   } catch (e) {
-    console.error("trading/setup deploy failed:", e);
-    return res.status(501).json({
-      error: String(e?.message ?? e),
-      builderConfigured: true,
+    console.error("trading/setup deploy failed:", e?.message ?? e);
+    const status = Number(e?.httpStatus || e?.status) || 501;
+    const code = e?.code || "setup_failed";
+    const publicFields =
+      e?.publicFields && typeof e.publicFields === "object" ? e.publicFields : {};
+    return res.status(status).json({
+      error:
+        typeof e?.safeMessage === "string" && e.safeMessage.trim()
+          ? e.safeMessage.trim()
+          : "Couldn’t finish wallet setup. Try again.",
+      code,
+      builderConfigured,
       relayerConfigured,
+      needsDeploy: true,
+      syncReady: false,
       signer: session.eoa,
       path: session.path || "new",
+      accountWallet: session.accountWallet ?? null,
       walletTypeName: "DEPOSIT_WALLET",
       status: "deploy_failed",
-      hint: "Ensure PEAK_PRIVY_AUTH_KEY (if required), wallet delegation, Builder, and Relayer are configured.",
+      message:
+        typeof e?.safeMessage === "string" && e.safeMessage.trim()
+          ? e.safeMessage.trim()
+          : "Deposit wallet deploy failed. Check Privy wallet auth and Relayer, then retry.",
+      ...publicFields,
     });
   }
 }));
@@ -884,6 +1012,9 @@ app.get("/portfolio", wrap(async (req, res) => {
   }
 
   const ready = Boolean(session?.ready);
+  // Account linked when we have an account wallet (deposit / proxy / Safe / EOA book).
+  // Do not alias `session.ready` — that can stay false when Builder/CLOB isn’t fully warm.
+  const syncReady = Boolean(session?.accountWallet);
   res.json({
     positions,
     value,
@@ -895,8 +1026,7 @@ app.get("/portfolio", wrap(async (req, res) => {
     walletTypeName: session?.walletTypeName ?? null,
     path: session?.path ?? null,
     ready,
-    // Alias for iOS TradingPathStore.apply (also accepts `ready`).
-    syncReady: ready,
+    syncReady,
     needsDeploy: Boolean(session?.needsDeploy),
     builderConfigured,
     relayerConfigured,
@@ -1094,30 +1224,55 @@ app.post("/deposit-address", wrap(async (req, res) => {
   let session = null;
   if (req.auth.mode === "privy") {
     session = getSession(req.auth.userId);
-    funder = session?.accountWallet || session?.safeAddress || session?.eoa;
-    if (!funder) {
-      return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+    funder = session?.accountWallet || session?.safeAddress || null;
+    if (!session?.eoa) {
+      return res.status(400).json({
+        error: "Sign in and set up trading first.",
+        code: "setup_required",
+      });
     }
     if (session?.needsDeploy && !session?.accountWallet) {
       return res.status(400).json({
-        error: "Call POST /trading/setup first to deploy the deposit wallet, then request a deposit address.",
+        error: "Finish Set up trading first, then request a deposit address.",
+        code: "setup_required",
         needsDeploy: true,
+        syncReady: false,
         builderConfigured,
+        relayerConfigured,
+      });
+    }
+    // Prefer account wallet; fall back to EOA only for existing path that traded as EOA.
+    if (!funder) {
+      funder = session.path === "existing" ? session.eoa : null;
+    }
+    if (!funder) {
+      return res.status(400).json({
+        error: "Finish Set up trading first, then request a deposit address.",
+        code: "setup_required",
+        needsDeploy: Boolean(session?.needsDeploy),
+        syncReady: false,
+        builderConfigured,
+        relayerConfigured,
       });
     }
   }
 
   if (!funder) {
-    return res.status(400).json({ error: "No funder / account wallet configured" });
+    return res.status(400).json({
+      error: "No trading wallet configured for deposits.",
+      code: "setup_required",
+    });
   }
 
   try {
     const bridge = await fetchBridgeDepositAddresses(funder);
     const depositAddress = pickBridgeAddress(bridge, chain);
+    const address = depositAddress || funder;
     return res.json({
       ...bridge,
-      address: depositAddress || funder,
-      depositAddress: depositAddress || funder,
+      // Always flatten to a string so iOS never has to dig nested Bridge shapes.
+      address,
+      depositAddress: address,
       funder,
       accountWallet: funder,
       chain,
@@ -1126,9 +1281,12 @@ app.post("/deposit-address", wrap(async (req, res) => {
         bridge?.note ||
         "Send only supported assets. Cross-chain deposits use the bridge address; Polygon pUSD may credit the funder directly.",
       needsDeploy: Boolean(session?.needsDeploy),
+      syncReady: true,
       builderConfigured,
+      relayerConfigured,
     });
   } catch (e) {
+    console.warn("deposit-address bridge failed:", e?.message ?? e);
     // Fallback: return funder so same-chain funding still works if Bridge is down.
     return res.json({
       address: funder,
@@ -1137,14 +1295,13 @@ app.post("/deposit-address", wrap(async (req, res) => {
       accountWallet: funder,
       chain,
       token,
-      bridgeError: String(e?.message ?? e),
       note: session?.accountWallet
-        ? "Bridge API unavailable — showing Polymarket account wallet for same-chain funding."
-        : builderConfigured
-          ? "Bridge API unavailable. Call POST /trading/setup if you still need a deposit wallet, then retry."
-          : "Bridge API unavailable — showing Privy embedded EOA. Add Builder keys for the official deposit flow.",
+        ? "Bridge temporarily unavailable — showing your trading wallet for same-chain funding."
+        : "Bridge temporarily unavailable — showing your wallet address for same-chain funding.",
       needsDeploy: Boolean(session?.needsDeploy),
+      syncReady: Boolean(funder),
       builderConfigured,
+      relayerConfigured,
     });
   }
 }));
@@ -1183,10 +1340,10 @@ function pickBridgeAddress(bridge, chain) {
 // Avoid leaking stack traces; map CORS denials to 403.
 app.use((err, _req, res, _next) => {
   if (err?.message === "CORS origin not allowed") {
-    return res.status(403).json({ error: "CORS origin not allowed" });
+    return res.status(403).json({ error: "CORS origin not allowed", code: "cors_denied" });
   }
   console.error(err?.message ?? err);
-  res.status(500).json({ error: String(err?.message ?? "Internal error") });
+  res.status(500).json({ error: "Internal error. Try again.", code: "internal_error" });
 });
 
 initLegacyClient()

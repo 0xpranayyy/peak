@@ -12,6 +12,7 @@ ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
 
-# Session store: mount Railway volume at /data and set PEAK_SESSION_STORE=/data (Dockerfile VOLUME unsupported on Railway).
+# Session store: mount Railway volume at /data and set PEAK_SESSION_STORE=/data/sessions.json
+# (a bare /data directory path is also accepted — we write sessions.json inside it).
 
 CMD ["node", "server.mjs"]

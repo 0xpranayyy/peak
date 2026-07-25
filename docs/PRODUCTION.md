@@ -46,6 +46,7 @@ iOS (`PrivySecrets.local.plist`, gitignored — **not** `Info.plist`):
 
 - [ ] `PRIVY_APP_ID` / `PRIVY_APP_CLIENT_ID`
 - [ ] `WALLETCONNECT_PROJECT_ID` from [cloud.reown.com](https://cloud.reown.com)
+- [ ] Crash reporting (optional later): re-add `sentry-cocoa` SPM when Xcode package resolution is stable; `CrashReporting` hooks already exist as no-ops.
 
 Do not put Privy or Reown secrets in tracked `Info.plist`. Backend / legal URLs for the hosted Railway API are set in `Peak/Info.plist` (see below). Local Debug can still point at a backend via `PEAK_BACKEND_URL` in Info.plist.
 

@@ -49,25 +49,82 @@ export function createPrivyWalletClient({ privy, walletId, address, rpcUrl, auth
   });
 }
 
+function walletIdFromAccount(a) {
+  return a?.id || a?.wallet_id || a?.walletId || a?.provider_id || null;
+}
+
+function isEmbeddedEthereum(a) {
+  if (!a) return false;
+  const type = String(a.type || "").toLowerCase();
+  if (type && type !== "wallet" && type !== "smart_wallet") return false;
+  const chain = String(a.chain_type || a.chainType || "").toLowerCase();
+  if (chain && chain !== "ethereum") return false;
+  // Only Privy-managed / imported wallets can be signed server-side.
+  return (
+    a.connector_type === "embedded" ||
+    a.wallet_client === "privy" ||
+    a.walletClientType === "privy" ||
+    a.wallet_client_type === "privy" ||
+    a.imported === true
+  );
+}
+
 /**
- * Find Privy embedded ethereum wallet id for a user + address.
+ * Find Privy ethereum wallet id for a user (+ optional address match).
  * @param {import('@privy-io/node').PrivyClient} privy
  * @param {string} userId
- * @param {string} eoa
+ * @param {string|null|undefined} eoa
  */
 export async function findEmbeddedWalletId(privy, userId, eoa) {
   const user = await privy.users()._get(userId);
-  const target = eoa.toLowerCase();
+  const target = eoa ? String(eoa).toLowerCase() : null;
   const accounts = user?.linked_accounts || [];
-  for (const a of accounts) {
-    if (a?.type !== "wallet" && a?.type !== "smart_wallet") continue;
-    if (String(a.address || "").toLowerCase() !== target) continue;
-    if (a.id) return a.id;
-  }
-  for (const a of accounts) {
-    if (a?.connector_type === "embedded" && a?.chain_type === "ethereum" && a.id) {
-      if (!eoa || String(a.address || "").toLowerCase() === target) return a.id;
+
+  // Exact address match only if that account is Privy-signable.
+  if (target) {
+    for (const a of accounts) {
+      if (String(a.address || "").toLowerCase() !== target) continue;
+      if (!isEmbeddedEthereum(a) && a.imported !== true) continue;
+      const id = walletIdFromAccount(a);
+      if (id) return { walletId: id, address: a.address };
     }
   }
+
+  for (const a of accounts) {
+    if (!isEmbeddedEthereum(a)) continue;
+    const id = walletIdFromAccount(a);
+    if (!id || !a.address) continue;
+    return { walletId: id, address: a.address };
+  }
+
   return null;
+}
+
+/**
+ * Ensure the Privy user has a server-signable ethereum wallet.
+ * WalletConnect-only users get a new Peak embedded wallet for "I'm new" trading.
+ * @returns {Promise<{ walletId: string, address: string, created: boolean }>}
+ */
+export async function ensureEmbeddedWallet(privy, userId, preferredEoa = null) {
+  const existing = await findEmbeddedWalletId(privy, userId, preferredEoa);
+  if (existing?.walletId && existing?.address) {
+    return { ...existing, created: false };
+  }
+
+  // Prefer any embedded already linked (ignore address mismatch — WC login vs Peak wallet).
+  const anyEmbedded = await findEmbeddedWalletId(privy, userId, null);
+  if (anyEmbedded?.walletId && anyEmbedded?.address) {
+    return { ...anyEmbedded, created: false };
+  }
+
+  const created = await privy.wallets().create({
+    chain_type: "ethereum",
+    owner: { user_id: userId },
+  });
+  const walletId = created?.id;
+  const address = created?.address;
+  if (!walletId || !address) {
+    throw new Error("Privy did not return a wallet id/address when creating an embedded wallet");
+  }
+  return { walletId, address, created: true };
 }

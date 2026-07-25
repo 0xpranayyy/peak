@@ -85,11 +85,6 @@ final class EventDetailViewModel: ObservableObject {
         )
     }
 
-    var chartTrendUp: Bool {
-        guard let first = history.first?.price, let last = history.last?.price else { return true }
-        return last >= first
-    }
-
     init(eventID: String, seed: PeakEvent?) {
         self.eventID = eventID
         self.event = seed
@@ -628,9 +623,12 @@ struct EventDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding(10)
-                        .background(selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(
+                            selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                        )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                                 .strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 1)
                         )
                     }
@@ -675,7 +673,7 @@ struct EventDetailView: View {
                 Spacer()
                 Text(PeakFormat.cents(model.displayedYesOdds))
                     .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(model.chartTrendUp ? PeakTradeStyle.buy : PeakTradeStyle.sell)
+                    .foregroundStyle(PeakBrand.mid)
                     .peakNumeric(value: model.displayedYesOdds)
             }
 
@@ -688,10 +686,13 @@ struct EventDetailView: View {
                         } label: {
                             Text(interval.title)
                                 .font(.caption.weight(.semibold))
-                                .frame(minHeight: 44)
+                                .frame(minHeight: PeakLayout.minTap)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
-                                .background(on ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+                                .background(
+                                    on ? Color.accentColor : Color.secondary.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                                )
                                 .foregroundStyle(on ? Color.white : Color.primary)
                         }
                         .buttonStyle(.plain)
@@ -706,7 +707,7 @@ struct EventDetailView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 200)
             } else if model.history.isEmpty {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                     .fill(Color.secondary.opacity(0.06))
                     .frame(height: 200)
                     .overlay {
@@ -724,7 +725,7 @@ struct EventDetailView: View {
                         }
                     }
             } else {
-                let trend = model.chartTrendUp ? PeakTradeStyle.buy : PeakTradeStyle.sell
+                let series = PeakBrand.mid
                 let prices = model.history.map(\.price)
                 let lo = max(0, (prices.min() ?? 0) - 0.04)
                 let hi = min(1, (prices.max() ?? 1) + 0.04)
@@ -736,7 +737,7 @@ struct EventDetailView: View {
                             y: .value("Odds", point.price)
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(trend)
+                        .foregroundStyle(series)
                         .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
 
                         AreaMark(
@@ -746,7 +747,7 @@ struct EventDetailView: View {
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [trend.opacity(0.28), trend.opacity(0.02)],
+                                colors: [series.opacity(0.26), series.opacity(0.02)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -754,7 +755,7 @@ struct EventDetailView: View {
                     }
 
                     RuleMark(y: .value("Now", model.displayedYesOdds))
-                        .foregroundStyle(trend.opacity(0.35))
+                        .foregroundStyle(series.opacity(0.35))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
                     if let last = model.history.last {
@@ -762,7 +763,7 @@ struct EventDetailView: View {
                             x: .value("Time", Date(timeIntervalSince1970: TimeInterval(last.timestamp))),
                             y: .value("Odds", last.price)
                         )
-                        .foregroundStyle(trend)
+                        .foregroundStyle(series)
                         .symbolSize(48)
                     }
                 }
@@ -770,11 +771,12 @@ struct EventDetailView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.secondary.opacity(0.25))
+                            .foregroundStyle(Color.secondary.opacity(0.22))
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(PeakFormat.cents(v))
                                     .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -782,9 +784,10 @@ struct EventDetailView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.secondary.opacity(0.15))
+                            .foregroundStyle(Color.secondary.opacity(0.14))
                         AxisValueLabel(format: .dateTime.hour().minute())
                             .font(.caption2)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .frame(height: 220)
@@ -883,9 +886,10 @@ struct EventDetailView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: 48)
-            .padding(.vertical, 14)
-            .background(color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.vertical, 16)
+            .frame(minHeight: 50)
+            .background(color, in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
         }
         .peakPressable()
         .accessibilityLabel("\(title) \(accessibilitySide) at \(subtitle)")

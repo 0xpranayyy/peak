@@ -123,11 +123,13 @@ struct OnboardingView: View {
                         } label: {
                             Text("Sign in to trade")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity)
-                                .frame(minHeight: 44)
+                                .frame(minHeight: PeakLayout.minTap)
                                 .padding(.vertical, 14)
                         }
+                        .buttonStyle(.bordered)
+                        .tint(PeakBrand.mid)
+                        .controlSize(.large)
                         .peakPressable()
                     }
                 }

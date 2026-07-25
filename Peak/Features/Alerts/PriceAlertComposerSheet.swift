@@ -119,7 +119,7 @@ struct PriceAlertComposerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .peakSheetChrome()
     }
 
     private func seedDefaultTarget() {

@@ -65,7 +65,7 @@ struct PeakSignInSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .peakSheetChrome()
         .interactiveDismissDisabled(isBusy)
     }
 
@@ -114,9 +114,13 @@ struct PeakSignInSheet: View {
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
-                        .padding(.vertical, 18)
+                        .padding(.vertical, 16)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(
+                            Color.accentColor,
+                            in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
                     }
                     .peakPressable()
                     .disabled(isBusy || !WalletConnectCredentials.isConfigured)
@@ -175,7 +179,10 @@ struct PeakSignInSheet: View {
                             .autocorrectionDisabled()
                             .font(.body.monospaced())
                             .padding(12)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(
+                                Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                            )
 
                         HStack(spacing: 10) {
                             Button("Paste") {
@@ -248,7 +255,10 @@ struct PeakSignInSheet: View {
                     .autocorrectionDisabled()
                     .textContentType(.emailAddress)
                     .padding(14)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(
+                        Color(.secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                    )
                     .disabled(isBusy)
 
                 if auth.pendingEmail != nil {
@@ -256,7 +266,10 @@ struct PeakSignInSheet: View {
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                         .padding(14)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(
+                            Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                        )
                         .disabled(isBusy)
 
                     Button {
@@ -498,8 +511,12 @@ struct AccountView: View {
     @State private var showImportKey = false
     @State private var showTradingPath = false
 
+    /// Path not chosen yet, or chosen but wallet still not linked / deployed.
     private var needsSetup: Bool {
-        tradingPath.needsPathChoice
+        guard auth.isAuthenticated else { return false }
+        if tradingPath.needsPathChoice { return true }
+        if tradingPath.snapshot.path != nil, !tradingPath.snapshot.syncReady { return true }
+        return false
     }
 
     var body: some View {
@@ -619,7 +636,11 @@ struct AccountView: View {
             }
 
             if needsSetup {
-                Text("One more step. Set up trading to buy and sell.")
+                Text(
+                    tradingPath.needsPathChoice
+                        ? "One more step. Set up trading to buy and sell."
+                        : "Trading setup isn’t finished yet. Tap below to continue."
+                )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else if let message = tradingPath.snapshot.message ?? statusMessage {
@@ -634,11 +655,18 @@ struct AccountView: View {
                     Button {
                         showTradingPath = true
                     } label: {
-                        PeakPrimaryCTA(title: "Set up trading", systemImage: "arrow.triangle.branch")
+                        PeakPrimaryCTA(
+                            title: tradingPath.needsPathChoice ? "Set up trading" : "Continue setup",
+                            systemImage: "arrow.triangle.branch"
+                        )
                     }
                     .peakPressable()
                 } footer: {
-                    Text("Choose a new wallet or connect one you already use.")
+                    Text(
+                        tradingPath.needsPathChoice
+                            ? "Choose a new wallet or connect one you already use."
+                            : "We’ll retry linking your trading wallet."
+                    )
                 }
 
                 Section {

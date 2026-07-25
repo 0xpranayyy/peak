@@ -23,6 +23,15 @@ struct PeakEvent: Identifiable, Hashable, Codable, Sendable {
     var primaryMarket: Market? { markets.first }
     var displayProbability: Double? { primaryMarket?.yesPrice }
 
+    /// Prefer CLOB-enriched odds; else Gamma yes when clearly set (hide bare 0 until enrich).
+    func resolvedDisplayProbability(enriched: Double?) -> Double? {
+        if let enriched, enriched.isFinite, enriched >= 0, enriched <= 1 {
+            return enriched
+        }
+        guard let p = displayProbability, p.isFinite, p > 0, p <= 1 else { return nil }
+        return p
+    }
+
     /// List / rail eligibility (not applied on event-detail deep links).
     var isShowcaseEligible: Bool { MarketShowcase.isShowcaseEligible(self) }
 }

@@ -125,6 +125,6 @@ struct SharePositionSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .peakSheetChrome()
     }
 }

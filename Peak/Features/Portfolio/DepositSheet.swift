@@ -76,13 +76,24 @@ struct DepositSheet: View {
                         }
                         .padding(.vertical, 4)
 
-                        Toggle(isOn: $confirmedSend) {
-                            Text(confirmLabel)
+                        if confirmedSend {
+                            Label(confirmLabel, systemImage: "checkmark.circle.fill")
                                 .font(.subheadline.weight(.medium))
-                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(PeakTradeStyle.buy)
+                                .accessibilityLabel(confirmLabel)
+                        } else {
+                            Button {
+                                confirmedSend = true
+                                PeakHaptics.selection()
+                            } label: {
+                                Text(confirmLabel)
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(PeakTradeStyle.buy)
+                            .accessibilityLabel(confirmLabel)
                         }
-                        .tint(PeakTradeStyle.buy)
-                        .accessibilityLabel(confirmLabel)
                     } header: {
                         Text("Verify destination")
                     } footer: {
@@ -121,7 +132,7 @@ struct DepositSheet: View {
                         if confirmedSend {
                             Text("Scan or copy the full address. Send only \(token) on \(chain.capitalized).")
                         } else {
-                            Text("Confirm \(token) on \(chain.capitalized) above to unlock copy and QR.")
+                            Text("Tap “\(confirmLabel)” above to unlock copy and QR.")
                         }
                     }
                 }
@@ -158,7 +169,7 @@ struct DepositSheet: View {
             .onChange(of: token) { _, _ in clearDepositResult() }
         }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .peakSheetChrome()
     }
 
     private func confirmRow(title: String, value: String) -> some View {
@@ -185,9 +196,9 @@ struct DepositSheet: View {
                     .frame(width: 200, height: 200)
                     .padding(16)
                     .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                     )
                     .accessibilityLabel("QR code for deposit address")

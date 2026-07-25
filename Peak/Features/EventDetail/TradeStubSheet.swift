@@ -438,7 +438,7 @@ struct TradeStubSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .peakSheetChrome()
     }
 
     private func focusAmountSoon() {

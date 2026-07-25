@@ -4,17 +4,19 @@ struct ForYouRailView: View {
     let events: [PeakEvent]
     var title: String = "For you"
     var subtitle: String? = nil
+    /// CLOB-enriched display odds keyed by event id (same map as Markets list).
+    var displayedOdds: [String: Double] = [:]
     var onSelect: (PeakEvent) -> Void
     var onDismiss: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 PeakAppLogo(size: 28, showGlow: false)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.primary)
@@ -31,7 +33,7 @@ struct ForYouRailView: View {
                     Button("Dismiss", action: onDismiss)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(PeakBrand.mid)
-                        .frame(minHeight: 44)
+                        .frame(minHeight: PeakLayout.minTap)
                 }
             }
             .padding(.horizontal, 2)
@@ -45,8 +47,7 @@ struct ForYouRailView: View {
                         } label: {
                             heroCard(event)
                         }
-                        .buttonStyle(.plain)
-                        .peakPressable(haptic: false)
+                        .buttonStyle(.peakPressable(haptic: false))
                         .peakAppear(delay: PeakMotion.staggerDelay(index: index, step: 0.05, cap: 4))
                     }
                 }
@@ -55,9 +56,13 @@ struct ForYouRailView: View {
         }
     }
 
+    private func probability(for event: PeakEvent) -> Double? {
+        event.resolvedDisplayProbability(enriched: displayedOdds[event.id])
+    }
+
     private func heroCard(_ event: PeakEvent) -> some View {
         let isLight = colorScheme == .light
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 6) {
                 if let category = MarketCategory.primaryLabel(for: event) {
                     Text(category.uppercased())
@@ -76,28 +81,28 @@ struct ForYouRailView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 54, alignment: .topLeading)
+                .frame(minHeight: 48, alignment: .topLeading)
 
-            HStack(alignment: .firstTextBaseline) {
-                if let p = event.displayProbability {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let p = probability(for: event) {
                     Text(PeakFormat.cents(p))
                         .font(.title3.monospacedDigit().weight(.bold))
                         .foregroundStyle(.primary)
                         .peakNumeric(value: p)
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 Text(PeakFormat.compactCurrency(event.volume24hr))
-                    .font(.caption.weight(.medium))
+                    .font(.caption.monospacedDigit().weight(.medium))
                     .foregroundStyle(.secondary)
             }
         }
         .padding(14)
-        .frame(width: 220)
+        .frame(width: 220, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
                     .fill(Color(.secondarySystemGroupedBackground))
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [
@@ -112,7 +117,7 @@ struct ForYouRailView: View {
             }
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
                 .strokeBorder(
                     PeakBrand.mid.opacity(isLight ? 0.18 : 0.22),
                     lineWidth: 1

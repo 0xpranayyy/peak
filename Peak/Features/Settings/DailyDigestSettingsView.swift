@@ -29,8 +29,8 @@ struct DailyDigestSettingsView: View {
                             Text(event.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(2)
-                            HStack {
-                                if let p = event.displayProbability {
+                            HStack(alignment: .firstTextBaseline) {
+                                if let p = event.resolvedDisplayProbability(enriched: nil) {
                                     Text(PeakFormat.cents(p))
                                         .font(.caption.monospacedDigit())
                                 }

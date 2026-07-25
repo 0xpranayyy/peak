@@ -1,0 +1,133 @@
+import XCTest
+@testable import Peak
+
+final class TradingErrorMappingTests: XCTestCase {
+    func testInsufficientFundsByCode() {
+        let error = TradingError.fromServerMessage("some raw text", code: "insufficient_funds")
+        guard case .insufficientFunds = error else {
+            return XCTFail("expected .insufficientFunds, got \(error)")
+        }
+    }
+
+    func testInsufficientSharesByMessageText() {
+        let error = TradingError.fromServerMessage("not enough shares to sell", code: nil)
+        guard case .insufficientFunds = error else {
+            return XCTFail("expected .insufficientFunds, got \(error)")
+        }
+    }
+
+    func testBuilderNotReady() {
+        let error = TradingError.fromServerMessage("Builder credentials are missing", code: nil)
+        guard case .builderNotReady = error else {
+            return XCTFail("expected .builderNotReady, got \(error)")
+        }
+    }
+
+    func testNoFill() {
+        let error = TradingError.fromServerMessage("order couldn't be fully filled", code: nil)
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertTrue(message.lowercased().contains("no fill") || message.lowercased().contains("liquidity"))
+    }
+
+    func testMarketClosed() {
+        let error = TradingError.fromServerMessage("market is not accepting orders", code: "market_closed")
+        guard case .marketClosed = error else {
+            return XCTFail("expected .marketClosed, got \(error)")
+        }
+    }
+
+    func testUnauthorizedMapsToNotConfigured() {
+        let error = TradingError.fromServerMessage("unauthorized", code: nil)
+        guard case .notConfigured = error else {
+            return XCTFail("expected .notConfigured, got \(error)")
+        }
+    }
+
+    func testSetupRequired() {
+        let error = TradingError.fromServerMessage("finish trading/setup first", code: nil)
+        guard case .setupRequired = error else {
+            return XCTFail("expected .setupRequired, got \(error)")
+        }
+    }
+
+    func testSetupFailedByCode() {
+        let error = TradingError.fromServerMessage("raw deploy boom", code: "setup_failed")
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertFalse(message.isEmpty)
+    }
+
+    func testSetupRequiredByCode() {
+        let error = TradingError.fromServerMessage("Finish Set up trading first", code: "setup_required")
+        guard case .setupRequired = error else {
+            return XCTFail("expected .setupRequired, got \(error)")
+        }
+    }
+
+    func testEmptyMessageFallsBackToGenericServerError() {
+        let error = TradingError.fromServerMessage("", code: nil)
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertFalse(message.isEmpty)
+    }
+
+    func testUnknownCodeFallsThroughToServer() {
+        let error = TradingError.fromServerMessage("some unmapped upstream failure", code: "totally_unknown")
+        guard case .server = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+    }
+}
+
+final class OpenOrderTests: XCTestCase {
+    func testRemainingNeverGoesNegative() {
+        let order = OpenOrder(
+            id: "1", tokenID: "t", market: nil, side: "BUY",
+            price: 0.5, originalSize: 10, sizeMatched: 15, status: nil
+        )
+        XCTAssertEqual(order.remaining, 0)
+    }
+
+    func testRemainingSubtractsMatchedSize() {
+        let order = OpenOrder(
+            id: "1", tokenID: "t", market: nil, side: "BUY",
+            price: 0.5, originalSize: 10, sizeMatched: 4, status: nil
+        )
+        XCTAssertEqual(order.remaining, 6, accuracy: 0.0001)
+    }
+}
+
+final class TradingPathFlagsTests: XCTestCase {
+    func testRoundTripsThroughServerDict() {
+        var flags = TradingPathFlags()
+        flags.path = "new"
+        flags.signer = "0xabc"
+        flags.accountWallet = "0xdef"
+        flags.walletTypeName = "DEPOSIT_WALLET"
+        flags.syncReady = true
+        flags.needsDeploy = false
+        flags.builderConfigured = true
+        flags.relayerConfigured = false
+
+        let dict = flags.asServerDict()
+        XCTAssertEqual(dict["path"] as? String, "new")
+        XCTAssertEqual(dict["accountWallet"] as? String, "0xdef")
+        XCTAssertEqual(dict["syncReady"] as? Bool, true)
+        XCTAssertEqual(dict["relayerConfigured"] as? Bool, false)
+    }
+
+    func testFromPortfolioRootFallsBackToFunderWhenNoAccountWallet() {
+        let root: [String: Any] = [
+            "path": "existing",
+            "funder": "0xfeeddead",
+            "ready": true,
+        ]
+        let flags = TradingPathFlags.fromPortfolioRoot(root)
+        XCTAssertEqual(flags.accountWallet, "0xfeeddead")
+        XCTAssertEqual(flags.syncReady, true)
+    }
+}

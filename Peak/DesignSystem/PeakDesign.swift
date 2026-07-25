@@ -667,13 +667,28 @@ enum PeakMotion {
     static let appearRowCap = 6
 }
 
+/// Continuous corner radii + touch targets aligned with iOS 26 HIG (not pill spam).
+enum PeakLayout {
+    /// Primary filled CTAs / Buy·Sell trade actions (~14–16 continuous).
+    static let ctaRadius: CGFloat = 14
+    /// Grouped content panels (solid surface — not Liquid Glass).
+    static let cardRadius: CGFloat = 16
+    /// Compact chips, market pickers, text fields.
+    static let controlRadius: CGFloat = 12
+    /// Minimum interactive height (HIG).
+    static let minTap: CGFloat = 44
+}
+
 extension View {
     /// Content sections sit on solid/grouped surfaces — not Liquid Glass (HIG: glass is for chrome).
     func peakContentCard() -> some View {
         self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
+            )
     }
 
     /// Floating controls only — Liquid Glass on iOS 26+ when transparency is allowed.
@@ -689,6 +704,13 @@ extension View {
         } else {
             self
         }
+    }
+
+    /// Sheets: solid grouped canvas for Form/List density; glass stays on system chrome.
+    func peakSheetChrome() -> some View {
+        self
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(.systemGroupedBackground))
     }
 
     /// Soft fade + rise on first appear. Honors Reduce Motion.
@@ -719,7 +741,8 @@ extension View {
     }
 }
 
-/// Primary full-width CTA chrome — one height, radius, and press feel app-wide.
+/// Primary full-width CTA — continuous iOS 26 radius, brand/accent or PeakTradeStyle tint.
+/// Prefer system `.borderedProminent` for simple accent actions; keep this for buy/sell coding.
 struct PeakPrimaryCTA: View {
     let title: String
     var systemImage: String? = nil
@@ -740,12 +763,15 @@ struct PeakPrimaryCTA: View {
         }
         .font(.headline)
         .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .frame(minHeight: 50)
         .background(
             (isEnabled ? color : color.opacity(0.45)),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
         )
+        .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -756,10 +782,25 @@ struct PeakPressableButtonStyle: ButtonStyle {
     var haptic: Bool = true
 
     func makeBody(configuration: Configuration) -> some View {
+        PeakPressableButtonBody(
+            configuration: configuration,
+            scale: scale,
+            haptic: haptic
+        )
+    }
+}
+
+private struct PeakPressableButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    var scale: CGFloat
+    var haptic: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1)
+            .scaleEffect(!reduceMotion && configuration.isPressed ? scale : 1)
             .opacity(configuration.isPressed ? 0.90 : 1)
-            .animation(PeakMotion.press, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : PeakMotion.press, value: configuration.isPressed)
             .onChange(of: configuration.isPressed) { _, pressed in
                 if pressed, haptic { PeakHaptics.press() }
             }

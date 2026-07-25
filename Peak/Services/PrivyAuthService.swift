@@ -242,6 +242,10 @@ final class PrivyAuthService: ObservableObject {
             tradingConfig: tradingConfig,
             tradingPath: TradingPathStore.shared
         )
+        // Incomplete deploy / link — prompt again so the user isn’t stuck without a CTA.
+        if !TradingPathStore.shared.snapshot.syncReady {
+            showTradingPathSheet = true
+        }
     }
 
     /// Sync chosen path with backend (resolve account wallet + optional setup).
@@ -272,8 +276,9 @@ final class PrivyAuthService: ObservableObject {
             wallet.save(eoa)
         }
 
-        // Best-effort setup (deploy / finalize). 503 is OK until Builder keys land.
-        if let setup = try? await TradingProxyClient.setupTrading() {
+        // Deploy / finalize. Must not swallow failures — new path needs syncReady before deposit/trade.
+        do {
+            let setup = try await TradingProxyClient.setupTrading()
             tradingPath.apply(server: setup)
             if let account = setup["accountWallet"] as? String, WalletStore.isValidAddress(account) {
                 wallet.save(account)
@@ -281,9 +286,32 @@ final class PrivyAuthService: ObservableObject {
             return (setup["message"] as? String)
                 ?? (session["message"] as? String)
                 ?? "Trading path saved."
+        } catch let http as TradingProxyClient.HTTPBodyError {
+            tradingPath.apply(server: http.body)
+            if let account = http.body["accountWallet"] as? String, WalletStore.isValidAddress(account) {
+                wallet.save(account)
+            }
+            // Existing path may already be syncReady (view-only / linked) even if CLOB setup failed.
+            if path == .existing, tradingPath.snapshot.syncReady {
+                return (http.body["message"] as? String)
+                    ?? (session["message"] as? String)
+                    ?? "Account linked. Finish wallet setup if trading is still blocked."
+            }
+            throw http.tradingError
+        } catch {
+            // Refresh flags, then surface the failure when the wallet still isn’t ready.
+            if let resolved = try? await TradingProxyClient.resolveTradingAccount(
+                eoa: eoa,
+                path: path.rawValue,
+                accountWallet: accountWalletHint
+            ) {
+                tradingPath.apply(server: resolved)
+            }
+            if path == .existing, tradingPath.snapshot.syncReady {
+                return (session["message"] as? String) ?? "Account linked."
+            }
+            throw error
         }
-
-        return (session["message"] as? String) ?? "Trading path saved."
     }
 
     /// After Share-style key/seed import: prefer the imported EOA for portfolio + trading session.
@@ -304,8 +332,13 @@ final class PrivyAuthService: ObservableObject {
                 wallet.save(account)
             }
         }
-        if let setup = try? await TradingProxyClient.setupTrading() {
+        do {
+            let setup = try await TradingProxyClient.setupTrading()
             TradingPathStore.shared.apply(server: setup)
+        } catch let http as TradingProxyClient.HTTPBodyError {
+            TradingPathStore.shared.apply(server: http.body)
+        } catch {
+            // Import already linked the EOA; setup can finish later from Account.
         }
     }
 

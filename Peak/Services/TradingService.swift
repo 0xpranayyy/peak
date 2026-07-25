@@ -118,7 +118,7 @@ enum TradingError: LocalizedError, Sendable {
         case .marketClosed:
             return "This market is closed or not accepting orders."
         case .setupRequired:
-            return "Set up trading before placing an order."
+            return "Finish Set up trading under Account, then try again."
         case .builderNotReady:
             return "Your wallet isn’t ready yet. Try again in a moment."
         case .insufficientFunds(let message):
@@ -148,6 +148,21 @@ enum TradingError: LocalizedError, Sendable {
         if codeLower == "builder_not_ready" || lower.contains("builder credential") {
             return .builderNotReady
         }
+        if codeLower == "setup_failed" || codeLower == "deploy_failed" {
+            return .server(
+                text.isEmpty
+                    ? "Couldn’t finish wallet setup. Try again."
+                    : Self.sanitizeServerCopy(text, fallback: "Couldn’t finish wallet setup. Try again.")
+            )
+        }
+        if codeLower == "embedded_wallet_required" {
+            return .server(
+                Self.sanitizeServerCopy(
+                    text,
+                    fallback: "Peak needs a trading wallet. Sign in with email or Apple, then try I’m new again."
+                )
+            )
+        }
         if codeLower == "no_fill" || lower.contains("no fill") || lower.contains("liquidity too thin") {
             return .server(
                 text.isEmpty
@@ -155,7 +170,11 @@ enum TradingError: LocalizedError, Sendable {
                     : Self.sanitizeServerCopy(text, fallback: "No fill at this price. Try a limit order or a smaller size.")
             )
         }
-        if codeLower == "setup_required" || lower.contains("trading/setup") || lower.contains("deposit wallet") {
+        if codeLower == "setup_required"
+            || lower.contains("trading/setup")
+            || lower.contains("deposit wallet")
+            || lower.contains("finish setup")
+        {
             return .setupRequired
         }
         if codeLower == "market_closed" || lower.contains("not accepting") {
@@ -345,13 +364,31 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         if let s = root["address"] as? String, !s.isEmpty { return s }
         if let s = root["funder"] as? String, !s.isEmpty { return s }
         if let s = root["accountWallet"] as? String, !s.isEmpty { return s }
-        guard let obj = root["address"] as? [String: Any] else { return nil }
+
+        if let obj = root["address"] as? [String: Any], let nested = addressFromBridgeObject(obj, chain: chain) {
+            return nested
+        }
+        if let obj = root["depositAddress"] as? [String: Any], let nested = addressFromBridgeObject(obj, chain: chain) {
+            return nested
+        }
+        // Some Bridge payloads nest under `addresses` / `data`.
+        if let obj = root["addresses"] as? [String: Any], let nested = addressFromBridgeObject(obj, chain: chain) {
+            return nested
+        }
+        if let data = root["data"] as? [String: Any] {
+            return pickDepositAddress(from: data, chain: chain)
+        }
+        return nil
+    }
+
+    private static func addressFromBridgeObject(_ obj: [String: Any], chain: String) -> String? {
         let c = chain.lowercased()
         if c == "solana" || c == "svm", let s = obj["svm"] as? String, !s.isEmpty { return s }
         if c == "bitcoin" || c == "btc", let s = obj["btc"] as? String, !s.isEmpty { return s }
         if c == "tron" || c == "tvm", let s = obj["tvm"] as? String, !s.isEmpty { return s }
         if let s = obj["evm"] as? String, !s.isEmpty { return s }
         if let s = obj["address"] as? String, !s.isEmpty { return s }
+        if let s = obj["depositAddress"] as? String, !s.isEmpty { return s }
         return nil
     }
 
