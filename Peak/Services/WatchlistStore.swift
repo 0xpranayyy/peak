@@ -46,6 +46,11 @@ final class WatchlistStore: ObservableObject {
         persist()
     }
 
+    func clearAll() {
+        eventIDs = []
+        persist()
+    }
+
     private func persist() {
         UserDefaults.standard.set(eventIDs, forKey: key)
     }

@@ -4,12 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check sessionStore.mjs && node --check tradingSetup.mjs && node --check polymarketAccount.mjs && node --check privyViemAccount.mjs && node --check legalPages.mjs && node --check check-align.mjs && node check-align.mjs"
   },
   "dependencies": {
+    "@polymarket/builder-relayer-client": "^0.0.10",
+    "@polymarket/builder-signing-sdk": "^1.0.0",
     "@polymarket/clob-client-v2": "latest",
+    "@privy-io/node": "^0.27.0",
+    "@scure/bip32": "^2.2.0",
+    "@scure/bip39": "^2.2.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.6.0",
     "viem": "^2.21.0"
   }
 }

@@ -17,19 +17,24 @@ final class WatchlistViewModel: ObservableObject {
 
         var loaded: [PeakEvent] = []
         var failures = 0
+        var lastError: Error?
         for id in ids {
             do {
                 let event = try await GammaAPI.fetchEvent(id: id)
                 loaded.append(event)
             } catch {
                 failures += 1
+                lastError = error
             }
         }
         // Preserve watchlist order
         let map = Dictionary(uniqueKeysWithValues: loaded.map { ($0.id, $0) })
         events = ids.compactMap { map[$0] }
         if events.isEmpty && failures > 0 {
-            errorMessage = "Couldn’t load watchlist events."
+            errorMessage = PeakUserCopy.fromError(
+                lastError ?? URLError(.cannotConnectToHost),
+                fallback: "Couldn’t load watchlist. Try again."
+            )
         } else {
             errorMessage = nil
         }
@@ -45,10 +50,13 @@ struct WatchlistView: View {
             Group {
                 if env.watchlist.eventIDs.isEmpty {
                     EmptyStateView(
-                        systemImage: "star",
+                        kind: .watchlist,
                         title: "No watchlist yet",
-                        message: "Star an event to keep an eye on it."
-                    )
+                        message: "Star an event from Markets to keep an eye on it.",
+                        actionTitle: "Browse markets"
+                    ) {
+                        PeakRootTab.select(.markets)
+                    }
                 } else if model.isLoading && model.events.isEmpty {
                     ProgressView("Loading watchlist…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -79,6 +87,7 @@ struct WatchlistView: View {
             }
             .background(PeakMaterialBackground())
             .navigationTitle("Watchlist")
+            .navigationBarTitleDisplayMode(.large)
             .peakChrome()
             .navigationDestination(for: PeakEvent.self) { event in
                 EventDetailView(eventID: event.id, seed: event)
@@ -88,6 +97,7 @@ struct WatchlistView: View {
             }
             .refreshable {
                 await model.reload(ids: env.watchlist.eventIDs)
+                PeakHaptics.refresh()
             }
         }
     }

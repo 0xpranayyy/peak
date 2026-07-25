@@ -19,6 +19,9 @@ enum MarketSort: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Gamma `order` / `ascending` for Polymarket-style discovery.
+    /// Always combined with `active=true&closed=false&archived=false` on list endpoints.
+    /// Trending uses 24h volume (`volume24hr`) — the same ranking Polymarket showcase widgets use.
     var queryItems: [URLQueryItem] {
         switch self {
         case .trending:
@@ -69,6 +72,7 @@ enum GammaAPI {
         let negRisk: Bool?
         let active: Bool?
         let closed: Bool?
+        let archived: Bool?
         let image: String?
         let icon: String?
         let events: [GammaEventLiteDTO]?
@@ -79,6 +83,7 @@ enum GammaAPI {
             let tokens = clobTokenIds?.values ?? []
             let outcomes = self.outcomes?.values ?? ["Yes", "No"]
             let lite = events?.first
+            let isArchived = archived == true
             return Market(
                 id: id,
                 question: question,
@@ -92,8 +97,8 @@ enum GammaAPI {
                 liquidity: liquidity?.value ?? liquidityNum?.value ?? 0,
                 endDate: endDate.flatMap(Self.parseDate),
                 negRisk: negRisk ?? false,
-                active: active ?? true,
-                closed: closed ?? false,
+                active: isArchived ? false : (active ?? true),
+                closed: isArchived ? true : (closed ?? false),
                 eventId: eventId ?? lite?.id,
                 eventTitle: eventTitle ?? lite?.title,
                 imageURL: (image ?? icon).flatMap(URL.init(string:))
@@ -119,10 +124,14 @@ enum GammaAPI {
         let description: String?
         let image: String?
         let icon: String?
+        let startDate: String?
         let endDate: String?
         let volume: FlexibleDouble?
         let volume24hr: FlexibleDouble?
         let liquidity: FlexibleDouble?
+        let active: Bool?
+        let closed: Bool?
+        let archived: Bool?
         let tags: [GammaTagDTO]?
         let markets: [GammaMarketDTO]?
 
@@ -135,16 +144,27 @@ enum GammaAPI {
                 title: title,
                 description: description,
                 imageURL: (image ?? icon).flatMap(URL.init(string:)),
-                endDate: endDate.flatMap {
-                    ISO8601DateFormatter.peakFractional.date(from: $0)
-                        ?? ISO8601DateFormatter.peak.date(from: $0)
-                },
+                startDate: startDate.flatMap(Self.parseDate),
+                endDate: endDate.flatMap(Self.parseDate),
                 volume: volume?.value ?? 0,
                 volume24hr: volume24hr?.value ?? 0,
                 liquidity: liquidity?.value ?? 0,
                 tags: (tags ?? []).compactMap(\.asTag),
                 markets: mappedMarkets
             )
+        }
+
+        /// Event-level flags from Gamma (list safety; detail still maps via `asEvent()`).
+        var isListEligible: Bool {
+            if archived == true { return false }
+            if closed == true { return false }
+            if active == false { return false }
+            return true
+        }
+
+        private static func parseDate(_ raw: String) -> Date? {
+            ISO8601DateFormatter.peakFractional.date(from: raw)
+                ?? ISO8601DateFormatter.peak.date(from: raw)
         }
     }
 
@@ -203,6 +223,15 @@ enum GammaAPI {
 
     // MARK: - Endpoints
 
+    /// Shared live-feed filters for Gamma list endpoints (Polymarket showcase).
+    private static var showcaseQueryItems: [URLQueryItem] {
+        [
+            .init(name: "active", value: "true"),
+            .init(name: "closed", value: "false"),
+            .init(name: "archived", value: "false"),
+        ]
+    }
+
     static func fetchTags(limit: Int = 40) async throws -> [MarketTag] {
         let url = PeakAPIBase.gamma.appendingPathComponent("tags")
         let raw: [GammaTagDTO] = try await APIClient.shared.get(
@@ -216,26 +245,106 @@ enum GammaAPI {
         return raw.compactMap(\.asTag).filter { seen.insert($0.id).inserted }
     }
 
-    static func fetchEvents(
+    /// Paginated showcase events. Applies server filters then `MarketShowcase` client safety net.
+    /// `canLoadMore` uses the pre-filter page size so pagination does not stall when a few stale rows are dropped.
+    static func fetchEventsPage(
         limit: Int = 20,
         offset: Int = 0,
         sort: MarketSort = .trending,
-        tagSlug: String? = nil
-    ) async throws -> [PeakEvent] {
+        tagSlug: String? = nil,
+        forceFresh: Bool = false
+    ) async throws -> (events: [PeakEvent], canLoadMore: Bool) {
         var query: [URLQueryItem] = [
             .init(name: "limit", value: String(limit)),
             .init(name: "offset", value: String(offset)),
-            .init(name: "active", value: "true"),
-            .init(name: "closed", value: "false"),
-        ] + sort.queryItems
+        ] + showcaseQueryItems + sort.queryItems
         if let tagSlug, !tagSlug.isEmpty {
             query.append(.init(name: "tag_slug", value: tagSlug))
         }
         let url = PeakAPIBase.gamma.appendingPathComponent("events")
-        let raw: [GammaEventDTO] = try await APIClient.shared.get(url, query: query)
-        return raw.compactMap { $0.asEvent() }.filter { !$0.markets.isEmpty }
+        let raw: [GammaEventDTO]
+        if forceFresh {
+            raw = try await APIClient.shared.getFresh(url, query: query)
+        } else {
+            raw = try await APIClient.shared.get(url, query: query)
+        }
+        let mapped = raw
+            .filter(\.isListEligible)
+            .compactMap { $0.asEvent() }
+            .filter { !$0.markets.isEmpty }
+        let events = MarketShowcase.filter(mapped)
+        return (events, raw.count >= limit)
     }
 
+    static func fetchEvents(
+        limit: Int = 20,
+        offset: Int = 0,
+        sort: MarketSort = .trending,
+        tagSlug: String? = nil,
+        forceFresh: Bool = false
+    ) async throws -> [PeakEvent] {
+        try await fetchEventsPage(
+            limit: limit,
+            offset: offset,
+            sort: sort,
+            tagSlug: tagSlug,
+            forceFresh: forceFresh
+        ).events
+    }
+
+    /// Tries primary + alternate category slugs until a non-empty page is found (offset 0 only).
+    static func fetchEventsPage(
+        category: MarketCategory,
+        limit: Int = 20,
+        offset: Int = 0,
+        sort: MarketSort = .trending,
+        forceFresh: Bool = false
+    ) async throws -> (events: [PeakEvent], canLoadMore: Bool) {
+        if offset > 0 {
+            return try await fetchEventsPage(
+                limit: limit,
+                offset: offset,
+                sort: sort,
+                tagSlug: category.slug,
+                forceFresh: forceFresh
+            )
+        }
+        var lastError: Error?
+        for slug in category.querySlugs {
+            do {
+                let page = try await fetchEventsPage(
+                    limit: limit,
+                    offset: 0,
+                    sort: sort,
+                    tagSlug: slug,
+                    forceFresh: forceFresh
+                )
+                if !page.events.isEmpty { return page }
+            } catch {
+                lastError = error
+            }
+        }
+        if let lastError { throw lastError }
+        return ([], false)
+    }
+
+    static func fetchEvents(
+        category: MarketCategory,
+        limit: Int = 20,
+        offset: Int = 0,
+        sort: MarketSort = .trending,
+        forceFresh: Bool = false
+    ) async throws -> [PeakEvent] {
+        try await fetchEventsPage(
+            category: category,
+            limit: limit,
+            offset: offset,
+            sort: sort,
+            forceFresh: forceFresh
+        ).events
+    }
+
+    /// Single event by id — includes closed/resolved markets for deep links / positions.
     static func fetchEvent(id: String) async throws -> PeakEvent {
         let url = PeakAPIBase.gamma.appendingPathComponent("events").appendingPathComponent(id)
         let raw: GammaEventDTO = try await APIClient.shared.get(url)
@@ -252,11 +361,9 @@ enum GammaAPI {
         let query: [URLQueryItem] = [
             .init(name: "limit", value: String(limit)),
             .init(name: "offset", value: String(offset)),
-            .init(name: "active", value: "true"),
-            .init(name: "closed", value: "false"),
-        ] + sort.queryItems
+        ] + showcaseQueryItems + sort.queryItems
         let raw: [GammaMarketDTO] = try await APIClient.shared.get(url, query: query)
-        return raw.compactMap { $0.asMarket() }
+        return MarketShowcase.filter(raw.compactMap { $0.asMarket() })
     }
 
     struct SearchResult: Sendable {
@@ -287,7 +394,8 @@ enum GammaAPI {
 
         let events: [PeakEvent] = eventRows.compactMap { dict in
             guard let data = try? JSONSerialization.data(withJSONObject: dict),
-                  let dto = try? JSONDecoder().decode(GammaEventDTO.self, from: data) else { return nil }
+                  let dto = try? JSONDecoder().decode(GammaEventDTO.self, from: data),
+                  dto.isListEligible else { return nil }
             return dto.asEvent()
         }
 
@@ -303,6 +411,10 @@ enum GammaAPI {
 
         var seen = Set<String>()
         let uniqueMarkets = markets.filter { seen.insert($0.id).inserted }
-        return SearchResult(events: events, markets: uniqueMarkets)
+        // Keep search consistent with showcase feeds: no closed / expired rows.
+        return SearchResult(
+            events: MarketShowcase.filter(events),
+            markets: MarketShowcase.filter(uniqueMarkets)
+        )
     }
 }

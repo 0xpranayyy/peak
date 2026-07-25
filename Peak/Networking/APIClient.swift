@@ -7,12 +7,16 @@ enum APIError: LocalizedError, Sendable {
     case emptyResponse
 
     var errorDescription: String? {
+        #if DEBUG
         switch self {
         case .invalidURL: return "Invalid URL."
         case .badStatus(let code): return "Server returned status \(code)."
         case .decoding(let error): return "Couldn’t decode response: \(error.localizedDescription)"
         case .emptyResponse: return "Empty response."
         }
+        #else
+        return "Couldn’t load. Try again."
+        #endif
     }
 }
 
@@ -22,8 +26,24 @@ actor APIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 12
+            config.timeoutIntervalForResource = 20
+            config.waitsForConnectivity = false
+            config.httpMaximumConnectionsPerHost = 8
+            config.requestCachePolicy = .useProtocolCachePolicy
+            config.urlCache = URLCache(
+                memoryCapacity: 25 * 1024 * 1024,
+                diskCapacity: 120 * 1024 * 1024,
+                diskPath: "peak-url-cache"
+            )
+            self.session = URLSession(configuration: config)
+        }
+
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
@@ -42,16 +62,11 @@ actor APIClient {
         query: [URLQueryItem] = [],
         as type: T.Type = T.self
     ) async throws -> T {
-        var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        if !query.isEmpty {
-            var items = comps?.queryItems ?? []
-            items.append(contentsOf: query)
-            comps?.queryItems = items
-        }
-        guard let final = comps?.url else { throw APIError.invalidURL }
+        let final = try Self.makeURL(url, query: query)
         var request = URLRequest(url: final)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30
+        request.timeoutInterval = 12
+        request.cachePolicy = .useProtocolCachePolicy
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
@@ -65,6 +80,42 @@ actor APIClient {
     }
 
     func getData(_ url: URL, query: [URLQueryItem] = []) async throws -> Data {
+        let final = try Self.makeURL(url, query: query)
+        var request = URLRequest(url: final)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 12
+        request.cachePolicy = .useProtocolCachePolicy
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw APIError.badStatus(http.statusCode)
+        }
+        return data
+    }
+
+    /// Bypass HTTP cache for pull-to-refresh / forced updates.
+    func getFresh<T: Decodable>(
+        _ url: URL,
+        query: [URLQueryItem] = [],
+        as type: T.Type = T.self
+    ) async throws -> T {
+        let final = try Self.makeURL(url, query: query)
+        var request = URLRequest(url: final)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 12
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw APIError.badStatus(http.statusCode)
+        }
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(error)
+        }
+    }
+
+    private static func makeURL(_ url: URL, query: [URLQueryItem]) throws -> URL {
         var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
         if !query.isEmpty {
             var items = comps?.queryItems ?? []
@@ -72,13 +123,7 @@ actor APIClient {
             comps?.queryItems = items
         }
         guard let final = comps?.url else { throw APIError.invalidURL }
-        var request = URLRequest(url: final)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw APIError.badStatus(http.statusCode)
-        }
-        return data
+        return final
     }
 }
 

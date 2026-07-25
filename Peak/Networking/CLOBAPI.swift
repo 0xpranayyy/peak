@@ -139,10 +139,10 @@ enum CLOBAPI {
         }
     }
 
-    /// CLOB-level market parameters for a condition id.
+    /// CLOB-level market parameters for a condition id (`GET /markets/{condition_id}`).
     static func fetchClobMarketInfo(conditionID: String) async throws -> ClobMarketInfo {
         let url = PeakAPIBase.clob
-            .appendingPathComponent("clob-markets")
+            .appendingPathComponent("markets")
             .appendingPathComponent(conditionID)
         return try await APIClient.shared.get(url)
     }

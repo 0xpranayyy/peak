@@ -42,6 +42,7 @@ struct TrendingProvider: TimelineProvider {
             .init(name: "limit", value: "1"),
             .init(name: "active", value: "true"),
             .init(name: "closed", value: "false"),
+            .init(name: "archived", value: "false"),
             .init(name: "order", value: "volume24hr"),
             .init(name: "ascending", value: "false"),
         ]
@@ -87,7 +88,9 @@ struct TrendingMarketWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "PeakTrendingMarket", provider: TrendingProvider()) { entry in
             TrendingWidgetView(entry: entry)
-                .containerBackground(.background, for: .widget)
+                .containerBackground(for: .widget) {
+                    Color(red: 0.05, green: 0.12, blue: 0.14)
+                }
         }
         .configurationDisplayName("Trending market")
         .description("Top Polymarket market by 24h volume.")
@@ -100,35 +103,46 @@ struct TrendingWidgetView: View {
     let entry: TrendingEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("PEAK")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(entry.volume)
-                    .font(.caption2.monospacedDigit().weight(.medium))
-                    .foregroundStyle(.secondary)
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.06, green: 0.16, blue: 0.18),
+                    Color(red: 0.08, green: 0.22, blue: 0.24),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("PEAK")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color(red: 0.55, green: 0.9, blue: 0.78))
+                    Spacer()
+                    Text(entry.volume)
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+
+                Spacer(minLength: 0)
+
+                Text(entry.question)
+                    .font(family == .systemSmall ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(family == .systemSmall ? 3 : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(entry.cents)¢")
+                        .font(.system(size: family == .systemSmall ? 28 : 34, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                    Text("Yes")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
             }
-
-            Spacer(minLength: 0)
-
-            Text(entry.question)
-                .font(family == .systemSmall ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(family == .systemSmall ? 3 : 2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(entry.cents)¢")
-                    .font(.system(size: family == .systemSmall ? 28 : 34, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.primary)
-                Text("Yes")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
+            .padding(4)
         }
-        .padding(4)
     }
 }
 

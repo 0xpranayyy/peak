@@ -18,4 +18,16 @@ xcuserdata/
 
 # Peak trading proxy secrets
 backend/.env
+backend/.env.*
+!backend/.env.example
 backend/node_modules/
+backend/.sessions.json
+backend/*.sessions.json
+backend/.sessions*.json
+
+# Local Privy / trading secrets (never commit)
+Peak/PrivySecrets.local.plist
+**/PrivySecrets.local.plist
+*.pem
+*.p12
+*.key

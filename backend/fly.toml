@@ -1,0 +1,44 @@
+# Peak trading API — Fly.io template.
+# Create the app once:  fly apps create <your-app-name>
+# Then set secrets from .env.example and deploy:  fly deploy
+#
+# Replace `app` with your Fly app name before first deploy.
+
+app = "peak-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  TRUST_PROXY = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health/live"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Attach a volume and set PEAK_SESSION_STORE=/data/sessions.json so sessions survive restarts:
+#   fly volumes create peak_sessions --region iad --size 1
+#   fly secrets set PEAK_SESSION_STORE=/data/sessions.json
+# Then uncomment:
+# [mounts]
+#   source = "peak_sessions"
+#   destination = "/data"

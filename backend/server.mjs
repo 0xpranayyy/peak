@@ -1,10 +1,22 @@
-// Peak trading proxy — Polymarket CLOB V2.
-// Holds PRIVATE_KEY / CLOB creds so the iOS app never stores a trading key.
+// Peak trading API — legacy one-wallet proxy + Privy per-user sessions.
+// Builder credentials unlock Deposit Wallet deploy / CLOB for Privy users.
 import "dotenv/config";
 import express from "express";
-import { ClobClient, Side, OrderType, SignatureTypeV2 } from "@polymarket/clob-client-v2";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
+import { PrivyClient } from "@privy-io/node";
+import { ClobClient, Side, OrderType, SignatureTypeV2, AssetType } from "@polymarket/clob-client-v2";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { resolvePolymarketAccount } from "./polymarketAccount.mjs";
+import { loadSessions, getSession, setSession, sessions } from "./sessionStore.mjs";
+import {
+  deployOrLinkDepositWallet,
+  createUserClobClient,
+  signatureTypeFromWalletName,
+} from "./tradingSetup.mjs";
+import { createPrivyWalletClient, findEmbeddedWalletId } from "./privyViemAccount.mjs";
+import { mountLegalPages } from "./legalPages.mjs";
 
 const {
   PORT = 8080,
@@ -16,24 +28,65 @@ const {
   CLOB_API_SECRET,
   CLOB_API_PASSPHRASE,
   POLY_BUILDER_CODE,
+  POLYMARKET_BUILDER_API_KEY,
+  POLYMARKET_BUILDER_SECRET,
+  POLYMARKET_BUILDER_PASSPHRASE,
+  PRIVY_APP_ID,
+  PRIVY_APP_SECRET,
+  POLYGON_RPC_URL,
+  RELAYER_API_KEY,
+  RELAYER_API_KEY_ADDRESS,
+  POLYMARKET_RELAYER_URL,
+  PEAK_PRIVY_AUTH_KEY,
+  CORS_ORIGINS = "",
+  TRUST_PROXY = "",
+  RATE_LIMIT_WINDOW_MS = "60000",
+  RATE_LIMIT_MAX = "120",
 } = process.env;
-
-if (!APP_TOKEN || !PRIVATE_KEY || !FUNDER_ADDRESS) {
-  console.error("Missing APP_TOKEN / PRIVATE_KEY / FUNDER_ADDRESS in .env");
-  process.exit(1);
-}
 
 const HOST = "https://clob.polymarket.com";
 const DATA = "https://data-api.polymarket.com";
 const BRIDGE = "https://bridge.polymarket.com";
 const CHAIN_ID = 137;
 
-const account = privateKeyToAccount(PRIVATE_KEY);
-const signer = createWalletClient({ account, transport: http() });
+const legacyEnabled = Boolean(APP_TOKEN && PRIVATE_KEY && FUNDER_ADDRESS);
+const privyEnabled = Boolean(PRIVY_APP_ID && PRIVY_APP_SECRET);
+const builderConfigured = Boolean(
+  POLYMARKET_BUILDER_API_KEY && POLYMARKET_BUILDER_SECRET && POLYMARKET_BUILDER_PASSPHRASE
+);
+const relayerConfigured = Boolean(RELAYER_API_KEY && RELAYER_API_KEY_ADDRESS);
 
-let client;
+if (!legacyEnabled && !privyEnabled) {
+  console.error("Configure either legacy APP_TOKEN/PRIVATE_KEY/FUNDER_ADDRESS or PRIVY_APP_ID/PRIVY_APP_SECRET");
+  process.exit(1);
+}
 
-async function initClient() {
+const privy = privyEnabled
+  ? new PrivyClient({ appId: PRIVY_APP_ID, appSecret: PRIVY_APP_SECRET })
+  : null;
+
+const tradingCfg = {
+  builderConfigured,
+  relayerConfigured,
+  builderKey: POLYMARKET_BUILDER_API_KEY,
+  builderSecret: POLYMARKET_BUILDER_SECRET,
+  builderPassphrase: POLYMARKET_BUILDER_PASSPHRASE,
+  polygonRpcUrl: POLYGON_RPC_URL,
+  relayerUrl: POLYMARKET_RELAYER_URL,
+};
+
+loadSessions();
+
+let legacyClient;
+
+async function initLegacyClient() {
+  if (!legacyEnabled) return;
+  const account = privateKeyToAccount(PRIVATE_KEY);
+  const signer = createWalletClient({
+    account,
+    transport: http(POLYGON_RPC_URL || undefined),
+  });
+
   let creds =
     CLOB_API_KEY && CLOB_API_SECRET && CLOB_API_PASSPHRASE
       ? { key: CLOB_API_KEY, secret: CLOB_API_SECRET, passphrase: CLOB_API_PASSPHRASE }
@@ -48,7 +101,7 @@ async function initClient() {
   const signatureType =
     Number(SIGNATURE_TYPE) === 3 ? SignatureTypeV2.POLY_1271 : Number(SIGNATURE_TYPE);
 
-  client = new ClobClient({
+  legacyClient = new ClobClient({
     host: HOST,
     chain: CHAIN_ID,
     signer,
@@ -57,23 +110,321 @@ async function initClient() {
     funderAddress: FUNDER_ADDRESS,
   });
 
-  console.log("CLOB ready. Funder:", FUNDER_ADDRESS, "Signer:", account.address);
+  console.log("Legacy CLOB ready. Funder:", FUNDER_ADDRESS, "Signer:", account.address);
 }
 
 const app = express();
-app.use(express.json());
+if (/^(1|true|yes)$/i.test(String(TRUST_PROXY))) {
+  app.set("trust proxy", 1);
+}
+
+app.use(express.json({ limit: "64kb" }));
+
+// CORS: off when CORS_ORIGINS is empty (mobile-safe default). When set, allow-list only.
+// Native apps / curl send no Origin — those stay allowed. Never honor "*".
+function parseCorsOrigins(raw) {
+  const parsed = String(raw || "")
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter(Boolean)
+    .filter((o) => o !== "*");
+  // Keep https://… and local http://localhost|127.0.0.1 only (secure default when set).
+  return parsed.filter((o) => {
+    try {
+      const u = new URL(o);
+      const local = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+      if (u.protocol === "https:") return true;
+      if (u.protocol === "http:" && local) return true;
+      console.warn(`CORS_ORIGINS: dropping insecure/non-https origin: ${o}`);
+      return false;
+    } catch {
+      console.warn(`CORS_ORIGINS: invalid origin skipped: ${o}`);
+      return false;
+    }
+  });
+}
+const corsOrigins = parseCorsOrigins(CORS_ORIGINS);
+app.use(
+  cors({
+    origin: corsOrigins.length
+      ? (origin, cb) => {
+          // No Origin = native app / server-to-server — not a browser CORS threat.
+          if (!origin) return cb(null, true);
+          if (corsOrigins.includes(origin.replace(/\/$/, ""))) return cb(null, true);
+          return cb(new Error("CORS origin not allowed"));
+        }
+      : false,
+    credentials: Boolean(corsOrigins.length),
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-Peak-Auth"],
+  })
+);
+
+const windowMs = Math.max(1000, Number(RATE_LIMIT_WINDOW_MS) || 60_000);
+const maxReqs = Math.max(10, Number(RATE_LIMIT_MAX) || 120);
+app.use(
+  rateLimit({
+    windowMs,
+    max: maxReqs,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests" },
+    skip: (req) => req.path === "/health" || req.path === "/health/live",
+  })
+);
+
+// Request logging — method/path/status/duration only (never Authorization or bodies)
 app.use((req, res, next) => {
-  if (req.headers.authorization !== `Bearer ${APP_TOKEN}`) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
+  const start = Date.now();
+  res.on("finish", () => {
+    console.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+  });
   next();
 });
 
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
-    console.error(e);
+    console.error(e?.message ?? e);
     res.status(500).json({ error: String(e?.message ?? e) });
   });
+
+/** Resolve a Privy-backed viem wallet client for the session. */
+async function walletClientForSession(session) {
+  let walletId = session.walletId;
+  if (!walletId && privy) {
+    walletId = await findEmbeddedWalletId(privy, session.userId, session.eoa);
+    if (walletId) {
+      setSession(session.userId, { ...session, walletId });
+      session.walletId = walletId;
+    }
+  }
+  if (!walletId) {
+    throw new Error(
+      "No Privy embedded wallet id for this user. Social/email users need an embedded wallet; WalletConnect users must use an existing Polymarket account or import a key."
+    );
+  }
+  return createPrivyWalletClient({
+    privy,
+    walletId,
+    address: session.eoa,
+    rpcUrl: POLYGON_RPC_URL,
+    authorizationKey: PEAK_PRIVY_AUTH_KEY,
+  });
+}
+
+async function ensureUserClob(session) {
+  if (session.clobClient) return session.clobClient;
+  const funder = session.accountWallet || session.eoa;
+  const walletClient = await walletClientForSession(session);
+  const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
+  const client = await createUserClobClient({
+    walletClient,
+    funderAddress: funder,
+    signatureType: sigType,
+  });
+  setSession(session.userId, { ...session, clobClient: client, ready: true });
+  return client;
+}
+
+/** Pull a readable string from CLOB / Axios / ApiError shapes. */
+function extractClobError(err) {
+  if (!err) return "Order failed";
+  const data = err.data ?? err.response?.data;
+  if (typeof data === "string" && data.trim()) return data.trim();
+  if (data && typeof data === "object") {
+    const nested =
+      data.errorMsg ||
+      data.error ||
+      data.message ||
+      (typeof data.error_message === "string" ? data.error_message : data.error_message?.error);
+    if (nested) return String(nested);
+  }
+  if (err.errorMsg) return String(err.errorMsg);
+  if (err.message) return String(err.message);
+  return String(err);
+}
+
+/**
+ * Map raw CLOB / proxy errors to actionable copy for the iOS client.
+ * @returns {{ error: string, code: string, status: number }}
+ */
+function mapOrderError(raw, { balanceUSD = null } = {}) {
+  const text = String(raw || "").trim();
+  const lower = text.toLowerCase();
+
+  if (
+    lower.includes("not enough balance") ||
+    lower.includes("insufficient") ||
+    lower.includes("balance / allowance") ||
+    lower.includes("allowance")
+  ) {
+    const balNote =
+      balanceUSD != null && Number.isFinite(balanceUSD)
+        ? ` Available cash: $${balanceUSD.toFixed(2)}.`
+        : "";
+    return {
+      error: `Insufficient funds or allowance.${balNote} Deposit USDC / pUSD to your trading wallet, then try again.`,
+      code: "insufficient_funds",
+      status: 400,
+    };
+  }
+  if (lower.includes("no match") || lower.includes("couldn't be fully filled") || lower.includes("fok")) {
+    return {
+      error: "No fill at this price (liquidity too thin). Try a limit order or a smaller size.",
+      code: "no_fill",
+      status: 400,
+    };
+  }
+  if (lower.includes("closed") || lower.includes("not accepting") || lower.includes("inactive")) {
+    return {
+      error: "This market is closed or not accepting orders.",
+      code: "market_closed",
+      status: 400,
+    };
+  }
+  if (lower.includes("builder")) {
+    return {
+      error: "Trading isn’t ready yet — Builder credentials are missing on the Peak backend.",
+      code: "builder_not_ready",
+      status: 503,
+    };
+  }
+  if (lower.includes("tick") || lower.includes("invalid price") || lower.includes("min size")) {
+    return {
+      error: "Invalid price or size for this market. Adjust the amount or limit price.",
+      code: "invalid_order",
+      status: 400,
+    };
+  }
+
+  return {
+    error: text || "Order failed",
+    code: "order_failed",
+    status: 400,
+  };
+}
+
+/** CLOB collateral balance is typically 6-decimal micro-units when very large. */
+function normalizeCollateralUSD(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return n > 100_000 ? n / 1_000_000 : n;
+}
+
+function normalizeShareBalance(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  // Conditional token balances are often 6-decimal fixed-point.
+  return n > 1_000_000 ? n / 1_000_000 : n;
+}
+
+async function fetchCollateralBalance(client) {
+  try {
+    await client.updateBalanceAllowance?.({ asset_type: AssetType.COLLATERAL }).catch(() => {});
+    const bal = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    return {
+      raw: bal,
+      usd: normalizeCollateralUSD(bal?.balance),
+    };
+  } catch {
+    return { raw: null, usd: null };
+  }
+}
+
+async function fetchConditionalBalance(client, tokenID) {
+  try {
+    await client
+      .updateBalanceAllowance?.({ asset_type: AssetType.CONDITIONAL, token_id: tokenID })
+      .catch(() => {});
+    const bal = await client.getBalanceAllowance({
+      asset_type: AssetType.CONDITIONAL,
+      token_id: tokenID,
+    });
+    return {
+      raw: bal,
+      shares: normalizeShareBalance(bal?.balance),
+    };
+  } catch {
+    return { raw: null, shares: null };
+  }
+}
+
+/**
+ * Place a CLOB order. FOK/FAK → market order (amount); GTC/GTD → limit (price+size).
+ */
+async function placeClobOrder(client, body) {
+  const {
+    tokenID,
+    price,
+    size,
+    amount,
+    side,
+    orderType = "FOK",
+    tickSize,
+    negRisk,
+  } = body;
+
+  const sideEnum = String(side).toUpperCase() === "SELL" ? Side.SELL : Side.BUY;
+  const typeKey = String(orderType || "FOK").toUpperCase();
+  const isMarket = typeKey === "FOK" || typeKey === "FAK";
+
+  const [resolvedTick, resolvedNegRisk] = await Promise.all([
+    tickSize ?? client.getTickSize(tokenID),
+    negRisk ?? client.getNegRisk(tokenID),
+  ]);
+  const opts = { tickSize: String(resolvedTick), negRisk: Boolean(resolvedNegRisk) };
+  const builder = POLY_BUILDER_CODE ? { builderCode: POLY_BUILDER_CODE } : {};
+
+  let result;
+  if (isMarket) {
+    const marketAmount =
+      amount != null && Number(amount) > 0
+        ? Number(amount)
+        : sideEnum === Side.BUY
+          ? Number(size) * Number(price)
+          : Number(size);
+    if (!(marketAmount > 0)) {
+      const err = new Error("Invalid order amount");
+      err.code = "invalid_order";
+      throw err;
+    }
+    result = await client.createAndPostMarketOrder(
+      {
+        tokenID,
+        amount: marketAmount,
+        side: sideEnum,
+        price: price != null ? Number(price) : undefined,
+        orderType: OrderType[typeKey] ?? OrderType.FOK,
+        ...builder,
+      },
+      opts,
+      OrderType[typeKey] ?? OrderType.FOK
+    );
+  } else {
+    result = await client.createAndPostOrder(
+      {
+        tokenID,
+        price: Number(price),
+        size: Number(size),
+        side: sideEnum,
+        ...builder,
+      },
+      opts,
+      OrderType[typeKey] ?? OrderType.GTC
+    );
+  }
+
+  if (result && result.success === false) {
+    const mapped = mapOrderError(result.errorMsg || result.error || result.status || "Order rejected");
+    const err = new Error(mapped.error);
+    err.code = mapped.code;
+    err.httpStatus = mapped.status;
+    err.clob = result;
+    throw err;
+  }
+
+  return result;
+}
 
 const getJSON = async (url, opts) => {
   const r = await fetch(url, opts);
@@ -81,90 +432,776 @@ const getJSON = async (url, opts) => {
   return r.json();
 };
 
+async function authenticate(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+
+  // Legacy static token
+  if (legacyEnabled && token === APP_TOKEN) {
+    req.auth = { mode: "legacy" };
+    return next();
+  }
+
+  // Privy access token
+  if (privy) {
+    try {
+      const claims = await privy.utils().auth().verifyAccessToken(token);
+      req.auth = {
+        mode: "privy",
+        userId: claims.user_id || claims.userId,
+        sessionId: claims.session_id || claims.sessionId,
+      };
+      return next();
+    } catch (e) {
+      console.warn("Privy verify failed:", e?.message ?? e);
+    }
+  }
+
+  return res.status(401).json({ error: "unauthorized" });
+}
+
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
-    funder: FUNDER_ADDRESS,
-    signer: account.address,
-    builder: Boolean(POLY_BUILDER_CODE),
+    legacy: legacyEnabled,
+    privy: privyEnabled,
+    privyAuthKey: Boolean(PEAK_PRIVY_AUTH_KEY),
+    builder: builderConfigured,
+    relayer: relayerConfigured,
+    funder: legacyEnabled ? FUNDER_ADDRESS : null,
+    sessions: sessions.size,
+    sessionStore: "file",
+    cors: corsOrigins.length ? "allowlist" : "off",
+    uptimeSec: Math.floor(process.uptime()),
   });
 });
 
-app.get("/portfolio", wrap(async (_req, res) => {
-  const [positions, value, balance] = await Promise.all([
-    getJSON(`${DATA}/positions?user=${FUNDER_ADDRESS}&sizeThreshold=0`),
-    getJSON(`${DATA}/value?user=${FUNDER_ADDRESS}`).catch(() => null),
-    client.getBalanceAllowance?.({ asset_type: "COLLATERAL" }).catch(() => null),
+app.get("/health/live", (_req, res) => {
+  res.json({ ok: true });
+});
+
+// Public legal / support pages (App Store URLs → same HTTPS API host after deploy).
+mountLegalPages(app);
+
+// Public enough for health + legal; everything else needs auth.
+app.use(authenticate);
+
+app.post("/auth/session", wrap(async (req, res) => {
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Privy session required" });
+  }
+  const eoa = String(req.body?.eoa || "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(eoa)) {
+    return res.status(400).json({ error: "Valid eoa address required" });
+  }
+
+  const pathRaw = String(req.body?.path || "").toLowerCase();
+  const path = pathRaw === "existing" || pathRaw === "new" ? pathRaw : null;
+  const accountWalletHint = String(req.body?.accountWallet || "").trim() || null;
+
+  const existing = getSession(req.auth.userId);
+  const resolvedPath = path || existing?.path || "new";
+
+  const resolved = await resolvePolymarketAccount({
+    signer: eoa,
+    path: resolvedPath,
+    accountWalletHint: accountWalletHint || existing?.accountWallet || null,
+  });
+
+  const session = {
+    userId: req.auth.userId,
+    eoa,
+    accountWallet: resolved.accountWallet,
+    safeAddress: resolved.accountWallet,
+    walletType: resolved.walletType,
+    walletTypeName: resolved.walletTypeName,
+    path: resolvedPath,
+    ready: Boolean(resolved.syncReady && (!resolved.needsDeploy || builderConfigured)),
+    needsDeploy: Boolean(resolved.needsDeploy),
+  };
+  setSession(req.auth.userId, session);
+
+  res.json({
+    ...session,
+    signer: eoa,
+    syncReady: resolved.syncReady,
+    builderConfigured,
+    relayerConfigured,
+    profile: resolved.profile,
+    message: resolved.message,
+    next:
+      resolved.needsDeploy && !builderConfigured
+        ? "Configure Builder credentials, then call POST /trading/setup"
+        : resolved.needsDeploy
+          ? "Call POST /trading/setup to deploy the deposit wallet"
+          : resolved.syncReady
+            ? "Portfolio linked to account wallet"
+            : "Select account type or import a Polymarket wallet",
+  });
+}));
+
+/**
+ * Re-resolve account wallet / type without changing path.
+ */
+app.post("/trading/resolve", wrap(async (req, res) => {
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Privy session required" });
+  }
+  const session = getSession(req.auth.userId);
+  const eoa = String(req.body?.eoa || session?.eoa || "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(eoa)) {
+    return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+  }
+  const path = session?.path || (String(req.body?.path || "new").toLowerCase() === "existing" ? "existing" : "new");
+  const hint = String(req.body?.accountWallet || session?.accountWallet || "").trim() || null;
+
+  const resolved = await resolvePolymarketAccount({
+    signer: eoa,
+    path,
+    accountWalletHint: hint,
+  });
+
+  const next = {
+    userId: req.auth.userId,
+    eoa,
+    accountWallet: resolved.accountWallet,
+    safeAddress: resolved.accountWallet,
+    walletType: resolved.walletType,
+    walletTypeName: resolved.walletTypeName,
+    path,
+    ready: Boolean(resolved.syncReady && (!resolved.needsDeploy || builderConfigured)),
+    needsDeploy: Boolean(resolved.needsDeploy),
+  };
+  setSession(req.auth.userId, next);
+
+  res.json({
+    ...next,
+    signer: eoa,
+    syncReady: resolved.syncReady,
+    builderConfigured,
+    relayerConfigured,
+    profile: resolved.profile,
+    message: resolved.message,
+  });
+}));
+
+/**
+ * Import private key or seed into Privy for an existing Polymarket wallet.
+ * Key is used once for import and is not persisted by Peak.
+ */
+app.post("/auth/import-wallet", wrap(async (req, res) => {
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Sign in with Email / Apple / Google first, then import." });
+  }
+  if (!privy) {
+    return res.status(503).json({ error: "Privy is not configured on the server." });
+  }
+
+  let keyForImport = "";
+  try {
+    keyForImport = await resolvePrivateKeyHex(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e?.message ?? String(e) });
+  }
+
+  let account;
+  try {
+    account = privateKeyToAccount(keyForImport);
+  } catch (e) {
+    return res.status(400).json({ error: `Invalid key: ${e?.message ?? e}` });
+  }
+
+  let imported;
+  try {
+    imported = await privy.wallets().import({
+      wallet: {
+        entropy_type: "private-key",
+        chain_type: "ethereum",
+        address: account.address,
+        private_key: keyForImport,
+      },
+      owner: { user_id: req.auth.userId },
+    });
+  } catch (e) {
+    console.warn("Privy import with owner failed, retrying bare import:", e?.message ?? e);
+    try {
+      imported = await privy.wallets().import({
+        wallet: {
+          entropy_type: "private-key",
+          chain_type: "ethereum",
+          address: account.address,
+          private_key: keyForImport,
+        },
+      });
+    } catch (e2) {
+      return res.status(502).json({ error: `Privy import failed: ${e2?.message ?? e2}` });
+    }
+  }
+
+  const address = imported?.address || account.address;
+  const resolved = await resolvePolymarketAccount({
+    signer: address,
+    path: "existing",
+    accountWalletHint: null,
+  });
+
+  const session = {
+    userId: req.auth.userId,
+    eoa: address,
+    accountWallet: resolved.accountWallet,
+    safeAddress: resolved.accountWallet,
+    walletType: resolved.walletType,
+    walletTypeName: resolved.walletTypeName,
+    path: "existing",
+    ready: Boolean(resolved.syncReady),
+    needsDeploy: false,
+    imported: true,
+    walletId: imported?.id ?? null,
+  };
+  setSession(req.auth.userId, session);
+
+  res.json({
+    address,
+    signer: address,
+    accountWallet: resolved.accountWallet,
+    walletType: resolved.walletType,
+    walletTypeName: resolved.walletTypeName,
+    path: "existing",
+    syncReady: resolved.syncReady,
+    walletId: imported?.id ?? null,
+    message: resolved.syncReady
+      ? `Imported. Linked to ${resolved.walletTypeName}.`
+      : "Imported. Add your Polymarket profile address if positions are missing.",
+  });
+}));
+
+/** @param {{ privateKey?: string, mnemonic?: string }} body */
+async function resolvePrivateKeyHex(body) {
+  const rawKey = String(body.privateKey || "").trim();
+  const mnemonic = String(body.mnemonic || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  if (mnemonic.split(" ").filter(Boolean).length >= 12) {
+    const { mnemonicToSeedSync } = await import("@scure/bip39");
+    const { HDKey } = await import("@scure/bip32");
+    const seed = mnemonicToSeedSync(mnemonic);
+    const child = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
+    if (!child.privateKey) {
+      throw new Error("Could not derive private key from seed phrase.");
+    }
+    return `0x${Buffer.from(child.privateKey).toString("hex")}`;
+  }
+
+  if (/^(0x)?[0-9a-fA-F]{64}$/.test(rawKey)) {
+    return rawKey.startsWith("0x") ? rawKey : `0x${rawKey}`;
+  }
+
+  throw new Error("Provide a 64-char hex private key or a 12/24-word seed phrase.");
+}
+
+app.post("/trading/setup", wrap(async (req, res) => {
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Privy session required" });
+  }
+
+  const session = getSession(req.auth.userId);
+  if (!session?.eoa) {
+    return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+  }
+
+  const resolved = await resolvePolymarketAccount({
+    signer: session.eoa,
+    path: session.path || "new",
+    accountWalletHint: session.accountWallet,
+  });
+
+  Object.assign(session, {
+    accountWallet: resolved.accountWallet,
+    safeAddress: resolved.accountWallet,
+    walletType: resolved.walletType,
+    walletTypeName: resolved.walletTypeName,
+    needsDeploy: resolved.needsDeploy,
+    ready: Boolean(resolved.syncReady && !resolved.needsDeploy),
+  });
+  setSession(req.auth.userId, session);
+
+  // Existing Polymarket account — link only; orders need Builder + signer.
+  if (session.path === "existing" && resolved.syncReady) {
+    if (builderConfigured) {
+      try {
+        await ensureUserClob(session);
+        const fresh = getSession(req.auth.userId);
+        return res.json({
+          ...toPublicSession(fresh),
+          signer: session.eoa,
+          syncReady: true,
+          builderConfigured: true,
+          relayerConfigured,
+          message: "Account linked. Ready to trade.",
+          status: "linked_ready",
+        });
+      } catch (e) {
+        return res.json({
+          ...toPublicSession(session),
+          signer: session.eoa,
+          syncReady: true,
+          builderConfigured: true,
+          relayerConfigured,
+          message: `Account linked. CLOB setup pending: ${e?.message ?? e}`,
+          status: "linked_builder_ready",
+        });
+      }
+    }
+    return res.json({
+      ...toPublicSession(session),
+      signer: session.eoa,
+      syncReady: true,
+      builderConfigured: false,
+      relayerConfigured,
+      message: "Account linked. Add Builder credentials on the server to enable live orders.",
+      status: "linked_pending_builder",
+    });
+  }
+
+  if (!builderConfigured) {
+    return res.status(503).json({
+      error: "Builder credentials are not configured on the server yet",
+      builderConfigured: false,
+      relayerConfigured,
+      needsDeploy: true,
+      signer: session.eoa,
+      path: session.path,
+      message: "Add Builder and Relayer keys to backend/.env to deploy a trading wallet.",
+    });
+  }
+
+  // New path: deploy Deposit Wallet via Relayer.
+  try {
+    const walletClient = await walletClientForSession(session);
+    const deploy = await deployOrLinkDepositWallet({
+      walletClient,
+      cfg: tradingCfg,
+      alreadyDeployedAddress: resolved.accountWallet,
+    });
+
+    const next = {
+      ...session,
+      accountWallet: deploy.accountWallet,
+      safeAddress: deploy.accountWallet,
+      walletType: 3,
+      walletTypeName: "DEPOSIT_WALLET",
+      needsDeploy: false,
+      ready: true,
+    };
+    setSession(req.auth.userId, next);
+
+    try {
+      await ensureUserClob(next);
+    } catch (e) {
+      console.warn("CLOB derive after deploy failed:", e?.message ?? e);
+    }
+
+    const fresh = getSession(req.auth.userId);
+    return res.json({
+      ...toPublicSession(fresh),
+      signer: session.eoa,
+      syncReady: true,
+      builderConfigured: true,
+      relayerConfigured,
+      txHash: deploy.txHash,
+      message: deploy.message,
+      status: deploy.status,
+    });
+  } catch (e) {
+    console.error("trading/setup deploy failed:", e);
+    return res.status(501).json({
+      error: String(e?.message ?? e),
+      builderConfigured: true,
+      relayerConfigured,
+      signer: session.eoa,
+      path: session.path || "new",
+      walletTypeName: "DEPOSIT_WALLET",
+      status: "deploy_failed",
+      hint: "Ensure PEAK_PRIVY_AUTH_KEY (if required), wallet delegation, Builder, and Relayer are configured.",
+    });
+  }
+}));
+
+function toPublicSession(session) {
+  if (!session) return {};
+  const { clobClient, ...rest } = session;
+  return rest;
+}
+
+app.get("/portfolio", wrap(async (req, res) => {
+  if (req.auth.mode === "legacy") {
+    const [positions, value, balance] = await Promise.all([
+      getJSON(`${DATA}/positions?user=${FUNDER_ADDRESS}&sizeThreshold=0`),
+      getJSON(`${DATA}/value?user=${FUNDER_ADDRESS}`).catch(() => null),
+      legacyClient.getBalanceAllowance?.({ asset_type: AssetType.COLLATERAL }).catch(() => null),
+    ]);
+    const cashUSD = normalizeCollateralUSD(balance?.balance);
+    return res.json({
+      positions,
+      value,
+      balance,
+      cashUSD,
+      funder: FUNDER_ADDRESS,
+      ready: true,
+      syncReady: true,
+      needsDeploy: false,
+      builderConfigured,
+      relayerConfigured,
+    });
+  }
+
+  const session = getSession(req.auth.userId);
+  const user = session?.accountWallet || session?.safeAddress || session?.eoa || req.query.user;
+  if (!user) {
+    return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+  }
+  const [positions, value] = await Promise.all([
+    getJSON(`${DATA}/positions?user=${user}&sizeThreshold=0`),
+    getJSON(`${DATA}/value?user=${user}`).catch(() => null),
   ]);
-  res.json({ positions, value, balance, funder: FUNDER_ADDRESS });
+
+  let balance = null;
+  let cashUSD = null;
+  if (builderConfigured && session?.eoa) {
+    try {
+      const client = await ensureUserClob(session);
+      const collateral = await fetchCollateralBalance(client);
+      balance = collateral.raw;
+      cashUSD = collateral.usd;
+    } catch (e) {
+      console.warn("portfolio balance:", e?.message ?? e);
+    }
+  }
+
+  const ready = Boolean(session?.ready);
+  res.json({
+    positions,
+    value,
+    balance,
+    cashUSD,
+    funder: user,
+    signer: session?.eoa ?? null,
+    accountWallet: session?.accountWallet ?? null,
+    walletTypeName: session?.walletTypeName ?? null,
+    path: session?.path ?? null,
+    ready,
+    // Alias for iOS TradingPathStore.apply (also accepts `ready`).
+    syncReady: ready,
+    needsDeploy: Boolean(session?.needsDeploy),
+    builderConfigured,
+    relayerConfigured,
+  });
 }));
 
 app.get("/activity", wrap(async (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 50), 100);
-  res.json(await getJSON(`${DATA}/activity?user=${FUNDER_ADDRESS}&limit=${limit}`));
+  if (req.auth.mode === "legacy") {
+    return res.json(await getJSON(`${DATA}/activity?user=${FUNDER_ADDRESS}&limit=${limit}`));
+  }
+  const session = getSession(req.auth.userId);
+  const user = session?.accountWallet || session?.safeAddress || session?.eoa;
+  if (!user) return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+  res.json(await getJSON(`${DATA}/activity?user=${user}&limit=${limit}`));
 }));
 
-app.get("/orders", wrap(async (_req, res) => {
-  const [open, trades] = await Promise.all([client.getOpenOrders(), client.getTrades()]);
-  res.json({ open, trades });
+app.get("/orders", wrap(async (req, res) => {
+  if (req.auth.mode === "legacy") {
+    const [open, trades] = await Promise.all([legacyClient.getOpenOrders(), legacyClient.getTrades()]);
+    return res.json({ open, trades });
+  }
+  if (!builderConfigured) {
+    return res.json({ open: [], trades: [], builderConfigured: false });
+  }
+  const session = getSession(req.auth.userId);
+  if (!session?.eoa) {
+    return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+  }
+  try {
+    const client = await ensureUserClob(session);
+    const [open, trades] = await Promise.all([
+      client.getOpenOrders(),
+      client.getTrades?.() ?? Promise.resolve([]),
+    ]);
+    return res.json({ open, trades, builderConfigured: true });
+  } catch (e) {
+    return res.status(501).json({ error: String(e?.message ?? e), builderConfigured: true });
+  }
 }));
 
 app.post("/orders", wrap(async (req, res) => {
-  const { tokenID, price, size, side, orderType = "FOK", tickSize, negRisk } = req.body;
+  const body = req.body || {};
+  const { tokenID, price, size, amount, side, orderType = "FOK", tickSize, negRisk } = body;
+
   if (!tokenID || price == null || size == null || !side) {
-    return res.status(400).json({ error: "tokenID, price, size, side required" });
+    return res.status(400).json({
+      error: "tokenID, price, size, side required",
+      code: "invalid_order",
+    });
+  }
+  const priceN = Number(price);
+  const sizeN = Number(size);
+  if (!(priceN > 0 && priceN < 1) || !(sizeN > 0)) {
+    return res.status(400).json({
+      error: "Enter a valid USD amount and price between 0 and 1.",
+      code: "invalid_order",
+    });
   }
 
-  const [resolvedTick, resolvedNegRisk] = await Promise.all([
-    tickSize ?? client.getTickSize(tokenID),
-    negRisk ?? client.getNegRisk(tokenID),
-  ]);
+  if (req.auth.mode === "privy") {
+    if (!builderConfigured) {
+      return res.status(503).json({
+        error: "Live trading needs Polymarket Builder credentials on the Peak backend. Add them, then try again.",
+        code: "builder_not_ready",
+      });
+    }
+    const session = getSession(req.auth.userId);
+    if (!session?.eoa) {
+      return res.status(400).json({
+        error: "Call POST /auth/session with eoa first",
+        code: "not_signed_in",
+      });
+    }
+    if (session.needsDeploy && !session.accountWallet) {
+      return res.status(400).json({
+        error: "Finish trading setup first (deploy / link your deposit wallet), then place an order.",
+        code: "setup_required",
+        needsDeploy: true,
+      });
+    }
 
-  const response = await client.createAndPostOrder(
-    {
+    let cashUSD = null;
+    try {
+      const client = await ensureUserClob(session);
+      const sideUpper = String(side).toUpperCase();
+      const orderCostUSD =
+        amount != null && Number(amount) > 0 && sideUpper === "BUY"
+          ? Number(amount)
+          : sizeN * priceN;
+
+      if (sideUpper === "BUY") {
+        const collateral = await fetchCollateralBalance(client);
+        cashUSD = collateral.usd;
+        if (cashUSD != null && cashUSD + 1e-9 < orderCostUSD) {
+          return res.status(400).json({
+            error: `Insufficient funds. You have $${cashUSD.toFixed(2)} available but this buy needs about $${orderCostUSD.toFixed(2)}. Deposit to your trading wallet, then try again.`,
+            code: "insufficient_funds",
+            balanceUSD: cashUSD,
+            requiredUSD: orderCostUSD,
+          });
+        }
+      } else {
+        const conditional = await fetchConditionalBalance(client, tokenID);
+        if (conditional.shares != null && conditional.shares + 1e-9 < sizeN) {
+          return res.status(400).json({
+            error: `Not enough shares to sell. You hold about ${conditional.shares.toFixed(2)} but tried to sell ${sizeN.toFixed(2)}.`,
+            code: "insufficient_shares",
+            balanceShares: conditional.shares,
+            requiredShares: sizeN,
+          });
+        }
+      }
+
+      const result = await placeClobOrder(client, {
+        tokenID,
+        price: priceN,
+        size: sizeN,
+        amount,
+        side,
+        orderType,
+        tickSize,
+        negRisk,
+      });
+      return res.json({ ...result, success: result?.success !== false });
+    } catch (e) {
+      const mapped = mapOrderError(extractClobError(e), { balanceUSD: cashUSD });
+      const status = e.httpStatus || mapped.status || 400;
+      return res.status(status).json({
+        error: e.code === "invalid_order" ? e.message : mapped.error,
+        code: e.code || mapped.code,
+        success: false,
+        ...(e.clob ? { clob: e.clob } : {}),
+      });
+    }
+  }
+
+  // Legacy one-wallet proxy
+  try {
+    const result = await placeClobOrder(legacyClient, {
       tokenID,
-      price: Number(price),
-      size: Number(size),
-      side: String(side).toUpperCase() === "SELL" ? Side.SELL : Side.BUY,
-      ...(POLY_BUILDER_CODE ? { builderCode: POLY_BUILDER_CODE } : {}),
-    },
-    { tickSize: String(resolvedTick), negRisk: Boolean(resolvedNegRisk) },
-    OrderType[orderType] ?? OrderType.FOK,
-  );
-
-  res.json(response);
+      price: priceN,
+      size: sizeN,
+      amount,
+      side,
+      orderType,
+      tickSize,
+      negRisk,
+    });
+    return res.json({ ...result, success: result?.success !== false });
+  } catch (e) {
+    const mapped = mapOrderError(extractClobError(e));
+    return res.status(e.httpStatus || mapped.status || 400).json({
+      error: mapped.error,
+      code: e.code || mapped.code,
+      success: false,
+    });
+  }
 }));
 
 app.delete("/orders/:id", wrap(async (req, res) => {
+  if (req.auth.mode === "privy") {
+    if (!builderConfigured) {
+      return res.status(503).json({ error: "Builder credentials required to cancel orders" });
+    }
+    const session = getSession(req.auth.userId);
+    if (!session?.eoa) {
+      return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+    }
+    const id = req.params.id;
+    try {
+      const client = await ensureUserClob(session);
+      try {
+        return res.json(await client.cancelOrder(id));
+      } catch {
+        return res.json(await client.cancelOrder({ orderID: id }));
+      }
+    } catch (e) {
+      return res.status(501).json({ error: String(e?.message ?? e) });
+    }
+  }
   const id = req.params.id;
-  // clob-client-v2 accepts orderID string or object depending on version
   try {
-    res.json(await client.cancelOrder(id));
+    res.json(await legacyClient.cancelOrder(id));
   } catch {
-    res.json(await client.cancelOrder({ orderID: id }));
+    res.json(await legacyClient.cancelOrder({ orderID: id }));
   }
 }));
 
-// Deposit: bridge addresses for funding the funder wallet
 app.post("/deposit-address", wrap(async (req, res) => {
-  const payload = {
-    address: FUNDER_ADDRESS,
-    ...(req.body ?? {}),
-  };
-  const data = await getJSON(`${BRIDGE}/deposit`, {
+  const chain = String(req.body?.chain || "polygon").toLowerCase();
+  const token = String(req.body?.token || "USDC").toUpperCase();
+
+  let funder = FUNDER_ADDRESS;
+  let session = null;
+  if (req.auth.mode === "privy") {
+    session = getSession(req.auth.userId);
+    funder = session?.accountWallet || session?.safeAddress || session?.eoa;
+    if (!funder) {
+      return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
+    }
+    if (session?.needsDeploy && !session?.accountWallet) {
+      return res.status(400).json({
+        error: "Call POST /trading/setup first to deploy the deposit wallet, then request a deposit address.",
+        needsDeploy: true,
+        builderConfigured,
+      });
+    }
+  }
+
+  if (!funder) {
+    return res.status(400).json({ error: "No funder / account wallet configured" });
+  }
+
+  try {
+    const bridge = await fetchBridgeDepositAddresses(funder);
+    const depositAddress = pickBridgeAddress(bridge, chain);
+    return res.json({
+      ...bridge,
+      address: depositAddress || funder,
+      depositAddress: depositAddress || funder,
+      funder,
+      accountWallet: funder,
+      chain,
+      token,
+      note:
+        bridge?.note ||
+        "Send only supported assets. Cross-chain deposits use the bridge address; Polygon pUSD may credit the funder directly.",
+      needsDeploy: Boolean(session?.needsDeploy),
+      builderConfigured,
+    });
+  } catch (e) {
+    // Fallback: return funder so same-chain funding still works if Bridge is down.
+    return res.json({
+      address: funder,
+      depositAddress: funder,
+      funder,
+      accountWallet: funder,
+      chain,
+      token,
+      bridgeError: String(e?.message ?? e),
+      note: session?.accountWallet
+        ? "Bridge API unavailable — showing Polymarket account wallet for same-chain funding."
+        : builderConfigured
+          ? "Bridge API unavailable. Call POST /trading/setup if you still need a deposit wallet, then retry."
+          : "Bridge API unavailable — showing Privy embedded EOA. Add Builder keys for the official deposit flow.",
+      needsDeploy: Boolean(session?.needsDeploy),
+      builderConfigured,
+    });
+  }
+}));
+
+/** @param {string} polymarketWallet */
+async function fetchBridgeDepositAddresses(polymarketWallet) {
+  return getJSON(`${BRIDGE}/deposit`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(POLY_BUILDER_CODE ? { "X-Builder-Code": POLY_BUILDER_CODE } : {}),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ address: polymarketWallet }),
   });
-  res.json(data);
-}));
+}
 
-initClient()
-  .then(() => app.listen(PORT, () => console.log(`Peak trading proxy on :${PORT}`)))
+/**
+ * Pick a concrete deposit address from Bridge response for the requested chain.
+ * @param {any} bridge
+ * @param {string} chain
+ */
+function pickBridgeAddress(bridge, chain) {
+  const c = String(chain || "").toLowerCase();
+  const addr = bridge?.address;
+  if (typeof addr === "string" && addr) return addr;
+  if (addr && typeof addr === "object") {
+    if (c === "solana" || c === "svm") return addr.svm || null;
+    if (c === "bitcoin" || c === "btc") return addr.btc || null;
+    if (c === "tron" || c === "tvm") return addr.tvm || null;
+    return addr.evm || null;
+  }
+  if (typeof bridge?.depositAddress === "string") return bridge.depositAddress;
+  return null;
+}
+
+// Avoid leaking stack traces; map CORS denials to 403.
+app.use((err, _req, res, _next) => {
+  if (err?.message === "CORS origin not allowed") {
+    return res.status(403).json({ error: "CORS origin not allowed" });
+  }
+  console.error(err?.message ?? err);
+  res.status(500).json({ error: String(err?.message ?? "Internal error") });
+});
+
+initLegacyClient()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Peak trading API on :${PORT}`);
+      console.log(
+        `  legacy=${legacyEnabled} privy=${privyEnabled} builder=${builderConfigured} relayer=${relayerConfigured}`
+      );
+      console.log(
+        `  cors=${corsOrigins.length ? corsOrigins.join("|") : "off"} rateLimit=${maxReqs}/${windowMs}ms`
+      );
+    });
+  })
   .catch((e) => {
-    console.error("Client init failed:", e);
+    console.error("Init failed:", e);
     process.exit(1);
   });

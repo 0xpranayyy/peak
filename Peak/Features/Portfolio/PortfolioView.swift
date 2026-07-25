@@ -26,6 +26,14 @@ final class PortfolioViewModel: ObservableObject {
         positions.isEmpty && activity.isEmpty && openOrders.isEmpty
     }
 
+    var hasCash: Bool {
+        (cash ?? 0) > 0.000_001
+    }
+
+    var isZeroCash: Bool {
+        usingTradingProxy && !hasCash
+    }
+
     func syncDraft(from wallet: WalletStore) {
         if draftAddress.isEmpty {
             draftAddress = wallet.address ?? ""
@@ -37,7 +45,7 @@ final class PortfolioViewModel: ObservableObject {
         defer { isLoading = false }
         statusBanner = nil
 
-        if env.tradingConfig.isConfigured {
+        if env.tradingConfig.isConfigured || (PrivyAuthService.shared.isAuthenticated && env.tradingConfig.hasBackendURL) {
             do {
                 let snap = try await env.trading.fetchTradingPortfolio()
                 usingTradingProxy = true
@@ -48,6 +56,7 @@ final class PortfolioViewModel: ObservableObject {
                 reportedValue = snap.totalValue
                 funder = snap.funder
                 errorMessage = nil
+                TradingPathStore.shared.apply(server: snap.pathFlags.asServerDict())
                 if let funder = snap.funder, !env.wallet.isValid {
                     env.wallet.save(funder)
                     draftAddress = funder
@@ -55,7 +64,7 @@ final class PortfolioViewModel: ObservableObject {
                 return
             } catch {
                 // Fall through to public wallet lookup if proxy fails.
-                statusBanner = "Trading proxy unavailable — showing public wallet data."
+                statusBanner = "Couldn’t load live portfolio. Showing public data."
                 usingTradingProxy = false
             }
         } else {
@@ -81,7 +90,7 @@ final class PortfolioViewModel: ObservableObject {
             activity = (try? await activityTask) ?? []
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t load portfolio. Try again.")
         }
     }
 
@@ -91,7 +100,7 @@ final class PortfolioViewModel: ObservableObject {
             openOrders.removeAll { $0.id == id }
             statusBanner = "Order canceled."
         } catch {
-            statusBanner = error.localizedDescription
+            statusBanner = PeakUserCopy.fromError(error, fallback: "Couldn’t cancel that order. Try again.")
         }
     }
 }
@@ -99,49 +108,45 @@ final class PortfolioViewModel: ObservableObject {
 struct PortfolioView: View {
     @EnvironmentObject private var env: AppEnvironment
     @EnvironmentObject private var tradingConfig: TradingConfigStore
+    @EnvironmentObject private var auth: PrivyAuthService
+    @EnvironmentObject private var tradingPath: TradingPathStore
     @StateObject private var model = PortfolioViewModel()
     @State private var showWalletEditor = false
-    @State private var showTradingSettings = false
+    @State private var showAccount = false
     @State private var showDeposit = false
+    @State private var showTradingPath = false
+    @State private var sharePosition: PortfolioPosition?
+
+    private var canTradeLive: Bool {
+        auth.isAuthenticated || tradingConfig.isConfigured
+    }
+
+    private var needsTradingSetup: Bool {
+        auth.isAuthenticated && tradingPath.needsPathChoice
+    }
 
     var body: some View {
         NavigationStack {
             Group {
-                if !tradingConfig.isConfigured && !env.wallet.isValid {
+                if !canTradeLive && !env.wallet.isValid {
                     walletPrompt
-                } else if model.isLoading && model.isEmpty {
-                    ProgressView("Loading portfolio…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = model.errorMessage, model.isEmpty {
+                } else if model.isLoading && model.isEmpty && model.cash == nil {
+                    PeakSkeletonList(style: .portfolio, rowCount: 6)
+                } else if let error = model.errorMessage, model.isEmpty && model.cash == nil {
                     LoadingErrorView(message: error) {
                         Task { await model.load(env: env) }
                     }
-                } else if model.isEmpty {
-                    EmptyStateView(
-                        systemImage: "briefcase",
-                        title: "No open positions",
-                        message: tradingConfig.isConfigured
-                            ? "Your trading wallet has no positions yet. Deposit pUSD to get started."
-                            : "This wallet has no positions on Polymarket right now."
-                    )
                 } else {
                     positionsList
                 }
             }
             .background(PeakMaterialBackground())
             .navigationTitle("Portfolio")
+            .navigationBarTitleDisplayMode(.large)
             .peakChrome()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showTradingSettings = true
-                    } label: {
-                        Image(systemName: tradingConfig.isConfigured ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
-                    }
-                    .accessibilityLabel("Trading settings")
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if tradingConfig.isConfigured {
+                    if canTradeLive, !needsTradingSetup {
                         Button {
                             showDeposit = true
                         } label: {
@@ -150,50 +155,100 @@ struct PortfolioView: View {
                         .accessibilityLabel("Deposit")
                     }
                     Button {
-                        model.syncDraft(from: env.wallet)
-                        showWalletEditor = true
+                        showAccount = true
                     } label: {
-                        Image(systemName: "wallet.pass")
+                        Image(systemName: auth.isAuthenticated ? "person.crop.circle.fill" : "person.crop.circle")
                     }
-                    .accessibilityLabel("Wallet")
+                    .accessibilityLabel("Account")
                 }
             }
             .sheet(isPresented: $showWalletEditor) {
-                walletEditor
+                NavigationStack {
+                    WalletSettingsView()
+                        .environmentObject(env.wallet)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showWalletEditor = false }
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
             }
-            .sheet(isPresented: $showTradingSettings) {
-                TradingSettingsView()
+            .sheet(isPresented: $showAccount) {
+                if auth.isAuthenticated {
+                    NavigationStack {
+                        AccountView(isPresentedModally: true)
+                            .environmentObject(auth)
+                            .environmentObject(tradingConfig)
+                            .environmentObject(env.wallet)
+                            .environmentObject(tradingPath)
+                    }
+                    .presentationDetents([.medium, .large])
+                } else {
+                    PeakSignInSheet()
+                        .environmentObject(auth)
+                        .environmentObject(tradingConfig)
+                        .environmentObject(env.wallet)
+                }
             }
             .sheet(isPresented: $showDeposit) {
                 DepositSheet()
                     .environmentObject(env)
             }
-            .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)") {
+            .sheet(isPresented: $showTradingPath) {
+                TradingPathSheet()
+                    .environmentObject(auth)
+                    .environmentObject(tradingConfig)
+                    .environmentObject(env.wallet)
+                    .environmentObject(tradingPath)
+            }
+            .sheet(item: $sharePosition) { position in
+                SharePositionSheet(position: position)
+            }
+            .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)-\(auth.isAuthenticated)") {
                 model.syncDraft(from: env.wallet)
                 await model.load(env: env)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .peakTradingPortfolioShouldRefresh)) { _ in
+                Task { await model.load(env: env) }
+            }
             .refreshable {
                 await model.load(env: env)
+                PeakHaptics.refresh()
             }
         }
     }
 
     private var walletPrompt: some View {
-        ContentUnavailableView {
-            Label("Add a wallet", systemImage: "wallet.pass")
-        } description: {
-            Text("Paste any Polymarket wallet for a read-only view, or connect the trading proxy to manage live orders.")
-        } actions: {
-            Button("Add Wallet") {
-                model.draftAddress = ""
+        VStack(spacing: 24) {
+            Spacer()
+            PeakEmptyVisual(kind: .portfolio, size: 96)
+            Text("Portfolio")
+                .font(.title2.weight(.bold))
+            Text("Sign in with a wallet or email to trade, or enter an address to view positions.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+
+            Button {
+                showAccount = true
+            } label: {
+                PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill")
+            }
+            .peakPressable()
+            .padding(.horizontal, 40)
+
+            Button("Enter address") {
                 showWalletEditor = true
             }
-            .buttonStyle(.borderedProminent)
-            Button("Set up trading") {
-                showTradingSettings = true
-            }
-            .buttonStyle(.bordered)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(minHeight: 44)
+
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var positionsList: some View {
@@ -207,36 +262,47 @@ struct PortfolioView: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(model.usingTradingProxy ? "Trading portfolio" : "Portfolio value")
-                            .font(.caption)
+                portfolioSummary
+            }
+
+            if needsTradingSetup {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Set up trading", systemImage: "arrow.triangle.branch")
+                            .font(.body.weight(.semibold))
+                        Text("Choose a new wallet or connect one you already use.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if model.usingTradingProxy {
-                            Spacer()
-                            Text("Live")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.green)
+                        Button {
+                            showTradingPath = true
+                        } label: {
+                            PeakPrimaryCTA(title: "Set up trading", systemImage: "arrow.triangle.branch")
                         }
+                        .peakPressable()
                     }
-                    Text(PeakFormat.usd(model.totalValue))
-                        .font(.largeTitle.weight(.bold).monospacedDigit())
-                    if let cash = model.cash {
-                        Text("Cash \(PeakFormat.usd(cash))")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("PnL \(PeakFormat.usd(model.totalPnl))")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(model.totalPnl >= 0 ? Color.green : Color.red)
-                    if let address = model.funder ?? env.wallet.address {
-                        Text(shorten(address))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
-                .accessibilityElement(children: .combine)
+            } else if model.isZeroCash, canTradeLive {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Add funds to trade", systemImage: "coloncurrencysign.circle")
+                            .font(.body.weight(.semibold))
+                        Text("Deposit USDC, then open any market to buy or sell.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            showDeposit = true
+                        } label: {
+                            PeakPrimaryCTA(
+                                title: "Deposit",
+                                systemImage: "arrow.down.to.line.circle",
+                                color: PeakTradeStyle.buy
+                            )
+                        }
+                        .peakPressable()
+                    }
+                    .padding(.vertical, 4)
+                }
             }
 
             if !model.openOrders.isEmpty {
@@ -246,6 +312,7 @@ struct PortfolioView: View {
                             HStack {
                                 Text("\(order.side) · \(PeakFormat.cents(order.price))")
                                     .font(.subheadline.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(order.side.uppercased() == "BUY" ? PeakTradeStyle.buy : PeakTradeStyle.sell)
                                 Spacer()
                                 Button("Cancel", role: .destructive) {
                                     Task { await model.cancelOrder(id: order.id, env: env) }
@@ -285,14 +352,57 @@ struct PortfolioView: View {
                                 Text("Avg \(PeakFormat.cents(position.avgPrice)) · Now \(PeakFormat.cents(position.currentPrice))")
                                 Spacer()
                                 Text(String(format: "%+.1f%%", position.percentPnl))
-                                    .foregroundStyle(position.percentPnl >= 0 ? Color.green : Color.red)
+                                    .foregroundStyle(position.percentPnl >= 0 ? PeakTradeStyle.buy : PeakTradeStyle.sell)
                             }
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 2)
                         .accessibilityElement(children: .combine)
+                        .contextMenu {
+                            Button {
+                                sharePosition = position
+                            } label: {
+                                Label("Share card", systemImage: "square.and.arrow.up")
+                            }
+                        }
                     }
+                }
+            } else if !model.isZeroCash, !needsTradingSetup {
+                Section {
+                    VStack(spacing: 12) {
+                        PeakEmptyVisual(kind: .portfolio, size: 64)
+                        Text(canTradeLive
+                            ? "No open positions yet"
+                            : "No positions for this address")
+                            .font(.subheadline.weight(.semibold))
+                        Text(canTradeLive
+                            ? "Buy a market to get started."
+                            : "Try another address, or sign in to trade.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        if canTradeLive {
+                            Button("Browse markets") {
+                                PeakRootTab.select(.markets)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.accentColor)
+                            .controlSize(.large)
+                            .frame(minHeight: 44)
+                        } else {
+                            Button("Sign in") {
+                                showAccount = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.accentColor)
+                            .controlSize(.large)
+                            .frame(minHeight: 44)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -312,6 +422,7 @@ struct PortfolioView: View {
                             HStack {
                                 if let side = item.side {
                                     Text("\(side.uppercased()) \(item.outcome ?? "")")
+                                        .foregroundStyle(side.uppercased() == "BUY" ? PeakTradeStyle.buy : (side.uppercased() == "SELL" ? PeakTradeStyle.sell : Color.secondary))
                                 } else if let outcome = item.outcome {
                                     Text(outcome)
                                 }
@@ -336,55 +447,69 @@ struct PortfolioView: View {
         .listStyle(.insetGrouped)
     }
 
-    private var walletEditor: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("0x…", text: $model.draftAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                        .keyboardType(.asciiCapable)
-                } header: {
-                    Text("Wallet address")
-                } footer: {
-                    Text("Used for public portfolio lookup when the trading proxy isn’t connected.")
-                }
-
-                if env.wallet.address != nil {
-                    Section {
-                        Button("Remove wallet", role: .destructive) {
-                            env.wallet.clear()
-                            model.draftAddress = ""
-                            model.positions = []
-                            model.activity = []
-                            model.openOrders = []
-                            showWalletEditor = false
-                        }
-                    }
+    private var portfolioSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(model.usingTradingProxy ? "Portfolio" : "Portfolio value")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if model.usingTradingProxy {
+                    Spacer()
+                    Text("Live")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PeakTradeStyle.buy)
                 }
             }
-            .navigationTitle("Wallet")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showWalletEditor = false }
+            Text(PeakFormat.usd(model.totalValue))
+                .font(.largeTitle.weight(.bold).monospacedDigit())
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+                .peakNumeric(value: model.totalValue)
+                .accessibilityLabel("Portfolio value \(PeakFormat.usd(model.totalValue))")
+
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cash")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(model.cash.map { PeakFormat.usd($0) } ?? "—")
+                        .font(.headline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(model.isZeroCash ? PeakTradeStyle.sell : .primary)
+                        .peakNumeric(value: model.cash ?? -1)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        env.wallet.save(model.draftAddress)
-                        showWalletEditor = false
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PnL")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(PeakFormat.usd(model.totalPnl))
+                        .font(.headline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(model.totalPnl >= 0 ? PeakTradeStyle.buy : PeakTradeStyle.sell)
+                        .peakNumeric(value: model.totalPnl)
+                }
+                Spacer()
+                if canTradeLive, !needsTradingSetup {
+                    Button {
+                        showDeposit = true
+                    } label: {
+                        Label("Deposit", systemImage: "arrow.down.to.line.circle")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(minHeight: 44)
                     }
-                    .disabled(!isDraftValid)
+                    .buttonStyle(.bordered)
+                    .tint(PeakTradeStyle.buy)
+                    .accessibilityLabel("Deposit funds")
                 }
+            }
+
+            if let address = model.funder ?? env.wallet.address {
+                Text(shorten(address))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Wallet \(address)")
             }
         }
-        .presentationDetents([.medium])
-    }
-
-    private var isDraftValid: Bool {
-        let lower = model.draftAddress.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return lower.hasPrefix("0x") && lower.count == 42
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func shorten(_ address: String) -> String {

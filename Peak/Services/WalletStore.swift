@@ -31,9 +31,16 @@ final class WalletStore: ObservableObject {
     }
 
     var isValid: Bool {
-        guard let address else { return false }
-        let lower = address.lowercased()
-        return lower.hasPrefix("0x") && lower.count == 42
+        Self.isValidAddress(address)
+    }
+
+    static func isValidAddress(_ raw: String?) -> Bool {
+        guard let raw else { return false }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        guard lower.hasPrefix("0x"), lower.count == 42 else { return false }
+        let hex = lower.dropFirst(2)
+        return hex.allSatisfy { $0.isHexDigit }
     }
 
     // MARK: - Keychain

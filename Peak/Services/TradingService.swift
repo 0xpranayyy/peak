@@ -13,6 +13,43 @@ struct OpenOrder: Identifiable, Hashable, Sendable {
     var remaining: Double { max(0, originalSize - sizeMatched) }
 }
 
+struct TradingPathFlags: Sendable {
+    var path: String?
+    var signer: String?
+    var accountWallet: String?
+    var walletTypeName: String?
+    var syncReady: Bool?
+    var needsDeploy: Bool?
+    var builderConfigured: Bool?
+    var relayerConfigured: Bool?
+
+    func asServerDict() -> [String: Any] {
+        var out: [String: Any] = [:]
+        if let path { out["path"] = path }
+        if let signer { out["signer"] = signer }
+        if let accountWallet { out["accountWallet"] = accountWallet }
+        if let walletTypeName { out["walletTypeName"] = walletTypeName }
+        if let syncReady { out["syncReady"] = syncReady }
+        if let needsDeploy { out["needsDeploy"] = needsDeploy }
+        if let builderConfigured { out["builderConfigured"] = builderConfigured }
+        if let relayerConfigured { out["relayerConfigured"] = relayerConfigured }
+        return out
+    }
+
+    static func fromPortfolioRoot(_ root: [String: Any]) -> TradingPathFlags {
+        TradingPathFlags(
+            path: root["path"] as? String,
+            signer: root["signer"] as? String,
+            accountWallet: root["accountWallet"] as? String ?? root["funder"] as? String,
+            walletTypeName: root["walletTypeName"] as? String,
+            syncReady: root["syncReady"] as? Bool ?? root["ready"] as? Bool,
+            needsDeploy: root["needsDeploy"] as? Bool,
+            builderConfigured: root["builderConfigured"] as? Bool,
+            relayerConfigured: root["relayerConfigured"] as? Bool
+        )
+    }
+}
+
 struct TradingPortfolioSnapshot: Sendable {
     let funder: String?
     let cash: Double?
@@ -20,6 +57,7 @@ struct TradingPortfolioSnapshot: Sendable {
     let positions: [PortfolioPosition]
     let activity: [PortfolioActivity]
     let openOrders: [OpenOrder]
+    let pathFlags: TradingPathFlags
 }
 
 struct DepositAddressResult: @unchecked Sendable {
@@ -34,6 +72,7 @@ protocol TradingService: Sendable {
         side: TradeSide,
         price: Double,
         size: Double,
+        amount: Double?,
         negRisk: Bool?,
         orderType: String
     ) async throws -> TradeResult
@@ -60,21 +99,106 @@ enum TradingError: LocalizedError, Sendable {
     case notAvailable
     case invalidAmount
     case missingToken
+    case marketClosed
+    case builderNotReady
+    case setupRequired
+    case insufficientFunds(String)
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Set up the trading proxy in Portfolio → Trading to place orders."
+            return "Sign in to trade."
         case .notAvailable:
-            return "Trading isn’t available."
+            return "Trading isn’t available right now. Try again later."
         case .invalidAmount:
             return "Enter a valid USD amount and price."
         case .missingToken:
-            return "This market is missing a CLOB token id."
+            return "This market can’t be traded right now."
+        case .marketClosed:
+            return "This market is closed or not accepting orders."
+        case .setupRequired:
+            return "Set up trading before placing an order."
+        case .builderNotReady:
+            return "Your wallet isn’t ready yet. Try again in a moment."
+        case .insufficientFunds(let message):
+            return message
         case .server(let message):
             return message
         }
+    }
+
+    /// Map backend / CLOB copy into actionable user-facing errors.
+    static func fromServerMessage(_ raw: String, code: String? = nil) -> TradingError {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = text.lowercased()
+        let codeLower = (code ?? "").lowercased()
+
+        if codeLower == "insufficient_funds"
+            || codeLower == "insufficient_shares"
+            || lower.contains("not enough balance")
+            || lower.contains("insufficient funds")
+            || lower.contains("balance / allowance")
+            || lower.contains("not enough shares")
+        {
+            let fallback =
+                "Not enough funds. Deposit under Portfolio, then try again."
+            return .insufficientFunds(text.isEmpty ? fallback : Self.sanitizeServerCopy(text, fallback: fallback))
+        }
+        if codeLower == "builder_not_ready" || lower.contains("builder credential") {
+            return .builderNotReady
+        }
+        if codeLower == "no_fill" || lower.contains("no fill") || lower.contains("liquidity too thin") {
+            return .server(
+                text.isEmpty
+                    ? "No fill at this price. Try a limit order or a smaller size."
+                    : Self.sanitizeServerCopy(text, fallback: "No fill at this price. Try a limit order or a smaller size.")
+            )
+        }
+        if codeLower == "setup_required" || lower.contains("trading/setup") || lower.contains("deposit wallet") {
+            return .setupRequired
+        }
+        if codeLower == "market_closed" || lower.contains("not accepting") {
+            return .marketClosed
+        }
+        if lower == "unauthorized" || codeLower == "unauthorized" {
+            return .notConfigured
+        }
+        if codeLower == "invalid_order" || lower.contains("valid usd amount") {
+            return .invalidAmount
+        }
+        if text.isEmpty {
+            return .server("Couldn’t place order. Try again.")
+        }
+        return .server(sanitizeServerCopy(text, fallback: "Couldn’t place order. Try again."))
+    }
+
+    /// Strip infra jargon from server copy in Release; keep precise text in DEBUG.
+    private static func sanitizeServerCopy(_ text: String, fallback: String) -> String {
+        PeakUserCopy.sanitize(text, fallback: fallback)
+    }
+}
+
+extension Notification.Name {
+    /// Posted after a successful live order so Portfolio can refresh.
+    static let peakTradingPortfolioShouldRefresh = Notification.Name("peak.trading.portfolioShouldRefresh")
+    /// Switch root tab — `userInfo["tab"]` is a `PeakRootTab.rawValue` String.
+    static let peakSelectRootTab = Notification.Name("peak.selectRootTab")
+}
+
+enum PeakRootTab: String, Hashable {
+    case markets
+    case search
+    case portfolio
+    case watchlist
+    case settings
+
+    static func select(_ tab: PeakRootTab) {
+        NotificationCenter.default.post(
+            name: .peakSelectRootTab,
+            object: nil,
+            userInfo: ["tab": tab.rawValue]
+        )
     }
 }
 
@@ -84,6 +208,7 @@ struct StubTradingService: TradingService {
         side: TradeSide,
         price: Double,
         size: Double,
+        amount: Double?,
         negRisk: Bool?,
         orderType: String
     ) async throws -> TradeResult {
@@ -105,6 +230,7 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         side: TradeSide,
         price: Double,
         size: Double,
+        amount: Double?,
         negRisk: Bool?,
         orderType: String
     ) async throws -> TradeResult {
@@ -119,22 +245,16 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
             "side": side == .buy ? "BUY" : "SELL",
             "orderType": orderType,
         ]
+        if let amount, amount > 0 {
+            // Market BUY: USD to spend. Market SELL: shares to sell.
+            body["amount"] = (amount * 100).rounded() / 100
+        }
         if let negRisk {
             body["negRisk"] = negRisk
         }
 
         let root = try await TradingProxyClient.jsonObject(path: "orders", method: "POST", jsonBody: body)
-        let orderID = (root["orderID"] as? String) ?? (root["id"] as? String) ?? ""
-        let status = (root["status"] as? String) ?? "submitted"
-        let success = (root["success"] as? Bool) ?? !status.lowercased().contains("error")
-        if let error = root["error"] as? String, !error.isEmpty, orderID.isEmpty {
-            throw TradingError.server(error)
-        }
-        return TradeResult(
-            orderID: orderID.isEmpty ? status : orderID,
-            status: status,
-            success: success
-        )
+        return try Self.parseTradeResult(root)
     }
 
     func fetchOpenOrders() async throws -> [OpenOrder] {
@@ -180,7 +300,9 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         let open = (ordersRoot["open"] as? [[String: Any]] ?? []).compactMap(Self.mapOpenOrder)
 
         var cash: Double?
-        if let balance = portfolioRoot["balance"] as? [String: Any] {
+        if let cashUSD = Self.double(portfolioRoot["cashUSD"]) {
+            cash = cashUSD
+        } else if let balance = portfolioRoot["balance"] as? [String: Any] {
             cash = Self.double(balance["balance"]).map { raw in
                 raw > 100_000 ? raw / 1_000_000 : raw
             }
@@ -199,7 +321,8 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
             totalValue: totalValue,
             positions: positions,
             activity: activity,
-            openOrders: open
+            openOrders: open,
+            pathFlags: TradingPathFlags.fromPortfolioRoot(portfolioRoot)
         )
     }
 
@@ -212,11 +335,58 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
                 "token": token,
             ]
         )
-        let address =
-            (root["address"] as? String)
-            ?? (root["depositAddress"] as? String)
-            ?? ((root["address"] as? [String: Any])?["address"] as? String)
+        let address = Self.pickDepositAddress(from: root, chain: chain)
         return DepositAddressResult(address: address, raw: root)
+    }
+
+    /// Flatten Bridge `{ address: { evm, svm, … } }` or string fields.
+    private static func pickDepositAddress(from root: [String: Any], chain: String) -> String? {
+        if let s = root["depositAddress"] as? String, !s.isEmpty { return s }
+        if let s = root["address"] as? String, !s.isEmpty { return s }
+        if let s = root["funder"] as? String, !s.isEmpty { return s }
+        if let s = root["accountWallet"] as? String, !s.isEmpty { return s }
+        guard let obj = root["address"] as? [String: Any] else { return nil }
+        let c = chain.lowercased()
+        if c == "solana" || c == "svm", let s = obj["svm"] as? String, !s.isEmpty { return s }
+        if c == "bitcoin" || c == "btc", let s = obj["btc"] as? String, !s.isEmpty { return s }
+        if c == "tron" || c == "tvm", let s = obj["tvm"] as? String, !s.isEmpty { return s }
+        if let s = obj["evm"] as? String, !s.isEmpty { return s }
+        if let s = obj["address"] as? String, !s.isEmpty { return s }
+        return nil
+    }
+
+    private static func parseTradeResult(_ root: [String: Any]) throws -> TradeResult {
+        let orderID = (root["orderID"] as? String) ?? (root["id"] as? String) ?? ""
+        let status = (root["status"] as? String) ?? ""
+        let errorText =
+            (root["errorMsg"] as? String)
+            ?? (root["error"] as? String)
+            ?? ""
+        let code = root["code"] as? String
+        let successFlag = root["success"] as? Bool
+
+        if let successFlag, !successFlag {
+            throw TradingError.fromServerMessage(
+                errorText.isEmpty ? (status.isEmpty ? "Order rejected" : status) : errorText,
+                code: code
+            )
+        }
+        if !errorText.isEmpty, orderID.isEmpty {
+            throw TradingError.fromServerMessage(errorText, code: code)
+        }
+        // CLOB success responses include success:true; never invent success from a bare status.
+        let success = successFlag ?? (!orderID.isEmpty && !status.lowercased().contains("error"))
+        if !success {
+            throw TradingError.fromServerMessage(
+                errorText.isEmpty ? (status.isEmpty ? "Order failed" : status) : errorText,
+                code: code
+            )
+        }
+        return TradeResult(
+            orderID: orderID.isEmpty ? (status.isEmpty ? "submitted" : status) : orderID,
+            status: status.isEmpty ? "submitted" : status,
+            success: true
+        )
     }
 
     private static func mapOpenOrder(_ row: [String: Any]) -> OpenOrder? {

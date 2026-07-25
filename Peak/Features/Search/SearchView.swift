@@ -47,7 +47,7 @@ final class SearchViewModel: ObservableObject {
         } catch is CancellationError {
             // ignore
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t search. Try again.")
             hasSearched = true
         }
     }
@@ -55,7 +55,11 @@ final class SearchViewModel: ObservableObject {
 
 struct SearchView: View {
     @EnvironmentObject private var recentSearches: RecentSearchStore
+    @EnvironmentObject private var categoryPrefs: CategoryPreferencesStore
     @StateObject private var model = SearchViewModel()
+    @State private var browseCategory: MarketCategory?
+    @State private var browseEvents: [PeakEvent] = []
+    @State private var isBrowsing = false
 
     var body: some View {
         NavigationStack {
@@ -71,16 +75,20 @@ struct SearchView: View {
                     }
                 } else if model.hasSearched && model.events.isEmpty && model.markets.isEmpty {
                     EmptyStateView(
-                        systemImage: "sparkles.slash",
+                        kind: .search,
                         title: "No results",
-                        message: "Try a different search term."
-                    )
+                        message: "Try a different search term, or browse Markets.",
+                        actionTitle: "Browse markets"
+                    ) {
+                        PeakRootTab.select(.markets)
+                    }
                 } else {
                     resultsList
                 }
             }
             .background(PeakMaterialBackground())
             .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.large)
             .peakChrome()
             .searchable(text: $model.query, prompt: "Events, markets, topics")
             .onChange(of: model.query) { _, newValue in
@@ -92,16 +100,50 @@ struct SearchView: View {
         }
     }
 
-    @ViewBuilder
     private var idleContent: some View {
-        if recentSearches.queries.isEmpty {
-            EmptyStateView(
-                systemImage: "magnifyingglass",
-                title: "Search markets",
-                message: "Find events and markets on Polymarket."
-            )
-        } else {
-            List {
+        List {
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(categoryPrefs.orderedCategories) { category in
+                            PeakCategoryChip(
+                                title: category.title,
+                                systemImage: category.systemImage,
+                                selected: browseCategory == category
+                            ) {
+                                Task { await loadBrowse(category) }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+            } header: {
+                Text("Browse categories")
+            }
+
+            if isBrowsing {
+                Section {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                }
+            } else if let browseCategory, !browseEvents.isEmpty {
+                Section(browseCategory.title) {
+                    ForEach(browseEvents) { event in
+                        NavigationLink(value: event) {
+                            EventRowView(event: event)
+                        }
+                    }
+                }
+            }
+
+            if recentSearches.queries.isEmpty && browseEvents.isEmpty && !isBrowsing {
+                Section {
+                    Text("Search or tap a category to explore.")
+                        .foregroundStyle(.secondary)
+                }
+            } else if !recentSearches.queries.isEmpty {
                 Section {
                     ForEach(recentSearches.queries, id: \.self) { item in
                         Button {
@@ -128,8 +170,8 @@ struct SearchView: View {
                     .font(.footnote)
                 }
             }
-            .listStyle(.insetGrouped)
         }
+        .listStyle(.insetGrouped)
     }
 
     private var resultsList: some View {
@@ -153,6 +195,7 @@ struct SearchView: View {
                                 title: market.eventTitle ?? market.question,
                                 description: nil,
                                 imageURL: market.imageURL,
+                                startDate: nil,
                                 endDate: market.endDate,
                                 volume: market.volume,
                                 volume24hr: market.volume24hr,
@@ -170,5 +213,17 @@ struct SearchView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+
+    private func loadBrowse(_ category: MarketCategory) async {
+        browseCategory = category
+        isBrowsing = true
+        defer { isBrowsing = false }
+        browseEvents = (try? await GammaAPI.fetchEvents(
+            category: category,
+            limit: 20,
+            offset: 0,
+            sort: .trending
+        )) ?? []
     }
 }

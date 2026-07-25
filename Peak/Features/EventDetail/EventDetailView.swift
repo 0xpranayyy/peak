@@ -10,7 +10,11 @@ final class EventDetailViewModel: ObservableObject {
     @Published var liveConnected = false
     @Published var midpoint: Double?
     @Published var spread: Double?
+    @Published var bestBid: Double?
+    @Published var bestAsk: Double?
+    @Published var lastTrade: Double?
     @Published var isLoading = false
+    @Published var isChartLoading = false
     @Published var errorMessage: String?
     @Published var historyInterval: HistoryInterval = .day
 
@@ -20,6 +24,7 @@ final class EventDetailViewModel: ObservableObject {
         case day = "1d"
         case week = "1w"
         case month = "1m"
+        case max = "max"
 
         var id: String { rawValue }
         var title: String {
@@ -29,16 +34,19 @@ final class EventDetailViewModel: ObservableObject {
             case .day: return "1D"
             case .week: return "1W"
             case .month: return "1M"
+            case .max: return "ALL"
             }
         }
 
+        /// Fidelity in minutes — per Polymarket prices-history docs.
         var fidelity: Int {
             switch self {
             case .hour: return 1
             case .sixHour: return 5
             case .day: return 15
             case .week: return 60
-            case .month: return 180
+            case .month: return 240
+            case .max: return 720
             }
         }
     }
@@ -46,6 +54,18 @@ final class EventDetailViewModel: ObservableObject {
     private let eventID: String
     private let socket = MarketWebSocket()
     private var loadGeneration = 0
+    /// Coalesce quote-driven UI publishes (~150ms) so @Published doesn't thrash every tick.
+    private var oddsFlushTask: Task<Void, Never>?
+    private var pendingOddsSync = false
+    private var pendingChartPin = false
+    private var lastPublishedOdds: Double?
+    private var stagedMidpoint: Double?
+    private var stagedSpread: Double?
+    private var stagedBestBid: Double?
+    private var stagedBestAsk: Double?
+    private var stagedLastTrade: Double?
+    private var stagedBook: OrderBook?
+    private var hasStagedQuotes = false
 
     var selectedMarket: Market? {
         guard let event else { return nil }
@@ -55,6 +75,21 @@ final class EventDetailViewModel: ObservableObject {
         return event.markets.first
     }
 
+    /// Odds shown in UI — midpoint unless wide spread, then last trade (Polymarket rule).
+    var displayedYesOdds: Double {
+        PeakTradeStyle.displayedOdds(
+            mid: midpoint,
+            spread: spread,
+            lastTrade: lastTrade,
+            fallback: selectedMarket?.yesPrice ?? 0.5
+        )
+    }
+
+    var chartTrendUp: Bool {
+        guard let first = history.first?.price, let last = history.last?.price else { return true }
+        return last >= first
+    }
+
     init(eventID: String, seed: PeakEvent?) {
         self.eventID = eventID
         self.event = seed
@@ -62,14 +97,25 @@ final class EventDetailViewModel: ObservableObject {
     }
 
     func onAppear() {
-        socket.onPrice = { [weak self] asset, price in
-            self?.applyLivePrice(asset: asset, price: price)
+        socket.onPrice = { [weak self] asset, price, kind in
+            self?.applyLivePrice(asset: asset, price: price, kind: kind)
         }
         socket.onBook = { [weak self] asset, book in
             guard let self, let market = self.selectedMarket,
                   asset == market.yesTokenID || asset == market.noTokenID else { return }
-            self.book = book
-            self.midpoint = book.midpoint
+            self.stageBook(book, forYesToken: asset == market.yesTokenID)
+        }
+        socket.onTopOfBook = { [weak self] asset, bid, ask in
+            guard let self, let market = self.selectedMarket,
+                  asset == market.yesTokenID else { return }
+            if let bid { self.stagedBestBid = bid }
+            if let ask { self.stagedBestAsk = ask }
+            if let bid, let ask, bid > 0, ask > 0 {
+                self.stagedMidpoint = (bid + ask) / 2
+                self.stagedSpread = ask - bid
+            }
+            self.hasStagedQuotes = true
+            self.scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
         }
         socket.onStatusChange = { [weak self] connected in
             self?.liveConnected = connected
@@ -78,6 +124,8 @@ final class EventDetailViewModel: ObservableObject {
     }
 
     func onDisappear() {
+        oddsFlushTask?.cancel()
+        oddsFlushTask = nil
         socket.disconnect()
     }
 
@@ -88,7 +136,10 @@ final class EventDetailViewModel: ObservableObject {
 
     func setInterval(_ interval: HistoryInterval) {
         historyInterval = interval
-        Task { await loadHistory() }
+        Task {
+            await loadHistory()
+            pinChartTip()
+        }
     }
 
     func reload() async {
@@ -103,7 +154,7 @@ final class EventDetailViewModel: ObservableObject {
             await reloadMarketData()
         } catch {
             if event == nil {
-                errorMessage = error.localizedDescription
+                errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t load this event. Try again.")
             }
         }
         isLoading = false
@@ -112,11 +163,44 @@ final class EventDetailViewModel: ObservableObject {
     private func reloadMarketData() async {
         loadGeneration += 1
         let generation = loadGeneration
-        await loadHistory()
+        clearQuoteState()
+        async let historyLoad: Void = loadHistory()
+        async let quotesLoad: Void = loadBookAndQuotes()
+        _ = await (historyLoad, quotesLoad)
         guard generation == loadGeneration else { return }
-        await loadBookAndQuotes()
-        guard generation == loadGeneration else { return }
+        // Prefer CLOB history tip, then Gamma outcome price — never midpoint.
+        if lastTrade == nil {
+            if let tip = history.last?.price, tip >= 0, tip <= 1 {
+                lastTrade = tip
+            } else {
+                lastTrade = selectedMarket?.yesPrice
+            }
+        }
+        pinChartTip()
         reconnectSocket()
+    }
+
+    /// Drop prior-market quotes so wide-spread / mid logic cannot leak across selections.
+    private func clearQuoteState() {
+        oddsFlushTask?.cancel()
+        oddsFlushTask = nil
+        pendingOddsSync = false
+        pendingChartPin = false
+        lastPublishedOdds = nil
+        stagedMidpoint = nil
+        stagedSpread = nil
+        stagedBestBid = nil
+        stagedBestAsk = nil
+        stagedLastTrade = nil
+        stagedBook = nil
+        hasStagedQuotes = false
+        midpoint = nil
+        spread = nil
+        bestBid = nil
+        bestAsk = nil
+        lastTrade = nil
+        book = OrderBook(bids: [], asks: [])
+        history = []
     }
 
     private func loadHistory() async {
@@ -124,14 +208,17 @@ final class EventDetailViewModel: ObservableObject {
             history = []
             return
         }
+        isChartLoading = history.isEmpty
+        defer { isChartLoading = false }
         do {
-            history = try await CLOBAPI.fetchPriceHistory(
+            let points = try await CLOBAPI.fetchPriceHistory(
                 tokenID: token,
                 interval: historyInterval.rawValue,
                 fidelity: historyInterval.fidelity
             )
+            history = points
         } catch {
-            // Keep prior chart on transient failures.
+            // Keep prior chart on transient failures (cleared already on market switch).
         }
     }
 
@@ -140,15 +227,135 @@ final class EventDetailViewModel: ObservableObject {
         async let bookTask = CLOBAPI.fetchBook(tokenID: token)
         async let midTask = CLOBAPI.fetchMidpoint(tokenID: token)
         async let spreadTask = CLOBAPI.fetchSpread(tokenID: token)
-        async let priceTask = CLOBAPI.fetchPrice(tokenID: token, side: "buy")
-        if let b = try? await bookTask { book = b }
-        let mid = try? await midTask
-        let quote = try? await priceTask
-        midpoint = mid ?? quote ?? book.midpoint
-        spread = try? await spreadTask
-        if let condition = selectedMarket?.conditionId, !condition.isEmpty {
-            _ = try? await CLOBAPI.fetchClobMarketInfo(conditionID: condition)
+        async let buyTask = CLOBAPI.fetchPrice(tokenID: token, side: "buy")
+        async let sellTask = CLOBAPI.fetchPrice(tokenID: token, side: "sell")
+
+        if let b = try? await bookTask {
+            applyBook(b, forYesToken: true)
         }
+
+        let mid = try? await midTask
+        let spr = try? await spreadTask
+        let buy = try? await buyTask
+        let sell = try? await sellTask
+
+        if let mid { midpoint = mid }
+        if let spr { spread = spr }
+        // CLOB /price?side=buy ≈ best ask (what you pay); side=sell ≈ best bid.
+        if let buy { bestAsk = buy }
+        if let sell { bestBid = sell }
+        // Never seed lastTrade from midpoint — that defeats the wide-spread rule.
+
+        syncMarketOddsFromQuotes()
+        lastPublishedOdds = displayedYesOdds
+    }
+
+    /// Pin live display odds onto the chart tip so the line matches the odds chip.
+    private func pinChartTip() {
+        let tip = displayedYesOdds
+        guard tip >= 0, tip <= 1 else { return }
+        let now = Int(Date().timeIntervalSince1970)
+        if let last = history.last {
+            if abs(last.price - tip) > 0.0005 {
+                history.append(PricePoint(timestamp: now, price: tip))
+            } else if now - last.timestamp >= 0 {
+                var copy = history
+                copy[copy.count - 1] = PricePoint(timestamp: max(last.timestamp, now), price: tip)
+                history = copy
+            }
+        } else {
+            history = [PricePoint(timestamp: now, price: tip)]
+        }
+    }
+
+    private func applyBook(_ book: OrderBook, forYesToken: Bool) {
+        guard forYesToken else { return }
+        self.book = book
+        bestBid = book.bestBid ?? bestBid
+        bestAsk = book.bestAsk ?? bestAsk
+        if let mid = book.midpoint {
+            midpoint = mid
+        }
+        if let bid = book.bestBid, let ask = book.bestAsk {
+            spread = ask - bid
+        }
+        syncMarketOddsFromQuotes()
+        lastPublishedOdds = displayedYesOdds
+        pinChartTip()
+    }
+
+    private func stageBook(_ book: OrderBook, forYesToken: Bool) {
+        guard forYesToken else { return }
+        stagedBook = book
+        if let bid = book.bestBid { stagedBestBid = bid }
+        if let ask = book.bestAsk { stagedBestAsk = ask }
+        if let mid = book.midpoint { stagedMidpoint = mid }
+        if let bid = book.bestBid, let ask = book.bestAsk {
+            stagedSpread = ask - bid
+        }
+        hasStagedQuotes = true
+        scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
+    }
+
+    private func syncMarketOddsFromQuotes() {
+        guard var event, let idx = event.markets.firstIndex(where: { $0.id == selectedMarket?.id }) else { return }
+        let odds = displayedYesOdds
+        if let last = lastPublishedOdds, abs(last - odds) < 0.001 {
+            return
+        }
+        var market = event.markets[idx]
+        if let yesToken = market.yesTokenID, !yesToken.isEmpty {
+            market.applyLivePrice(tokenID: yesToken, price: odds)
+        } else if market.outcomePrices.isEmpty {
+            market.outcomePrices = [odds, max(0, 1 - odds)]
+        } else {
+            market.outcomePrices[0] = odds
+            if market.outcomePrices.count > 1 {
+                market.outcomePrices[1] = max(0, 1 - odds)
+            }
+        }
+        event.markets[idx] = market
+        self.event = event
+        lastPublishedOdds = odds
+    }
+
+    /// Batch quote-driven event/chart publishes so live ticks don't rebuild the detail tree every message.
+    private func scheduleOddsUIUpdate(syncEvent: Bool, pinChart: Bool) {
+        if syncEvent { pendingOddsSync = true }
+        if pinChart { pendingChartPin = true }
+        guard oddsFlushTask == nil else { return }
+        oddsFlushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else {
+                oddsFlushTask = nil
+                return
+            }
+            flushStagedQuotes()
+            let shouldSync = pendingOddsSync
+            let shouldPin = pendingChartPin
+            pendingOddsSync = false
+            pendingChartPin = false
+            oddsFlushTask = nil
+            if shouldSync { syncMarketOddsFromQuotes() }
+            if shouldPin { pinChartTip() }
+        }
+    }
+
+    private func flushStagedQuotes() {
+        guard hasStagedQuotes else { return }
+        hasStagedQuotes = false
+        if let stagedBook { book = stagedBook }
+        if let stagedMidpoint { midpoint = stagedMidpoint }
+        if let stagedSpread { spread = stagedSpread }
+        if let stagedBestBid { bestBid = stagedBestBid }
+        if let stagedBestAsk { bestAsk = stagedBestAsk }
+        if let stagedLastTrade { lastTrade = stagedLastTrade }
+        stagedBook = nil
+        stagedMidpoint = nil
+        stagedSpread = nil
+        stagedBestBid = nil
+        stagedBestAsk = nil
+        stagedLastTrade = nil
     }
 
     private func reconnectSocket() {
@@ -158,28 +365,84 @@ final class EventDetailViewModel: ObservableObject {
         socket.connect(assetIDs: ids)
     }
 
-    private func applyLivePrice(asset: String, price: Double) {
-        guard var event, let idx = event.markets.firstIndex(where: {
-            $0.yesTokenID == asset || $0.noTokenID == asset
-        }) else { return }
-        event.markets[idx].applyLivePrice(tokenID: asset, price: price)
-        self.event = event
-        if selectedMarket?.yesTokenID == asset || selectedMarket?.noTokenID == asset {
-            midpoint = price
+    private func applyLivePrice(asset: String, price: Double, kind: MarketWebSocket.PriceKind) {
+        guard let market = selectedMarket,
+              market.yesTokenID == asset || market.noTokenID == asset else {
+            PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
+            PeakHaptics.oddsMove(tokenID: asset, price: price)
+            return
         }
+
+        let yesImplied: Double
+        if market.yesTokenID == asset {
+            yesImplied = price
+        } else {
+            yesImplied = max(0, min(1, 1 - price))
+        }
+
+        switch kind {
+        case .lastTrade:
+            stagedLastTrade = yesImplied
+            hasStagedQuotes = true
+            appendLiveChartPoint(yesImplied)
+            scheduleOddsUIUpdate(syncEvent: true, pinChart: false)
+        case .quote:
+            stagedMidpoint = yesImplied
+            hasStagedQuotes = true
+            scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
+        }
+
+        PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
+        PeakHaptics.oddsMove(tokenID: asset, price: price)
+    }
+
+    private func appendLiveChartPoint(_ price: Double) {
+        let now = Int(Date().timeIntervalSince1970)
+        if let last = history.last, now - last.timestamp < 2 {
+            var copy = history
+            copy[copy.count - 1] = PricePoint(timestamp: now, price: price)
+            history = copy
+        } else {
+            history.append(PricePoint(timestamp: now, price: price))
+        }
+    }
+
+    func buyPrice(isYes: Bool) -> Double {
+        // Buying pays the ask. No ask ≈ 1 − Yes bid.
+        if isYes {
+            return bestAsk ?? displayedYesOdds
+        }
+        return max(0.01, min(0.99, 1 - (bestBid ?? displayedYesOdds)))
+    }
+
+    func sellPrice(isYes: Bool) -> Double {
+        // Selling receives the bid. No bid ≈ 1 − Yes ask.
+        if isYes {
+            return bestBid ?? displayedYesOdds
+        }
+        return max(0.01, min(0.99, 1 - (bestAsk ?? displayedYesOdds)))
     }
 }
 
 struct EventDetailView: View {
     @EnvironmentObject private var env: AppEnvironment
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model: EventDetailViewModel
-    @State private var tradeSide: TradeSidePresentation?
+    @State private var trade: TradePresentation?
+    @State private var showShareCard = false
+    @State private var showPriceAlert = false
+    /// Which outcome share is active for the single Buy / Sell pair.
+    @State private var selectedIsYes = true
 
-    struct TradeSidePresentation: Identifiable {
+    struct TradePresentation: Identifiable {
         let id = UUID()
-        let sideLabel: String
         let market: Market
         let isYes: Bool
+        let action: TradeAction
+    }
+
+    enum TradeAction {
+        case buy, sell
     }
 
     init(eventID: String, seed: PeakEvent? = nil) {
@@ -202,8 +465,23 @@ struct EventDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .peakChrome()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if let event = model.event {
+                    Button {
+                        showPriceAlert = true
+                    } label: {
+                        Image(systemName: "bell")
+                    }
+                    .accessibilityLabel("Price alert")
+                    .disabled(model.selectedMarket == nil)
+
+                    Button {
+                        showShareCard = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share card")
+
                     Button {
                         env.watchlist.toggle(event.id)
                     } label: {
@@ -213,12 +491,33 @@ struct EventDetailView: View {
                 }
             }
         }
-        .sheet(item: $tradeSide) { item in
+        .sheet(item: $trade) { item in
             TradeStubSheet(
                 market: item.market,
-                sideLabel: item.sideLabel,
-                isYes: item.isYes
+                isYes: item.isYes,
+                action: item.action == .buy ? .buy : .sell,
+                quotePrice: item.action == .buy
+                    ? model.buyPrice(isYes: item.isYes)
+                    : model.sellPrice(isYes: item.isYes)
             )
+            .environmentObject(env)
+            .environmentObject(env.tradingConfig)
+            .environmentObject(PrivyAuthService.shared)
+            .environmentObject(TradingPathStore.shared)
+        }
+        .sheet(isPresented: $showShareCard) {
+            if let event = model.event {
+                ShareMarketSheet(
+                    event: event,
+                    market: model.selectedMarket,
+                    history: model.history
+                )
+            }
+        }
+        .sheet(isPresented: $showPriceAlert) {
+            if let event = model.event, let market = model.selectedMarket {
+                PriceAlertComposerSheet(event: event, market: market)
+            }
         }
         .onAppear { model.onAppear() }
         .onDisappear { model.onDisappear() }
@@ -244,7 +543,13 @@ struct EventDetailView: View {
             .padding()
         }
         .background(PeakMaterialBackground())
-        .refreshable { await model.reload() }
+        .refreshable {
+            await model.reload()
+            PeakHaptics.refresh()
+        }
+        .onChange(of: model.selectedMarket?.id) { _, _ in
+            selectedIsYes = true
+        }
     }
 
     private func header(_ event: PeakEvent) -> some View {
@@ -285,13 +590,24 @@ struct EventDetailView: View {
                 Label(PeakFormat.compactCurrency(event.volume), systemImage: "dollarsign.circle")
                 Label(PeakFormat.compactCurrency(event.volume24hr) + " 24h", systemImage: "chart.line.uptrend.xyaxis")
                 if model.liveConnected {
-                    Label("Live", systemImage: "antenna.radiowaves.left.and.right")
-                        .foregroundStyle(.green)
+                    Label {
+                        Text("Live")
+                    } icon: {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .symbolEffect(
+                                .pulse,
+                                options: .repeating.speed(0.35),
+                                isActive: !reduceMotion
+                            )
+                    }
+                    .foregroundStyle(PeakTradeStyle.buy)
+                    .accessibilityLabel("Live odds")
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+        .peakAppear()
     }
 
     private func marketPicker(_ markets: [Market]) -> some View {
@@ -326,14 +642,17 @@ struct EventDetailView: View {
 
     private func livePriceSection(_ market: Market) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            MarketOutcomeBar(market: market)
+            MarketOutcomeBar(market: market, displayedYes: model.displayedYesOdds)
+
             HStack {
-                metric("Mid", model.midpoint.map(PeakFormat.cents) ?? "—")
+                metric("Odds", PeakFormat.cents(model.displayedYesOdds))
+                metric("Bid", model.bestBid.map(PeakFormat.cents) ?? "—")
+                metric("Ask", model.bestAsk.map(PeakFormat.cents) ?? "—")
                 metric("Spread", model.spread.map { String(format: "%.1f¢", $0 * 100) } ?? "—")
-                metric("Ends", PeakFormat.shortDate(market.endDate))
             }
         }
         .peakContentCard()
+        .animation(PeakMotion.soft, value: model.displayedYesOdds)
     }
 
     private func metric(_ title: String, _ value: String) -> some View {
@@ -343,6 +662,7 @@ struct EventDetailView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
+                .peakNumeric(value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -350,58 +670,124 @@ struct EventDetailView: View {
     private var chartSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Price")
+                Text("Odds")
                     .font(.headline)
                 Spacer()
-                Picker("Interval", selection: Binding(
-                    get: { model.historyInterval },
-                    set: { model.setInterval($0) }
-                )) {
-                    ForEach(EventDetailViewModel.HistoryInterval.allCases) { interval in
-                        Text(interval.title).tag(interval)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 260)
+                Text(PeakFormat.cents(model.displayedYesOdds))
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(model.chartTrendUp ? PeakTradeStyle.buy : PeakTradeStyle.sell)
+                    .peakNumeric(value: model.displayedYesOdds)
             }
 
-            if model.history.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(EventDetailViewModel.HistoryInterval.allCases) { interval in
+                        let on = model.historyInterval == interval
+                        Button {
+                            model.setInterval(interval)
+                        } label: {
+                            Text(interval.title)
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(on ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+                                .foregroundStyle(on ? Color.white : Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                        .accessibilityLabel("Chart interval \(interval.title)")
+                    }
+                }
+            }
+
+            if model.isChartLoading && model.history.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200)
+            } else if model.history.isEmpty {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
-                    .frame(height: 180)
+                    .fill(Color.secondary.opacity(0.06))
+                    .frame(height: 200)
                     .overlay {
-                        Text("No chart data")
-                            .foregroundStyle(.secondary)
+                        ZStack {
+                            PeakChartPlaceholder()
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 28)
+                            VStack(spacing: 8) {
+                                Spacer()
+                                Text("No chart data yet")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.bottom, 16)
+                            }
+                        }
                     }
             } else {
-                Chart(model.history) { point in
-                    LineMark(
-                        x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
-                        y: .value("Price", point.price)
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(Color.accentColor)
+                let trend = model.chartTrendUp ? PeakTradeStyle.buy : PeakTradeStyle.sell
+                let prices = model.history.map(\.price)
+                let lo = max(0, (prices.min() ?? 0) - 0.04)
+                let hi = min(1, (prices.max() ?? 1) + 0.04)
 
-                    AreaMark(
-                        x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
-                        y: .value("Price", point.price)
-                    )
-                    .interpolationMethod(.catmullRom)
-                    .foregroundStyle(Color.accentColor.opacity(0.12))
+                Chart {
+                    ForEach(model.history) { point in
+                        LineMark(
+                            x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
+                            y: .value("Odds", point.price)
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(trend)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+
+                        AreaMark(
+                            x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
+                            y: .value("Odds", point.price)
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [trend.opacity(0.28), trend.opacity(0.02)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    }
+
+                    RuleMark(y: .value("Now", model.displayedYesOdds))
+                        .foregroundStyle(trend.opacity(0.35))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+                    if let last = model.history.last {
+                        PointMark(
+                            x: .value("Time", Date(timeIntervalSince1970: TimeInterval(last.timestamp))),
+                            y: .value("Odds", last.price)
+                        )
+                        .foregroundStyle(trend)
+                        .symbolSize(48)
+                    }
                 }
-                .chartYScale(domain: 0...1)
+                .chartYScale(domain: lo...hi)
                 .chartYAxis {
-                    AxisMarks(values: [0, 0.25, 0.5, 0.75, 1]) { value in
-                        AxisGridLine()
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                            .foregroundStyle(Color.secondary.opacity(0.25))
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(PeakFormat.cents(v))
-                                    .font(.caption2)
+                                    .font(.caption2.monospacedDigit())
                             }
                         }
                     }
                 }
-                .frame(height: 200)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                            .foregroundStyle(Color.secondary.opacity(0.15))
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                            .font(.caption2)
+                    }
+                }
+                .frame(height: 220)
             }
         }
         .peakContentCard()
@@ -413,28 +799,28 @@ struct EventDetailView: View {
                 .font(.headline)
 
             if model.book.bids.isEmpty && model.book.asks.isEmpty {
-                Text("Book unavailable")
+                Text("Order book isn’t available right now.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
                 HStack(alignment: .top, spacing: 16) {
-                    bookColumn(title: "Bids", levels: model.book.bids, emphasize: true)
-                    bookColumn(title: "Asks", levels: model.book.asks, emphasize: false)
+                    bookColumn(title: "Bids", levels: model.book.bids, color: PeakTradeStyle.buy)
+                    bookColumn(title: "Asks", levels: model.book.asks, color: PeakTradeStyle.sell)
                 }
             }
         }
         .peakContentCard()
     }
 
-    private func bookColumn(title: String, levels: [OrderBookLevel], emphasize: Bool) -> some View {
+    private func bookColumn(title: String, levels: [OrderBookLevel], color: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(color)
             ForEach(levels.prefix(8)) { level in
                 HStack {
                     Text(PeakFormat.cents(level.price))
-                        .foregroundStyle(emphasize ? Color.primary : Color.secondary)
+                        .foregroundStyle(color)
                     Spacer()
                     Text(String(format: "%.0f", level.size))
                         .foregroundStyle(.secondary)
@@ -446,36 +832,62 @@ struct EventDetailView: View {
     }
 
     private func tradeButtons(_ market: Market) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                tradeSide = TradeSidePresentation(sideLabel: market.yesLabel, market: market, isYes: true)
-            } label: {
-                VStack(spacing: 4) {
-                    Text("Buy \(market.yesLabel)")
-                        .font(.headline)
-                    Text(PeakFormat.cents(market.yesPrice))
-                        .font(.subheadline.monospacedDigit())
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Buy \(market.yesLabel) at \(PeakFormat.cents(market.yesPrice)). Opens trade sheet; ordering comes in Phase 2.")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Trade")
+                .font(.headline)
 
-            Button {
-                tradeSide = TradeSidePresentation(sideLabel: market.noLabel, market: market, isYes: false)
-            } label: {
-                VStack(spacing: 4) {
-                    Text("Buy \(market.noLabel)")
-                        .font(.headline)
-                    Text(PeakFormat.cents(market.noPrice))
-                        .font(.subheadline.monospacedDigit())
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+            // Pick one share, then a single Buy + Sell for that share.
+            Picker("Share", selection: $selectedIsYes) {
+                Text(market.yesLabel).tag(true)
+                Text(market.noLabel).tag(false)
             }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Buy \(market.noLabel) at \(PeakFormat.cents(market.noPrice)). Opens trade sheet; ordering comes in Phase 2.")
+            .pickerStyle(.segmented)
+
+            HStack(spacing: 10) {
+                let side = selectedIsYes ? market.yesLabel : market.noLabel
+                tradeButton(
+                    title: "Buy",
+                    subtitle: PeakFormat.cents(model.buyPrice(isYes: selectedIsYes)),
+                    color: PeakTradeStyle.buy,
+                    accessibilitySide: side
+                ) {
+                    trade = TradePresentation(market: market, isYes: selectedIsYes, action: .buy)
+                }
+                tradeButton(
+                    title: "Sell",
+                    subtitle: PeakFormat.cents(model.sellPrice(isYes: selectedIsYes)),
+                    color: PeakTradeStyle.sell,
+                    accessibilitySide: side
+                ) {
+                    trade = TradePresentation(market: market, isYes: selectedIsYes, action: .sell)
+                }
+            }
         }
+    }
+
+    private func tradeButton(
+        title: String,
+        subtitle: String,
+        color: Color,
+        accessibilitySide: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .opacity(0.9)
+                    .peakNumeric(value: subtitle)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 48)
+            .padding(.vertical, 14)
+            .background(color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .peakPressable()
+        .accessibilityLabel("\(title) \(accessibilitySide) at \(subtitle)")
     }
 }

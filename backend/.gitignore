@@ -1,5 +1,15 @@
 # Dependencies
 node_modules/
+
+# Secrets & local env (keep .env.example tracked)
 .env
+.env.*
+!.env.example
+
 *.log
 .DS_Store
+
+# Session / auth persistence (may contain tokens)
+.sessions.json
+*.sessions.json
+.sessions*.json

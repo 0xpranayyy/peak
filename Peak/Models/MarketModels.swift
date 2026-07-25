@@ -1,17 +1,18 @@
 import Foundation
 
-struct MarketTag: Identifiable, Hashable, Sendable {
+struct MarketTag: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let label: String
     let slug: String?
 }
 
-struct PeakEvent: Identifiable, Hashable, Sendable {
+struct PeakEvent: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let slug: String?
     let title: String
     let description: String?
     let imageURL: URL?
+    let startDate: Date?
     let endDate: Date?
     let volume: Double
     let volume24hr: Double
@@ -21,9 +22,12 @@ struct PeakEvent: Identifiable, Hashable, Sendable {
 
     var primaryMarket: Market? { markets.first }
     var displayProbability: Double? { primaryMarket?.yesPrice }
+
+    /// List / rail eligibility (not applied on event-detail deep links).
+    var isShowcaseEligible: Bool { MarketShowcase.isShowcaseEligible(self) }
 }
 
-struct Market: Identifiable, Hashable, Sendable {
+struct Market: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let question: String
     let slug: String?
@@ -42,39 +46,90 @@ struct Market: Identifiable, Hashable, Sendable {
     let eventTitle: String?
     let imageURL: URL?
 
+    /// Open for showcase / trading feeds (detail may still load closed markets).
+    var isShowcaseEligible: Bool { MarketShowcase.isLive(self) }
+
+    /// Index of the Yes-like outcome (explicit "Yes", else first).
+    private var yesOutcomeIndex: Int {
+        if let idx = outcomes.firstIndex(where: { $0.caseInsensitiveCompare("Yes") == .orderedSame }) {
+            return idx
+        }
+        return 0
+    }
+
+    /// Index of the No-like outcome (explicit "No", else the other binary slot).
+    private var noOutcomeIndex: Int {
+        if let idx = outcomes.firstIndex(where: { $0.caseInsensitiveCompare("No") == .orderedSame }) {
+            return idx
+        }
+        return yesOutcomeIndex == 0 ? 1 : 0
+    }
+
     var yesPrice: Double {
-        outcomePrices.first ?? 0.5
+        let idx = yesOutcomeIndex
+        if idx < outcomePrices.count { return outcomePrices[idx] }
+        return outcomePrices.first ?? 0.5
     }
 
     var noPrice: Double {
-        if outcomePrices.count > 1 { return outcomePrices[1] }
+        let idx = noOutcomeIndex
+        if idx < outcomePrices.count { return outcomePrices[idx] }
         return max(0, 1 - yesPrice)
     }
 
-    var yesTokenID: String? { clobTokenIds.first }
-    var noTokenID: String? { clobTokenIds.count > 1 ? clobTokenIds[1] : nil }
+    var yesTokenID: String? {
+        let idx = yesOutcomeIndex
+        guard idx < clobTokenIds.count else { return clobTokenIds.first }
+        return clobTokenIds[idx]
+    }
 
-    var yesLabel: String { outcomes.first ?? "Yes" }
-    var noLabel: String { outcomes.count > 1 ? outcomes[1] : "No" }
+    var noTokenID: String? {
+        let idx = noOutcomeIndex
+        guard idx < clobTokenIds.count else {
+            return clobTokenIds.count > 1 ? clobTokenIds[1] : nil
+        }
+        return clobTokenIds[idx]
+    }
+
+    var yesLabel: String {
+        let idx = yesOutcomeIndex
+        if idx < outcomes.count { return outcomes[idx] }
+        return outcomes.first ?? "Yes"
+    }
+
+    var noLabel: String {
+        let idx = noOutcomeIndex
+        if idx < outcomes.count { return outcomes[idx] }
+        return outcomes.count > 1 ? outcomes[1] : "No"
+    }
 
     mutating func applyLivePrice(tokenID: String, price: Double) {
-        guard price > 0, price < 1 else { return }
+        guard price >= 0, price <= 1 else { return }
+        let yesIdx = yesOutcomeIndex
+        let noIdx = noOutcomeIndex
         if tokenID == yesTokenID {
-            if outcomePrices.isEmpty {
-                outcomePrices = [price, max(0, 1 - price)]
-            } else {
-                outcomePrices[0] = price
-                if outcomePrices.count > 1 {
-                    outcomePrices[1] = max(0, 1 - price)
-                }
+            ensureOutcomePriceSlots()
+            if yesIdx < outcomePrices.count {
+                outcomePrices[yesIdx] = price
+            }
+            if noIdx < outcomePrices.count {
+                outcomePrices[noIdx] = max(0, 1 - price)
             }
         } else if tokenID == noTokenID {
-            if outcomePrices.count > 1 {
-                outcomePrices[1] = price
-                outcomePrices[0] = max(0, 1 - price)
-            } else {
-                outcomePrices = [max(0, 1 - price), price]
+            ensureOutcomePriceSlots()
+            if noIdx < outcomePrices.count {
+                outcomePrices[noIdx] = price
             }
+            if yesIdx < outcomePrices.count {
+                outcomePrices[yesIdx] = max(0, 1 - price)
+            }
+        }
+    }
+
+    private mutating func ensureOutcomePriceSlots() {
+        let needed = max(2, max(yesOutcomeIndex, noOutcomeIndex) + 1)
+        while outcomePrices.count < needed {
+            outcomePrices.append(0.5)
         }
     }
 }
