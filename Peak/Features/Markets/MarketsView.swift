@@ -278,29 +278,22 @@ final class MarketsViewModel: ObservableObject {
             displayOdds = merged
         }
 
-        // Digest/rail merges must not cancel an in-flight list enrich.
-        if replace {
-            oddsTask?.cancel()
-        }
-
-        // Network work runs in a nonisolated helper so the @MainActor view model
-        // only resumes once for the final merge (not after every CLOB response).
-        let work = Task(priority: .utility) {
+        // Always cancel prior enrich — digest/rail + list can otherwise stack unbounded CLOB work.
+        oddsTask?.cancel()
+        let keepIDs = Set(page.map(\.id))
+        let replaceSnapshot = replace
+        oddsTask = Task(priority: .utility) {
             let updates = await Self.computeEnrichedOdds(targets: targets)
             guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
-            let keepIDs = Set(page.map(\.id))
-            if replace {
+            if replaceSnapshot {
                 var next = displayOdds.filter { keepIDs.contains($0.key) }
                 next.merge(updates) { _, new in new }
                 displayOdds = next
             } else {
                 displayOdds.merge(updates) { _, new in new }
             }
-        }
-        if replace {
-            oddsTask = work
         }
     }
 

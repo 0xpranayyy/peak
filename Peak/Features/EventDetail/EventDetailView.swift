@@ -54,7 +54,9 @@ final class EventDetailViewModel: ObservableObject {
     private let eventID: String
     private let socket = MarketWebSocket()
     private var loadGeneration = 0
-    /// Coalesce quote-driven UI publishes (~150ms) so @Published doesn't thrash every tick.
+    /// Hard-cap quote UI publishes (~10 Hz) so Chart / ScrollView stay touchable on busy books.
+    private static let oddsFlushNanoseconds: UInt64 = 100_000_000
+    private static let maxHistoryPoints = 360
     private var oddsFlushTask: Task<Void, Never>?
     private var oddsFlushGeneration = 0
     private var pendingOddsSync = false
@@ -272,7 +274,9 @@ final class EventDetailViewModel: ObservableObject {
             )
         })
         guard generation == loadGeneration, let points, !points.isEmpty else { return }
-        history = points
+        history = points.count > Self.maxHistoryPoints
+            ? Array(points.suffix(Self.maxHistoryPoints))
+            : points
     }
 
     private func loadBookAndQuotes(generation: Int) async {
@@ -361,17 +365,24 @@ final class EventDetailViewModel: ObservableObject {
     }
 
     /// Pin live display odds onto the chart tip so the line matches the odds chip.
+    /// Prefer in-place tip updates; bound length so Charts can't grow without limit.
     private func pinChartTip() {
         let tip = displayedYesOdds
         guard tip >= 0, tip <= 1 else { return }
         let now = Int(Date().timeIntervalSince1970)
         if let last = history.last {
-            if abs(last.price - tip) > 0.0005 {
+            if now <= last.timestamp || abs(last.price - tip) <= 0.0005 {
+                // Same second or tiny move — mutate tip in place (no append storm).
+                if abs(last.price - tip) > 0.00005 || now != last.timestamp {
+                    var copy = history
+                    copy[copy.count - 1] = PricePoint(timestamp: max(last.timestamp, now), price: tip)
+                    history = copy
+                }
+            } else {
                 history.append(PricePoint(timestamp: now, price: tip))
-            } else if now - last.timestamp >= 0 {
-                var copy = history
-                copy[copy.count - 1] = PricePoint(timestamp: max(last.timestamp, now), price: tip)
-                history = copy
+                if history.count > Self.maxHistoryPoints {
+                    history = Array(history.suffix(Self.maxHistoryPoints))
+                }
             }
         } else {
             history = [PricePoint(timestamp: now, price: tip)]
@@ -436,7 +447,7 @@ final class EventDetailViewModel: ObservableObject {
         guard oddsFlushTask == nil else { return }
         let generation = oddsFlushGeneration
         oddsFlushTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: Self.oddsFlushNanoseconds)
             defer {
                 if oddsFlushGeneration == generation {
                     oddsFlushTask = nil
@@ -448,8 +459,15 @@ final class EventDetailViewModel: ObservableObject {
             let shouldPin = pendingChartPin
             pendingOddsSync = false
             pendingChartPin = false
+            let oddsBefore = lastPublishedOdds
             if shouldSync { syncMarketOddsFromQuotes() }
-            if shouldPin { pinChartTip() }
+            // Only re-pin / republish history when odds actually moved.
+            if shouldPin {
+                let odds = displayedYesOdds
+                if oddsBefore == nil || abs((oddsBefore ?? odds) - odds) >= 0.0005 {
+                    pinChartTip()
+                }
+            }
         }
     }
 
@@ -480,8 +498,8 @@ final class EventDetailViewModel: ObservableObject {
     private func applyLivePrice(asset: String, price: Double, kind: MarketWebSocket.PriceKind) {
         guard let market = selectedMarket,
               market.yesTokenID == asset || market.noTokenID == asset else {
+            // Non-selected tokens: alerts only (no haptics storm from other outcomes).
             PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
-            PeakHaptics.oddsMove(tokenID: asset, price: price)
             return
         }
 
@@ -496,16 +514,17 @@ final class EventDetailViewModel: ObservableObject {
         case .lastTrade:
             stagedLastTrade = yesImplied
             hasStagedQuotes = true
-            // Chart tip is flushed with quotes (~150ms) — avoid history @Published every tick.
+            // Chart tip is flushed with quotes — avoid history @Published every tick.
             scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
+            PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
+            PeakHaptics.oddsMove(tokenID: asset, price: price)
         case .quote:
             stagedMidpoint = yesImplied
             hasStagedQuotes = true
             scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
+            // Quotes arrive far more often than trades — skip haptics; alerts still need last/trade-ish moves.
+            PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
         }
-
-        PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
-        PeakHaptics.oddsMove(tokenID: asset, price: price)
     }
 
     func buyPrice(isYes: Bool) -> Double {
@@ -794,7 +813,8 @@ struct EventDetailView: View {
             }
         }
         .peakContentCard()
-        .animation(reduceMotion ? nil : PeakMotion.soft, value: model.displayedYesOdds)
+        // Live odds move often — animating every tick fights scroll/touch on busy markets.
+        .transaction { $0.animation = nil }
     }
 
     private var metricDivider: some View {
@@ -940,14 +960,16 @@ struct EventDetailView: View {
     }
 
     /// Drop obvious bad tip spikes (e.g. pinned 0¢) that warp the chart.
+    /// Avoid sorting the full series on every body pass — sample a fixed window.
     private var sanitizedHistory: [PricePoint] {
         let points = model.history
-        guard points.count >= 3 else { return points }
-        let body = Array(points.dropLast())
-        let median = body.map(\.price).sorted()[body.count / 2]
-        guard let last = points.last else { return points }
+        guard points.count >= 3, let last = points.last else { return points }
+        let sample = points.suffix(48).dropLast()
+        guard !sample.isEmpty else { return points }
+        let sorted = sample.map(\.price).sorted()
+        let median = sorted[sorted.count / 2]
         if abs(last.price - median) > 0.45, last.price < 0.05 || last.price > 0.95 {
-            return body + [PricePoint(timestamp: last.timestamp, price: model.displayedYesOdds)]
+            return Array(points.dropLast()) + [PricePoint(timestamp: last.timestamp, price: model.displayedYesOdds)]
         }
         return points
     }

@@ -73,7 +73,7 @@ enum CLOBAPI {
             OrderBookLevel(price: $0.price.value, size: $0.size.value, side: .ask)
         }
         .sorted { $0.price < $1.price }
-        return OrderBook(bids: Array(bids.prefix(12)), asks: Array(asks.prefix(12)))
+        return OrderBook(bids: Array(bids.prefix(8)), asks: Array(asks.prefix(8)))
     }
 
     static func fetchPrice(tokenID: String, side: String = "buy") async throws -> Double? {

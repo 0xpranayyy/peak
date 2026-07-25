@@ -1,9 +1,11 @@
 import Foundation
+import os
 
 /// Live prices via Polymarket's public CLOB Market WebSocket channel.
 /// Subscribes with `assets_ids` and sends `PING` every 10 seconds.
 ///
-/// JSON is parsed off the main actor; only typed callbacks hop to MainActor.
+/// JSON is parsed off the main actor. Parsed quotes are coalesced and flushed
+/// to MainActor callbacks at a hard cap (~12 Hz) so busy markets cannot stall touch.
 @MainActor
 final class MarketWebSocket {
     static let url = URL(string: "wss://ws-subscriptions-clob.polymarket.com/ws/market")!
@@ -22,6 +24,29 @@ final class MarketWebSocket {
         case book(asset: String, book: OrderBook, bestBid: Double?, bestAsk: Double?)
     }
 
+    /// Latest coalesced state per asset — flushed to UI at most once per interval.
+    private struct PendingAsset: Sendable {
+        var bid: Double?
+        var ask: Double?
+        var mid: Double?
+        var lastTrade: Double?
+        var book: OrderBook?
+        var hasQuote = false
+        var hasTrade = false
+        var hasBook = false
+    }
+
+    private struct PendingBuffer: Sendable {
+        var assets: [String: PendingAsset] = [:]
+        var flushScheduled = false
+    }
+
+    /// UI publish hard-cap (~12 Hz). Busy books emit far faster than SwiftUI can absorb.
+    private static let uiFlushIntervalNanoseconds: UInt64 = 80_000_000
+    private static let maxReconnectDelaySeconds: Double = 20
+    private static let maxBookDepth = 8
+    private static let maxBookParseLevels = 48
+
     private var task: URLSessionWebSocketTask?
     private var assetIDs: [String] = []
     private var pingTimer: Timer?
@@ -30,6 +55,9 @@ final class MarketWebSocket {
     private var reconnectTask: Task<Void, Never>?
     private var receiveGeneration = 0
     private(set) var isConnected = false
+
+    /// Coalesce off MainActor; only the flush hops back.
+    nonisolated(unsafe) private let pending = OSAllocatedUnfairLock(initialState: PendingBuffer())
 
     var onPrice: ((String, Double, PriceKind) -> Void)?
     var onBook: ((String, OrderBook) -> Void)?
@@ -52,6 +80,10 @@ final class MarketWebSocket {
         pingTimer = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+        pending.withLock { buffer in
+            buffer.assets.removeAll(keepingCapacity: false)
+            buffer.flushScheduled = false
+        }
         setConnected(false)
     }
 
@@ -59,6 +91,12 @@ final class MarketWebSocket {
         guard wantsConnection, !assetIDs.isEmpty else { return }
         receiveGeneration += 1
         let generation = receiveGeneration
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        pending.withLock { buffer in
+            buffer.assets.removeAll(keepingCapacity: true)
+            buffer.flushScheduled = false
+        }
         task?.cancel(with: .normalClosure, reason: nil)
         let t = URLSession.shared.webSocketTask(with: Self.url)
         task = t
@@ -93,6 +131,8 @@ final class MarketWebSocket {
     private func receiveLoop(generation: Int) {
         guard wantsConnection, generation == receiveGeneration else { return }
         task?.receive { [weak self] result in
+            // Keep the socket pump off MainActor: parse + coalesce on a utility task,
+            // then only hop for the next receive / reconnect bookkeeping.
             switch result {
             case .success(let message):
                 let text: String?
@@ -105,17 +145,18 @@ final class MarketWebSocket {
                     text = nil
                 }
 
+                if let text, text != "PONG", let self {
+                    // Parse + coalesce without touching MainActor; only the ~12 Hz flush hops.
+                    Task.detached(priority: .utility) { [weak self] in
+                        guard let self else { return }
+                        let events = MarketWebSocket.parse(text)
+                        guard !events.isEmpty else { return }
+                        self.enqueueOffMain(events, generation: generation)
+                    }
+                }
+
                 Task { @MainActor [weak self] in
                     guard let self, generation == self.receiveGeneration, self.wantsConnection else { return }
-                    if let text, text != "PONG" {
-                        Task.detached(priority: .utility) { [weak self] in
-                            let events = MarketWebSocket.parse(text)
-                            guard !events.isEmpty else { return }
-                            await MainActor.run { [weak self] in
-                                self?.dispatch(events, generation: generation)
-                            }
-                        }
-                    }
                     self.receiveLoop(generation: generation)
                 }
             case .failure:
@@ -128,27 +169,73 @@ final class MarketWebSocket {
         }
     }
 
-    private func dispatch(_ events: [ParsedEvent], generation: Int) {
-        guard wantsConnection, generation == receiveGeneration else { return }
-        for event in events {
-            switch event {
-            case let .lastTrade(asset, price):
-                onPrice?(asset, price, .lastTrade)
-            case let .quote(asset, bid, ask):
-                if bid != nil || ask != nil {
-                    onTopOfBook?(asset, bid, ask)
+    /// Merge into the lock-backed buffer on the caller’s thread (utility), then arm one MainActor flush.
+    nonisolated private func enqueueOffMain(_ events: [ParsedEvent], generation: Int) {
+        var shouldSchedule = false
+        pending.withLock { buffer in
+            for event in events {
+                switch event {
+                case let .lastTrade(asset, price):
+                    var row = buffer.assets[asset] ?? PendingAsset()
+                    row.lastTrade = price
+                    row.hasTrade = true
+                    buffer.assets[asset] = row
+                case let .quote(asset, bid, ask):
+                    var row = buffer.assets[asset] ?? PendingAsset()
+                    if let bid { row.bid = bid }
+                    if let ask { row.ask = ask }
+                    if let bid, let ask, bid > 0, ask > 0 {
+                        row.mid = (bid + ask) / 2
+                    }
+                    row.hasQuote = true
+                    buffer.assets[asset] = row
+                case let .book(asset, book, bestBid, bestAsk):
+                    var row = buffer.assets[asset] ?? PendingAsset()
+                    row.book = book
+                    row.hasBook = true
+                    if let bestBid { row.bid = bestBid }
+                    if let bestAsk { row.ask = bestAsk }
+                    if let bestBid, let bestAsk, bestBid > 0, bestAsk > 0 {
+                        row.mid = (bestBid + bestAsk) / 2
+                    }
+                    row.hasQuote = true
+                    buffer.assets[asset] = row
                 }
-                if let bid, let ask, bid > 0, ask > 0 {
-                    onPrice?(asset, (bid + ask) / 2, .quote)
-                }
-            case let .book(asset, book, bestBid, bestAsk):
+            }
+            if !buffer.flushScheduled {
+                buffer.flushScheduled = true
+                shouldSchedule = true
+            }
+        }
+
+        guard shouldSchedule else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.uiFlushIntervalNanoseconds)
+            self?.flushPending(generation: generation)
+        }
+    }
+
+    private func flushPending(generation: Int) {
+        let snapshot: [String: PendingAsset] = pending.withLock { buffer in
+            buffer.flushScheduled = false
+            let copy = buffer.assets
+            buffer.assets.removeAll(keepingCapacity: true)
+            return copy
+        }
+        guard wantsConnection, generation == receiveGeneration, !snapshot.isEmpty else { return }
+
+        for (asset, row) in snapshot {
+            if row.hasBook, let book = row.book {
                 onBook?(asset, book)
-                if bestBid != nil || bestAsk != nil {
-                    onTopOfBook?(asset, bestBid, bestAsk)
-                }
-                if let bestBid, let bestAsk, bestBid > 0, bestAsk > 0 {
-                    onPrice?(asset, (bestBid + bestAsk) / 2, .quote)
-                }
+            }
+            if row.hasQuote, row.bid != nil || row.ask != nil {
+                onTopOfBook?(asset, row.bid, row.ask)
+            }
+            if row.hasTrade, let price = row.lastTrade {
+                onPrice?(asset, price, .lastTrade)
+            }
+            if row.hasQuote, let mid = row.mid, mid > 0, mid < 1 {
+                onPrice?(asset, mid, .quote)
             }
         }
     }
@@ -166,7 +253,7 @@ final class MarketWebSocket {
         }
 
         var parsed: [ParsedEvent] = []
-        parsed.reserveCapacity(events.count)
+        parsed.reserveCapacity(min(events.count, 32))
         for event in events {
             let type = (event["event_type"] as? String ?? event["type"] as? String ?? "").lowercased()
             switch type {
@@ -198,11 +285,11 @@ final class MarketWebSocket {
                     let asks = parseLevels(event["asks"], side: .ask)
                         .sorted { $0.price < $1.price }
                     let trimmed = OrderBook(
-                        bids: Array(bids.prefix(12)),
-                        asks: Array(asks.prefix(12))
+                        bids: Array(bids.prefix(Self.maxBookDepth)),
+                        asks: Array(asks.prefix(Self.maxBookDepth))
                     )
-                    let bestBid = bids.map(\.price).max()
-                    let bestAsk = asks.map(\.price).min()
+                    let bestBid = trimmed.bestBid
+                    let bestAsk = trimmed.bestAsk
                     if !trimmed.bids.isEmpty || !trimmed.asks.isEmpty || bestBid != nil || bestAsk != nil {
                         parsed.append(.book(asset: asset, book: trimmed, bestBid: bestBid, bestAsk: bestAsk))
                     }
@@ -225,7 +312,7 @@ final class MarketWebSocket {
     private nonisolated static func parseLevels(_ raw: Any?, side: OrderBookLevel.Side) -> [OrderBookLevel] {
         guard let rows = raw as? [[String: Any]] else { return [] }
         // Cap before sorting — full CLOB books can be huge and must stay off MainActor.
-        let limited = rows.prefix(64)
+        let limited = rows.prefix(Self.maxBookParseLevels)
         return limited.compactMap { row in
             guard let price = double(row["price"]),
                   let size = double(row["size"]) else { return nil }
@@ -255,10 +342,14 @@ final class MarketWebSocket {
         pingTimer?.invalidate()
         reconnectTask?.cancel()
         reconnectAttempts += 1
-        let delay = min(30.0, pow(2.0, Double(min(reconnectAttempts, 5))))
+        // Cap backoff so a flapping socket cannot stack reconnect Tasks forever.
+        let cappedAttempt = min(reconnectAttempts, 6)
+        let delay = min(Self.maxReconnectDelaySeconds, pow(2.0, Double(cappedAttempt)))
+        let generation = receiveGeneration
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled, self.wantsConnection else { return }
+            guard generation == self.receiveGeneration else { return }
             self.open()
         }
     }

@@ -166,9 +166,17 @@ struct OrderBookLevel: Identifiable, Hashable, Sendable {
 struct OrderBook: Hashable, Sendable {
     var bids: [OrderBookLevel]
     var asks: [OrderBookLevel]
+    /// Cached at init — avoid scanning levels on every SwiftUI / quote tick.
+    let bestBid: Double?
+    let bestAsk: Double?
 
-    var bestBid: Double? { bids.map(\.price).max() }
-    var bestAsk: Double? { asks.map(\.price).min() }
+    init(bids: [OrderBookLevel], asks: [OrderBookLevel]) {
+        self.bids = bids
+        self.asks = asks
+        self.bestBid = bids.map(\.price).max()
+        self.bestAsk = asks.map(\.price).min()
+    }
+
     var midpoint: Double? {
         guard let bid = bestBid, let ask = bestAsk else { return nil }
         return (bid + ask) / 2
