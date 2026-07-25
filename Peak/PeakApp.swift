@@ -41,15 +41,15 @@ struct PeakApp: App {
             .onOpenURL { url in
                 WalletConnectAuthService.shared.handleDeeplink(url)
             }
+            // Do NOT configure AppKit here. `AppKit.configure` builds Web3ModalViewModel,
+            // whose init eagerly opens a WalletConnect pairing; when the relay is
+            // unreachable that throws into a non-throwing context and SIGTRAPs the whole
+            // app at launch. `connectWallet()` configures lazily on first real use.
             .task {
-                WalletConnectAuthService.shared.configureIfNeeded()
                 await privyAuth.start()
             }
-            .task {
-                // Let Markets tab own the first Gamma fetch; warming is best-effort backup.
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                await MarketsCache.shared.warmTrending()
-            }
+            // Markets tab owns the first Gamma fetch. Do not warm here — competing
+            // /events calls at launch were a major cause of bootstrap timeouts.
             .task {
                 PriceAlertMonitor.shared.start()
             }

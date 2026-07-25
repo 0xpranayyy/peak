@@ -79,6 +79,9 @@ final class WalletConnectAuthService: ObservableObject {
     }
 
     func handleDeeplink(_ url: URL) {
+        // A wallet callback can arrive on a cold launch (app was killed mid-connect),
+        // so configure on demand here rather than dropping the URL.
+        configureIfNeeded()
         guard didConfigure else { return }
         AppKit.instance.handleDeeplink(url)
     }
