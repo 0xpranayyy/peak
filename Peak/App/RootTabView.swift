@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootTabView: View {
     @State private var selectedTab: PeakRootTab = .markets
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -20,6 +21,11 @@ struct RootTabView: View {
             Tab("Settings", systemImage: "gearshape", value: .settings) {
                 SettingsView()
             }
+        }
+        .tint(PeakBrand.mid)
+        .onAppear { PeakChrome.apply(for: colorScheme) }
+        .onChange(of: colorScheme) { _, scheme in
+            PeakChrome.apply(for: scheme)
         }
         .onReceive(NotificationCenter.default.publisher(for: .peakSelectRootTab)) { note in
             guard let raw = note.userInfo?["tab"] as? String,

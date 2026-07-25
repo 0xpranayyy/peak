@@ -180,7 +180,7 @@ struct PeakSignInSheet: View {
                             .font(.body.monospaced())
                             .padding(12)
                             .background(
-                                Color(.secondarySystemGroupedBackground),
+                                PeakCanvas.inset,
                                 in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                             )
 
@@ -213,14 +213,14 @@ struct PeakSignInSheet: View {
                 if let statusMessage {
                     Text(statusMessage)
                         .font(.footnote)
-                        .foregroundStyle(statusLooksGood ? PeakTradeStyle.buy : Color.red.opacity(0.9))
+                        .foregroundStyle(statusLooksGood ? PeakTradeStyle.buy : PeakTradeStyle.sell)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                         .padding(.top, 16)
                 } else if case .failed(let message) = auth.phase {
                     Text(PeakUserCopy.sanitize(message, fallback: "Couldn’t sign in. Try again."))
                         .font(.footnote)
-                        .foregroundStyle(Color.red.opacity(0.9))
+                        .foregroundStyle(PeakTradeStyle.sell)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                         .padding(.top, 16)
@@ -256,7 +256,7 @@ struct PeakSignInSheet: View {
                     .textContentType(.emailAddress)
                     .padding(14)
                     .background(
-                        Color(.secondarySystemGroupedBackground),
+                        PeakCanvas.inset,
                         in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                     )
                     .disabled(isBusy)
@@ -267,7 +267,7 @@ struct PeakSignInSheet: View {
                         .textContentType(.oneTimeCode)
                         .padding(14)
                         .background(
-                            Color(.secondarySystemGroupedBackground),
+                            PeakCanvas.inset,
                             in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                         )
                         .disabled(isBusy)
@@ -454,7 +454,7 @@ struct ImportTradingWalletSheet: View {
                     if let statusMessage {
                         Text(statusMessage)
                             .font(.footnote)
-                            .foregroundStyle(succeeded ? PeakTradeStyle.buy : Color.red.opacity(0.9))
+                            .foregroundStyle(succeeded ? PeakTradeStyle.buy : PeakTradeStyle.sell)
                     }
                 }
             }
@@ -544,7 +544,7 @@ struct AccountView: View {
                         Button {
                             showSignIn = true
                         } label: {
-                            PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill")
+                            PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill", color: PeakBrand.mid)
                         }
                         .peakPressable()
                     }
@@ -643,6 +643,11 @@ struct AccountView: View {
                 )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if tradingPath.needsPathChoice {
+                    Text("Already on Polymarket? You can link that wallet in setup.")
+                        .font(.caption)
+                        .foregroundStyle(PeakBrand.mid)
+                }
             } else if let message = tradingPath.snapshot.message ?? statusMessage {
                 Text(PeakUserCopy.accountStatus(message))
                     .font(.footnote)
@@ -657,7 +662,8 @@ struct AccountView: View {
                     } label: {
                         PeakPrimaryCTA(
                             title: tradingPath.needsPathChoice ? "Set up trading" : "Continue setup",
-                            systemImage: "arrow.triangle.branch"
+                            systemImage: "arrow.triangle.branch",
+                            color: PeakBrand.mid
                         )
                     }
                     .peakPressable()

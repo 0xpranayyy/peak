@@ -238,6 +238,7 @@ struct PriceAlertsSettingsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .listRowSeparatorTint(PeakCanvas.hairline)
         .background(PeakMaterialBackground())
         .scrollContentBackground(.hidden)
         .navigationTitle("Price alerts")

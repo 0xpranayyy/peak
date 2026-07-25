@@ -87,10 +87,8 @@ struct SearchView: View {
                 }
             }
             .background(PeakMaterialBackground())
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.large)
-            .peakChrome()
-            .searchable(text: $model.query, prompt: "Events, markets, topics")
+            .peakRootTab("Search")
+            .searchable(text: $model.query, prompt: "Ask Peak or search markets")
             .onChange(of: model.query) { _, newValue in
                 model.updateQuery(newValue, recent: recentSearches)
             }
@@ -102,6 +100,11 @@ struct SearchView: View {
 
     private var idleContent: some View {
         List {
+            Section {
+                PeakPageHeader(title: "Search")
+                    .peakPageHeaderRow()
+            }
+
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -117,10 +120,9 @@ struct SearchView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: PeakLayout.gutter, bottom: 8, trailing: PeakLayout.gutter))
                 .listRowBackground(Color.clear)
-            } header: {
-                Text("Browse categories")
+                .listRowSeparator(.hidden)
             }
 
             if isBrowsing {
@@ -134,6 +136,8 @@ struct SearchView: View {
                         NavigationLink(value: event) {
                             EventRowView(event: event)
                         }
+                        .listRowBackground(PeakCanvas.background)
+                        .navigationLinkIndicatorVisibility(.hidden)
                     }
                 }
             }
@@ -171,17 +175,25 @@ struct SearchView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .listRowSeparatorTint(PeakCanvas.hairline)
     }
 
     private var resultsList: some View {
         List {
+            Section {
+                PeakPageHeader(title: "Search")
+                    .peakPageHeaderRow()
+            }
             if !model.events.isEmpty {
                 Section("Events") {
                     ForEach(model.events) { event in
                         NavigationLink(value: event) {
                             EventRowView(event: event)
                         }
+                        .listRowBackground(PeakCanvas.background)
+                        .navigationLinkIndicatorVisibility(.hidden)
                     }
                 }
             }
@@ -212,7 +224,9 @@ struct SearchView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .listRowSeparatorTint(PeakCanvas.hairline)
     }
 
     private func loadBrowse(_ category: MarketCategory) async {

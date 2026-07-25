@@ -9,8 +9,6 @@ struct ForYouRailView: View {
     var onSelect: (PeakEvent) -> Void
     var onDismiss: (() -> Void)? = nil
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
@@ -61,9 +59,9 @@ struct ForYouRailView: View {
     }
 
     private func heroCard(_ event: PeakEvent) -> some View {
-        let isLight = colorScheme == .light
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                PeakEventThumb(url: event.imageURL, size: 32, cornerRadius: 8)
                 if let category = MarketCategory.primaryLabel(for: event) {
                     Text(category.uppercased())
                         .font(.caption2.weight(.bold))
@@ -96,37 +94,11 @@ struct ForYouRailView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(14)
+        .padding(PeakLayout.stack + 2)
         .frame(width: 220, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
-                    .fill(Color(.secondarySystemGroupedBackground))
-                RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                PeakBrand.mid.opacity(isLight ? 0.14 : 0.18),
-                                PeakBrand.deep.opacity(isLight ? 0.04 : 0.08),
-                                Color.clear,
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
+        .background(PeakCanvas.elevated, in: PeakLayout.cardShape)
         .overlay(
-            RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
-                .strokeBorder(
-                    PeakBrand.mid.opacity(isLight ? 0.18 : 0.22),
-                    lineWidth: 1
-                )
-        )
-        .shadow(
-            color: PeakBrand.deep.opacity(isLight ? 0.06 : 0.18),
-            radius: 10,
-            y: 4
+            PeakLayout.cardShape.strokeBorder(PeakCanvas.hairline, lineWidth: 1)
         )
     }
 }

@@ -1,10 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// Trade action colors — buy green / sell red across Peak.
+/// Trade / PnL accents — clearer on dark, still classy (not neon traffic lights).
 enum PeakTradeStyle {
-    static let buy = Color(red: 0.11, green: 0.68, blue: 0.42)
-    static let sell = Color(red: 0.90, green: 0.27, blue: 0.33)
+    static let buy = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(red: 0.40, green: 0.78, blue: 0.58, alpha: 1)
+        }
+        return UIColor(red: 0.14, green: 0.50, blue: 0.38, alpha: 1)
+    })
+
+    static let sell = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(red: 0.94, green: 0.48, blue: 0.50, alpha: 1)
+        }
+        return UIColor(red: 0.70, green: 0.28, blue: 0.32, alpha: 1)
+    })
 
     /// Polymarket display rule: midpoint unless spread > 10¢, then last trade.
     static func displayedOdds(mid: Double?, spread: Double?, lastTrade: Double?, fallback: Double) -> Double {
@@ -148,68 +159,123 @@ enum PeakFormat {
     }
 }
 
-/// Peak brand teal — adaptive Light / Dark (matches AccentColor family).
+/// Peak brand — sea-glass teal; slightly brighter mid on dark for chrome / CTAs.
 enum PeakBrand {
-    /// Deepest teal — richer on Light so washes don't muddy white canvases.
+    /// Ink teal for washes and depth.
     static let deep = Color(uiColor: UIColor { traits in
         if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.14, green: 0.46, blue: 0.42, alpha: 1)
+            return UIColor(red: 0.12, green: 0.40, blue: 0.37, alpha: 1)
         }
-        return UIColor(red: 0.08, green: 0.36, blue: 0.32, alpha: 1)
+        return UIColor(red: 0.06, green: 0.28, blue: 0.26, alpha: 1)
     })
 
-    /// Primary brand — aligned with AccentColor (brighter in Dark).
+    /// Primary brand / CTAs — aligned with AccentColor.
     static let mid = Color(uiColor: UIColor { traits in
         if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.32, green: 0.82, blue: 0.62, alpha: 1)
+            return UIColor(red: 0.42, green: 0.82, blue: 0.72, alpha: 1)
         }
-        return UIColor(red: 0.18, green: 0.655, blue: 0.502, alpha: 1)
+        return UIColor(red: 0.16, green: 0.55, blue: 0.48, alpha: 1)
     })
 
     static let soft = Color(uiColor: UIColor { traits in
         if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.42, green: 0.86, blue: 0.74, alpha: 1)
+            return UIColor(red: 0.58, green: 0.88, blue: 0.80, alpha: 1)
         }
-        return UIColor(red: 0.28, green: 0.70, blue: 0.60, alpha: 1)
+        return UIColor(red: 0.32, green: 0.62, blue: 0.56, alpha: 1)
     })
 
     static let mist = Color(uiColor: UIColor { traits in
         if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.55, green: 0.80, blue: 0.74, alpha: 1)
+            return UIColor(red: 0.68, green: 0.88, blue: 0.82, alpha: 1)
         }
-        return UIColor(red: 0.48, green: 0.74, blue: 0.68, alpha: 1)
+        return UIColor(red: 0.52, green: 0.70, blue: 0.66, alpha: 1)
     })
 }
 
-/// Soft atmospheric mesh used behind Markets / Portfolio / onboarding.
+/// Canvas + elevated surfaces — flat, neutral, no tint washes.
+/// Dark = pitch black. Light = clean paper white hierarchy.
+enum PeakCanvas {
+    /// Screen / list backdrop.
+    static let background = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return .black
+        }
+        return UIColor(red: 0.965, green: 0.965, blue: 0.968, alpha: 1) // #F6F6F7
+    })
+
+    /// Grouped cards, list rows, panels.
+    static let elevated = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(red: 0.07, green: 0.07, blue: 0.075, alpha: 1) // #121213
+        }
+        return .white
+    })
+
+    /// Nested controls / fields sitting on elevated.
+    static let inset = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
+        }
+        return UIColor(red: 0.945, green: 0.945, blue: 0.95, alpha: 1)
+    })
+
+    /// Hairline borders / separators.
+    static let hairline = Color(uiColor: UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(white: 1, alpha: 0.09)
+        }
+        return UIColor(white: 0, alpha: 0.08)
+    })
+
+    /// Soft brand rim for featured cards only (not backgrounds).
+    static let brandRim = PeakBrand.mid.opacity(0.20)
+}
+
+/// Nav / tab chrome matched to Peak canvas (call from root on scheme change).
+enum PeakChrome {
+    static func apply(for scheme: ColorScheme) {
+        let isDark = scheme == .dark
+        let bg = isDark
+            ? UIColor.black
+            : UIColor(red: 0.965, green: 0.965, blue: 0.968, alpha: 1)
+        let elevated = isDark
+            ? UIColor(red: 0.07, green: 0.07, blue: 0.075, alpha: 1)
+            : UIColor.white
+
+        let nav = UINavigationBarAppearance()
+        nav.configureWithOpaqueBackground()
+        nav.backgroundColor = bg
+        nav.shadowColor = .clear
+        nav.titleTextAttributes = [.foregroundColor: UIColor.label]
+        nav.largeTitleTextAttributes = [.foregroundColor: UIColor.label]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
+        UINavigationBar.appearance().tintColor = UIColor(PeakBrand.mid)
+
+        let tab = UITabBarAppearance()
+        tab.configureWithOpaqueBackground()
+        tab.backgroundColor = bg
+        tab.shadowColor = .clear
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
+        UITabBar.appearance().tintColor = UIColor(PeakBrand.mid)
+
+        UITableView.appearance().backgroundColor = .clear
+        UICollectionView.appearance().backgroundColor = .clear
+        UITableViewCell.appearance().backgroundColor = elevated
+    }
+}
+
+/// Flat Peak canvas only — never a wash or gradient behind app chrome.
 struct PeakMaterialBackground: View {
-    /// Stronger presence for brand-first surfaces (onboarding hero).
-    var intensity: CGFloat = 1
-    /// Subtle mesh drift for page parallax (points). Honored by callers that respect Reduce Motion.
+    /// Kept for call-site compatibility; ignored (always flat).
+    var intensity: CGFloat = 0
     var parallax: CGSize = .zero
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let isLight = colorScheme == .light
-        ZStack {
-            Color(.systemGroupedBackground)
-
-            // Top-leading wash — Peak teal into clear (tuned per mode).
-            LinearGradient(
-                colors: [
-                    PeakBrand.deep.opacity((isLight ? 0.07 : 0.12) * intensity),
-                    PeakBrand.mid.opacity((isLight ? 0.055 : 0.06) * intensity),
-                    Color.clear,
-                ],
-                startPoint: .topLeading,
-                endPoint: .center
-            )
-            .offset(x: parallax.width * 0.35, y: parallax.height * 0.35)
-
-            // Soft radial mesh blobs — atmosphere, not neon.
-            PeakAtmosphereMesh(intensity: intensity, parallax: parallax)
-        }
-        .ignoresSafeArea()
+        PeakCanvas.background
+            .ignoresSafeArea()
     }
 }
 
@@ -280,7 +346,7 @@ struct PeakAtmosphereMesh: View {
 struct PeakAppLogo: View {
     var size: CGFloat = 96
     var cornerRadius: CGFloat? = nil
-    var showGlow: Bool = true
+    var showGlow: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var radius: CGFloat {
@@ -289,33 +355,21 @@ struct PeakAppLogo: View {
 
     var body: some View {
         let isLight = colorScheme == .light
-        ZStack {
-            if showGlow {
-                RoundedRectangle(cornerRadius: radius * 1.08, style: .continuous)
-                    .fill(PeakBrand.mid.opacity(isLight ? 0.16 : 0.28))
-                    .frame(width: size * 1.18, height: size * 1.18)
-                    .blur(radius: size * 0.12)
-            }
-
-            Image("PeakLogo")
-                .resizable()
-                .scaledToFill()
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(
-                            Color.primary.opacity(isLight ? 0.06 : 0.14),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(
-                    color: PeakBrand.deep.opacity(isLight ? 0.18 : 0.35),
-                    radius: size * 0.14,
-                    y: size * 0.08
-                )
-        }
-        .accessibilityLabel("Peak")
+        Image("PeakLogo")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            )
+            .shadow(
+                color: Color.black.opacity(isLight ? 0.08 : 0.40),
+                radius: size * 0.08,
+                y: size * 0.04
+            )
+            .accessibilityLabel("Peak")
     }
 }
 
@@ -416,52 +470,34 @@ enum PeakEmptyKind {
 struct PeakEmptyVisual: View {
     let kind: PeakEmptyKind
     var size: CGFloat = 88
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let isLight = colorScheme == .light
         ZStack {
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            PeakBrand.mid.opacity(0.16),
-                            PeakBrand.mid.opacity(0.04),
-                            Color.clear,
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: size * 0.72
-                    )
-                )
-                .frame(width: size * 1.45, height: size * 1.45)
-
-            Circle()
-                .fill(Color(.secondarySystemGroupedBackground))
+                .fill(PeakCanvas.elevated)
                 .frame(width: size, height: size)
                 .overlay {
                     Circle()
-                        .strokeBorder(PeakBrand.mid.opacity(0.22), lineWidth: 1)
+                        .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
                 }
-                .shadow(color: PeakBrand.deep.opacity(0.08), radius: 12, y: 4)
+                .shadow(
+                    color: Color.black.opacity(isLight ? 0.06 : 0.35),
+                    radius: isLight ? 8 : 14,
+                    y: isLight ? 3 : 6
+                )
 
             Image(systemName: kind.primarySymbol)
                 .font(.system(size: size * 0.34, weight: .semibold))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [PeakBrand.soft, PeakBrand.mid],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .foregroundStyle(PeakBrand.mid)
                 .symbolRenderingMode(.hierarchical)
 
-            // Satellite accent chip
             Image(systemName: kind.secondarySymbol)
                 .font(.system(size: size * 0.16, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: size * 0.34, height: size * 0.34)
-                .background(
-                    Circle().fill(PeakBrand.mid)
-                )
+                .background(Circle().fill(PeakBrand.mid))
                 .offset(x: size * 0.34, y: size * 0.30)
         }
         .frame(width: size * 1.45, height: size * 1.45)
@@ -542,30 +578,19 @@ struct PeakChartPlaceholder: View {
     }
 }
 
-/// Soft pulsing placeholder — Peak teal wash. Honors Reduce Motion (static, no shimmer).
+/// Soft pulsing placeholder. Honors Reduce Motion (static, no shimmer).
 struct PeakSkeleton: View {
     var height: CGFloat = 14
     var width: CGFloat? = nil
     var cornerRadius: CGFloat = 6
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var pulse = false
 
     var body: some View {
-        let isLight = colorScheme == .light
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        PeakBrand.mid.opacity(isLight ? 0.14 : 0.22),
-                        PeakBrand.deep.opacity(isLight ? 0.07 : 0.12),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .fill(PeakCanvas.inset)
             .frame(width: width, height: height)
-            .opacity(reduceMotion ? 0.55 : (pulse ? 0.42 : 0.78))
+            .opacity(reduceMotion ? 0.7 : (pulse ? 0.45 : 0.85))
             .onAppear {
                 guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
@@ -579,36 +604,39 @@ struct PeakSkeleton: View {
 /// One market-style row placeholder.
 struct PeakSkeletonRow: View {
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                PeakSkeleton(height: 10, width: 64, cornerRadius: 4)
-                PeakSkeleton(height: 16, width: nil, cornerRadius: 6)
-                PeakSkeleton(height: 12, width: 140, cornerRadius: 5)
+                PeakSkeleton(height: 16, width: nil, cornerRadius: 5)
+                PeakSkeleton(height: 11, width: 160, cornerRadius: 4)
             }
             Spacer(minLength: 8)
-            PeakSkeleton(height: 28, width: 48, cornerRadius: 10)
+            VStack(alignment: .trailing, spacing: 4) {
+                PeakSkeleton(height: 20, width: 44, cornerRadius: 5)
+                PeakSkeleton(height: 8, width: 28, cornerRadius: 3)
+            }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
     }
 }
 
-/// Portfolio summary placeholder (value + cash / PnL chips).
+/// Portfolio summary placeholder (hero cash + metrics + CTA).
 struct PeakSkeletonSummary: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            PeakSkeleton(height: 10, width: 72, cornerRadius: 4)
-            PeakSkeleton(height: 34, width: 160, cornerRadius: 8)
-            HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            PeakSkeleton(height: 12, width: 48, cornerRadius: 4)
+            PeakSkeleton(height: 40, width: 180, cornerRadius: 10)
+            HStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 6) {
-                    PeakSkeleton(height: 8, width: 36, cornerRadius: 3)
-                    PeakSkeleton(height: 18, width: 72, cornerRadius: 5)
+                    PeakSkeleton(height: 8, width: 52, cornerRadius: 3)
+                    PeakSkeleton(height: 16, width: 72, cornerRadius: 5)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     PeakSkeleton(height: 8, width: 28, cornerRadius: 3)
-                    PeakSkeleton(height: 18, width: 64, cornerRadius: 5)
+                    PeakSkeleton(height: 16, width: 64, cornerRadius: 5)
                 }
                 Spacer()
             }
+            PeakSkeleton(height: 50, width: nil, cornerRadius: PeakLayout.ctaRadius)
         }
         .padding(.vertical, 4)
     }
@@ -667,28 +695,148 @@ enum PeakMotion {
     static let appearRowCap = 6
 }
 
-/// Continuous corner radii + touch targets aligned with iOS 26 HIG (not pill spam).
+/// Continuous radii, gutters, and touch targets — tight, intentional, not bubbly.
 enum PeakLayout {
-    /// Primary filled CTAs / Buy·Sell trade actions (~14–16 continuous).
-    static let ctaRadius: CGFloat = 14
-    /// Grouped content panels (solid surface — not Liquid Glass).
-    static let cardRadius: CGFloat = 16
-    /// Compact chips, market pickers, text fields.
-    static let controlRadius: CGFloat = 12
+    /// Primary filled CTAs / Buy·Sell.
+    static let ctaRadius: CGFloat = 12
+    /// Grouped content panels / hero cards.
+    static let cardRadius: CGFloat = 14
+    /// Compact chips, pickers, fields.
+    static let controlRadius: CGFloat = 10
+    /// Badge / metric capsules.
+    static let badgeRadius: CGFloat = 8
+    /// Screen / list horizontal inset.
+    static let gutter: CGFloat = 16
+    /// Stack spacing inside cards.
+    static let stack: CGFloat = 12
+    /// Row vertical rhythm.
+    static let rowPadding: CGFloat = 10
     /// Minimum interactive height (HIG).
     static let minTap: CGFloat = 44
+    /// WhatsApp-style page headline top padding under the toolbar.
+    static let pageHeaderTop: CGFloat = 6
+    /// Space under the page headline before content.
+    static let pageHeaderBottom: CGFloat = 10
+
+    static var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
+    }
+
+    static var controlShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: controlRadius, style: .continuous)
+    }
+
+    static var ctaShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: ctaRadius, style: .continuous)
+    }
+}
+
+/// Large tab headline — WhatsApp / liquid iOS placement (title lives in content, not the nav bar).
+struct PeakPageHeader: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 34, weight: .bold, design: .default))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.top, PeakLayout.pageHeaderTop)
+        .padding(.bottom, PeakLayout.pageHeaderBottom)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Circular toolbar control — matches liquid dark chrome (WhatsApp-style).
+struct PeakToolbarCircle: View {
+    let systemImage: String
+    var emphasized: Bool = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(emphasized ? Color.white : Color.primary)
+            .frame(width: 34, height: 34)
+            .background {
+                Circle()
+                    .fill(emphasized ? PeakBrand.mid : PeakCanvas.inset)
+            }
+            .overlay {
+                if !emphasized {
+                    Circle().strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+                }
+            }
+    }
 }
 
 extension View {
-    /// Content sections sit on solid/grouped surfaces — not Liquid Glass (HIG: glass is for chrome).
+    /// Root tab: actions stay in the bar; large headline is `PeakPageHeader` in content.
+    /// Keeps `navigationTitle` for the back-button label when pushing detail.
+    func peakRootTab(_ title: String) -> some View {
+        self
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    // Hide the inline center title — headline lives in the page body.
+                    Color.clear.frame(width: 1, height: 1)
+                }
+            }
+            .peakChrome()
+    }
+
+    /// First list row: page headline with WhatsApp-style placement.
+    func peakPageHeaderRow() -> some View {
+        self
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: PeakLayout.gutter,
+                bottom: 0,
+                trailing: PeakLayout.gutter
+            ))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+extension View {
+    /// Content panels on Peak elevated surface with a hairline rim.
     func peakContentCard() -> some View {
         self
-            .padding(14)
+            .padding(PeakLayout.stack + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
-            )
+            .background(PeakCanvas.elevated, in: PeakLayout.cardShape)
+            .overlay {
+                PeakLayout.cardShape.strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            }
+    }
+
+    /// Screen backdrop + scroll canvas.
+    func peakScreenBackground() -> some View {
+        self.background(PeakMaterialBackground())
+    }
+
+    /// Inset grouped list on Peak canvas (call after List content).
+    func peakListStyle() -> some View {
+        self
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .listRowSeparatorTint(PeakCanvas.hairline)
+    }
+
+    /// Elevated list row fill for inset grouped sections.
+    func peakListRow() -> some View {
+        self.listRowBackground(PeakCanvas.elevated)
     }
 
     /// Floating controls only — Liquid Glass on iOS 26+ when transparency is allowed.
@@ -697,20 +845,17 @@ extension View {
         modifier(PeakFloatingChromeModifier())
     }
 
-    @ViewBuilder
     func peakChrome() -> some View {
-        if #available(iOS 26.0, *) {
-            self.toolbarBackground(.automatic, for: .navigationBar, .tabBar)
-        } else {
-            self
-        }
+        self
+            .toolbarBackground(PeakCanvas.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 
-    /// Sheets: solid grouped canvas for Form/List density; glass stays on system chrome.
+    /// Sheets: pitch Peak canvas; glass stays on system chrome.
     func peakSheetChrome() -> some View {
         self
             .presentationDragIndicator(.visible)
-            .presentationBackground(Color(.systemGroupedBackground))
+            .presentationBackground(PeakCanvas.background)
     }
 
     /// Soft fade + rise on first appear. Honors Reduce Motion.
@@ -769,9 +914,15 @@ struct PeakPrimaryCTA: View {
         .frame(minHeight: 50)
         .background(
             (isEnabled ? color : color.opacity(0.45)),
-            in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
+            in: PeakLayout.ctaShape
         )
-        .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
+        .overlay {
+            PeakLayout.ctaShape.strokeBorder(
+                Color.white.opacity(0.10),
+                lineWidth: 1
+            )
+        }
+        .contentShape(PeakLayout.ctaShape)
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -842,7 +993,7 @@ private struct PeakFloatingChromeModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if reduceTransparency {
-            content.background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            content.background(PeakCanvas.inset, in: Capsule())
         } else if #available(iOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: .capsule)
         } else {

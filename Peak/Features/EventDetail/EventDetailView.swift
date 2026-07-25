@@ -426,8 +426,8 @@ struct EventDetailView: View {
     @State private var trade: TradePresentation?
     @State private var showShareCard = false
     @State private var showPriceAlert = false
-    /// Which outcome share is active for the single Buy / Sell pair.
     @State private var selectedIsYes = true
+    @State private var showFullDescription = false
 
     struct TradePresentation: Identifiable {
         let id = UUID()
@@ -456,16 +456,19 @@ struct EventDetailView: View {
                 content(event)
             }
         }
-        .navigationTitle(model.event?.title ?? "Event")
+        .navigationTitle("Market")
         .navigationBarTitleDisplayMode(.inline)
         .peakChrome()
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Color.clear.frame(width: 1, height: 1)
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if let event = model.event {
                     Button {
                         showPriceAlert = true
                     } label: {
-                        Image(systemName: "bell")
+                        PeakToolbarCircle(systemImage: "bell")
                     }
                     .accessibilityLabel("Price alert")
                     .disabled(model.selectedMarket == nil)
@@ -473,14 +476,17 @@ struct EventDetailView: View {
                     Button {
                         showShareCard = true
                     } label: {
-                        Image(systemName: "square.and.arrow.up")
+                        PeakToolbarCircle(systemImage: "square.and.arrow.up")
                     }
                     .accessibilityLabel("Share card")
 
                     Button {
                         env.watchlist.toggle(event.id)
                     } label: {
-                        Image(systemName: env.watchlist.contains(event.id) ? "star.fill" : "star")
+                        PeakToolbarCircle(
+                            systemImage: env.watchlist.contains(event.id) ? "star.fill" : "star",
+                            emphasized: env.watchlist.contains(event.id)
+                        )
                     }
                     .accessibilityLabel(env.watchlist.contains(event.id) ? "Remove from Watchlist" : "Add to Watchlist")
                 }
@@ -521,7 +527,7 @@ struct EventDetailView: View {
     @ViewBuilder
     private func content(_ event: PeakEvent) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: PeakLayout.stack) {
                 header(event)
 
                 if event.markets.count > 1 {
@@ -532,12 +538,20 @@ struct EventDetailView: View {
                     livePriceSection(market)
                     chartSection
                     bookSection
-                    tradeButtons(market)
+                    // Spacer so sticky trade bar doesn't cover the book.
+                    Color.clear.frame(height: 8)
                 }
             }
-            .padding()
+            .padding(.horizontal, PeakLayout.gutter)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
         .background(PeakMaterialBackground())
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let market = model.selectedMarket {
+                stickyTradeBar(market)
+            }
+        }
         .refreshable {
             await model.reload()
             PeakHaptics.refresh()
@@ -549,90 +563,111 @@ struct EventDetailView: View {
 
     private func header(_ event: PeakEvent) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let url = event.imageURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    case .failure:
-                        Color.secondary.opacity(0.12)
-                    case .empty:
-                        ProgressView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    @unknown default:
-                        Color.secondary.opacity(0.12)
+            HStack(alignment: .top, spacing: 12) {
+                if let url = event.imageURL {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        default:
+                            PeakCanvas.inset
+                        }
                     }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+                    }
+                    .accessibilityHidden(true)
                 }
-                .frame(height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .accessibilityHidden(true)
-            }
 
-            Text(event.title)
-                .font(.title2.weight(.bold))
-                .fixedSize(horizontal: false, vertical: true)
+                Text(event.title)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+            }
 
             if let description = event.description, !description.isEmpty {
                 Text(description)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(6)
+                    .lineLimit(showFullDescription ? nil : 2)
+                Button(showFullDescription ? "Show less" : "More") {
+                    withAnimation(PeakMotion.snappy) {
+                        showFullDescription.toggle()
+                    }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PeakBrand.mid)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Label(PeakFormat.compactCurrency(event.volume), systemImage: "dollarsign.circle")
                 Label(PeakFormat.compactCurrency(event.volume24hr) + " 24h", systemImage: "chart.line.uptrend.xyaxis")
                 if model.liveConnected {
-                    Label {
-                        Text("Live")
-                    } icon: {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .symbolEffect(
-                                .pulse,
-                                options: .repeating.speed(0.35),
-                                isActive: !reduceMotion
-                            )
-                    }
-                    .foregroundStyle(PeakTradeStyle.buy)
-                    .accessibilityLabel("Live odds")
+                    Label("Live", systemImage: "antenna.radiowaves.left.and.right")
+                        .foregroundStyle(PeakTradeStyle.buy)
+                        .symbolEffect(
+                            .pulse,
+                            options: .repeating.speed(0.35),
+                            isActive: !reduceMotion
+                        )
+                        .accessibilityLabel("Live odds")
                 }
+                Spacer(minLength: 0)
             }
-            .font(.caption)
+            .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
         }
         .peakAppear()
     }
 
     private func marketPicker(_ markets: [Market]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(markets) { market in
-                    let selected = market.id == model.selectedMarket?.id
-                    Button {
-                        model.selectMarket(market)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(market.question)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(2)
-                                .frame(width: 160, alignment: .leading)
-                            Text(PeakFormat.cents(market.yesPrice))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Markets")
+                .font(.caption.weight(.semibold))
+                .tracking(0.4)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(markets) { market in
+                        let selected = market.id == model.selectedMarket?.id
+                        Button {
+                            PeakHaptics.selection()
+                            model.selectMarket(market)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(market.question)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(width: 148, alignment: .leading)
+                                Text(PeakFormat.cents(market.yesPrice))
+                                    .font(.subheadline.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(selected ? PeakBrand.mid : .secondary)
+                                    .peakNumeric(value: market.yesPrice)
+                            }
+                            .padding(12)
+                            .background(
+                                selected ? PeakBrand.mid.opacity(0.12) : PeakCanvas.elevated,
+                                in: PeakLayout.controlShape
+                            )
+                            .overlay {
+                                PeakLayout.controlShape.strokeBorder(
+                                    selected ? PeakCanvas.brandRim : PeakCanvas.hairline,
+                                    lineWidth: 1
+                                )
+                            }
                         }
-                        .padding(10)
-                        .background(
-                            selected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08),
-                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                                .strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 1)
-                        )
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -642,10 +677,13 @@ struct EventDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             MarketOutcomeBar(market: market, displayedYes: model.displayedYesOdds)
 
-            HStack {
+            HStack(spacing: 0) {
                 metric("Odds", PeakFormat.cents(model.displayedYesOdds))
+                metricDivider
                 metric("Bid", model.bestBid.map(PeakFormat.cents) ?? "—")
+                metricDivider
                 metric("Ask", model.bestAsk.map(PeakFormat.cents) ?? "—")
+                metricDivider
                 metric("Spread", model.spread.map { String(format: "%.1f¢", $0 * 100) } ?? "—")
             }
         }
@@ -653,10 +691,17 @@ struct EventDetailView: View {
         .animation(PeakMotion.soft, value: model.displayedYesOdds)
     }
 
+    private var metricDivider: some View {
+        Rectangle()
+            .fill(PeakCanvas.hairline)
+            .frame(width: 1, height: 28)
+            .padding(.horizontal, 6)
+    }
+
     private func metric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.caption2)
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
@@ -666,19 +711,19 @@ struct EventDetailView: View {
     }
 
     private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Odds")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Chart")
                     .font(.headline)
                 Spacer()
                 Text(PeakFormat.cents(model.displayedYesOdds))
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .font(.title3.monospacedDigit().weight(.bold))
                     .foregroundStyle(PeakBrand.mid)
                     .peakNumeric(value: model.displayedYesOdds)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ForEach(EventDetailViewModel.HistoryInterval.allCases) { interval in
                         let on = model.historyInterval == interval
                         Button {
@@ -686,14 +731,18 @@ struct EventDetailView: View {
                         } label: {
                             Text(interval.title)
                                 .font(.caption.weight(.semibold))
-                                .frame(minHeight: PeakLayout.minTap)
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, 11)
                                 .padding(.vertical, 7)
                                 .background(
-                                    on ? Color.accentColor : Color.secondary.opacity(0.12),
-                                    in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                                    on ? PeakBrand.deep : PeakCanvas.inset,
+                                    in: Capsule(style: .continuous)
                                 )
-                                .foregroundStyle(on ? Color.white : Color.primary)
+                                .overlay {
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(on ? Color.clear : PeakCanvas.hairline, lineWidth: 1)
+                                }
+                                .foregroundStyle(on ? Color.white : Color.secondary)
+                                .frame(minHeight: 32)
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(on ? .isSelected : [])
@@ -705,40 +754,32 @@ struct EventDetailView: View {
             if model.isChartLoading && model.history.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .frame(height: 200)
+                    .frame(height: 180)
             } else if model.history.isEmpty {
                 RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                    .fill(Color.secondary.opacity(0.06))
-                    .frame(height: 200)
+                    .fill(PeakCanvas.inset)
+                    .frame(height: 180)
                     .overlay {
-                        ZStack {
-                            PeakChartPlaceholder()
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 28)
-                            VStack(spacing: 8) {
-                                Spacer()
-                                Text("No chart data yet")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.bottom, 16)
-                            }
-                        }
+                        Text("No chart data yet")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
             } else {
                 let series = PeakBrand.mid
-                let prices = model.history.map(\.price)
-                let lo = max(0, (prices.min() ?? 0) - 0.04)
-                let hi = min(1, (prices.max() ?? 1) + 0.04)
+                let chartPoints = sanitizedHistory
+                let prices = chartPoints.map(\.price)
+                let lo = max(0, (prices.min() ?? 0) - 0.03)
+                let hi = min(1, (prices.max() ?? 1) + 0.03)
 
                 Chart {
-                    ForEach(model.history) { point in
+                    ForEach(chartPoints) { point in
                         LineMark(
                             x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
                             y: .value("Odds", point.price)
                         )
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(series)
-                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        .lineStyle(StrokeStyle(lineWidth: 2.25, lineCap: .round, lineJoin: .round))
 
                         AreaMark(
                             x: .value("Time", Date(timeIntervalSince1970: TimeInterval(point.timestamp))),
@@ -747,36 +788,32 @@ struct EventDetailView: View {
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [series.opacity(0.26), series.opacity(0.02)],
+                                colors: [series.opacity(0.22), series.opacity(0.02)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                     }
 
-                    RuleMark(y: .value("Now", model.displayedYesOdds))
-                        .foregroundStyle(series.opacity(0.35))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-
-                    if let last = model.history.last {
+                    if let last = chartPoints.last {
                         PointMark(
                             x: .value("Time", Date(timeIntervalSince1970: TimeInterval(last.timestamp))),
                             y: .value("Odds", last.price)
                         )
                         .foregroundStyle(series)
-                        .symbolSize(48)
+                        .symbolSize(42)
                     }
                 }
-                .chartYScale(domain: lo...hi)
+                .chartYScale(domain: lo...max(lo + 0.01, hi))
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.secondary.opacity(0.22))
+                            .foregroundStyle(PeakCanvas.hairline)
                         AxisValueLabel {
                             if let v = value.as(Double.self) {
                                 Text(PeakFormat.cents(v))
                                     .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.tertiary)
                             }
                         }
                     }
@@ -784,20 +821,33 @@ struct EventDetailView: View {
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                            .foregroundStyle(Color.secondary.opacity(0.14))
+                            .foregroundStyle(PeakCanvas.hairline.opacity(0.6))
                         AxisValueLabel(format: .dateTime.hour().minute())
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                .frame(height: 220)
+                .frame(height: 180)
             }
         }
         .peakContentCard()
     }
 
+    /// Drop obvious bad tip spikes (e.g. pinned 0¢) that warp the chart.
+    private var sanitizedHistory: [PricePoint] {
+        let points = model.history
+        guard points.count >= 3 else { return points }
+        let body = Array(points.dropLast())
+        let median = body.map(\.price).sorted()[body.count / 2]
+        guard let last = points.last else { return points }
+        if abs(last.price - median) > 0.45, last.price < 0.05 || last.price > 0.95 {
+            return body + [PricePoint(timestamp: last.timestamp, price: model.displayedYesOdds)]
+        }
+        return points
+    }
+
     private var bookSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Order book")
                 .font(.headline)
 
@@ -806,47 +856,94 @@ struct EventDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                HStack(alignment: .top, spacing: 16) {
-                    bookColumn(title: "Bids", levels: model.book.bids, color: PeakTradeStyle.buy)
-                    bookColumn(title: "Asks", levels: model.book.asks, color: PeakTradeStyle.sell)
+                HStack(alignment: .top, spacing: 12) {
+                    bookColumn(
+                        title: "Bids",
+                        levels: Array(model.book.bids.prefix(6)),
+                        color: PeakTradeStyle.buy,
+                        alignTrailing: false
+                    )
+                    bookColumn(
+                        title: "Asks",
+                        levels: Array(model.book.asks.prefix(6)),
+                        color: PeakTradeStyle.sell,
+                        alignTrailing: true
+                    )
                 }
             }
         }
         .peakContentCard()
     }
 
-    private func bookColumn(title: String, levels: [OrderBookLevel], color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(color)
-            ForEach(levels.prefix(8)) { level in
-                HStack {
-                    Text(PeakFormat.cents(level.price))
-                        .foregroundStyle(color)
-                    Spacer()
-                    Text(String(format: "%.0f", level.size))
-                        .foregroundStyle(.secondary)
+    private func bookColumn(
+        title: String,
+        levels: [OrderBookLevel],
+        color: Color,
+        alignTrailing: Bool
+    ) -> some View {
+        let maxSize = max(levels.map(\.size).max() ?? 1, 1)
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(color)
+                Spacer()
+                Text("Size")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if levels.isEmpty {
+                Text("—")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(levels) { level in
+                    ZStack(alignment: alignTrailing ? .trailing : .leading) {
+                        GeometryReader { geo in
+                            let width = geo.size.width * CGFloat(min(1, level.size / maxSize))
+                            Rectangle()
+                                .fill(color.opacity(0.12))
+                                .frame(width: max(4, width))
+                                .frame(maxWidth: .infinity, alignment: alignTrailing ? .trailing : .leading)
+                        }
+                        HStack {
+                            Text(PeakFormat.cents(level.price))
+                                .foregroundStyle(color)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Text(compactSize(level.size))
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption.monospacedDigit())
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 4)
+                    }
+                    .frame(height: 26)
                 }
-                .font(.caption.monospacedDigit())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func tradeButtons(_ market: Market) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Trade")
-                .font(.headline)
+    private func compactSize(_ size: Double) -> String {
+        if size >= 1_000_000 { return String(format: "%.1fM", size / 1_000_000) }
+        if size >= 1_000 { return String(format: "%.1fK", size / 1_000) }
+        return String(format: "%.0f", size)
+    }
 
-            // Pick one share, then a single Buy + Sell for that share.
+    private func stickyTradeBar(_ market: Market) -> some View {
+        VStack(spacing: 10) {
             Picker("Share", selection: $selectedIsYes) {
                 Text(market.yesLabel).tag(true)
                 Text(market.noLabel).tag(false)
             }
             .pickerStyle(.segmented)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 let side = selectedIsYes ? market.yesLabel : market.noLabel
                 tradeButton(
                     title: "Buy",
@@ -866,6 +963,19 @@ struct EventDetailView: View {
                 }
             }
         }
+        .padding(.horizontal, PeakLayout.gutter)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background {
+            Rectangle()
+                .fill(PeakCanvas.background.opacity(0.94))
+                .ignoresSafeArea(edges: .bottom)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(PeakCanvas.hairline)
+                        .frame(height: 1)
+                }
+        }
     }
 
     private func tradeButton(
@@ -876,20 +986,20 @@ struct EventDetailView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            HStack {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 4)
                 Text(subtitle)
-                    .font(.caption.monospacedDigit().weight(.medium))
-                    .opacity(0.9)
+                    .font(.subheadline.monospacedDigit().weight(.bold))
                     .peakNumeric(value: subtitle)
             }
             .foregroundStyle(.white)
+            .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .frame(minHeight: 50)
-            .background(color, in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
+            .frame(height: 46)
+            .background(color, in: PeakLayout.ctaShape)
+            .contentShape(PeakLayout.ctaShape)
         }
         .peakPressable()
         .accessibilityLabel("\(title) \(accessibilitySide) at \(subtitle)")

@@ -2,18 +2,42 @@ import SwiftUI
 
 struct ProbabilityBadge: View {
     let probability: Double
+    var compact: Bool = false
     @ScaledMetric(relativeTo: .headline) private var horizontalPadding: CGFloat = 10
-    @ScaledMetric(relativeTo: .headline) private var verticalPadding: CGFloat = 6
+    @ScaledMetric(relativeTo: .headline) private var verticalPadding: CGFloat = 5
 
     var body: some View {
         Text(PeakFormat.cents(probability))
-            .font(.headline.monospacedDigit().weight(.semibold))
+            .font((compact ? Font.subheadline : Font.headline).monospacedDigit().weight(.semibold))
             .foregroundStyle(.primary)
             .peakNumeric(value: probability)
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
-            .peakFloatingChrome()
+            .background(PeakCanvas.inset, in: RoundedRectangle(cornerRadius: PeakLayout.badgeRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: PeakLayout.badgeRadius, style: .continuous)
+                    .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            }
             .accessibilityLabel("Odds \(PeakFormat.cents(probability)), \(PeakFormat.percent(probability))")
+    }
+}
+
+/// Trailing odds for market lists — type, not a fake button.
+struct PeakOddsMetric: View {
+    let probability: Double
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(PeakFormat.cents(probability))
+                .font(.title3.monospacedDigit().weight(.bold))
+                .foregroundStyle(.primary)
+                .peakNumeric(value: probability)
+            Text(PeakFormat.percent(probability, digits: 0))
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.tertiary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Odds \(PeakFormat.cents(probability)), \(PeakFormat.percent(probability))")
     }
 }
 
@@ -23,28 +47,36 @@ struct PeakCategoryChip: View {
     let selected: Bool
     let action: () -> Void
 
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-    }
+    private var shape: Capsule { Capsule(style: .continuous) }
 
     var body: some View {
         Button {
             PeakHaptics.selection()
             action()
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                 }
                 Text(title)
                     .font(.subheadline.weight(.semibold))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .frame(minHeight: 36)
-            .background(selected ? Color.accentColor : Color.secondary.opacity(0.12), in: shape)
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .frame(minHeight: 32)
+            .background {
+                if selected {
+                    shape.fill(PeakBrand.deep)
+                }
+            }
+            .overlay {
+                shape.strokeBorder(
+                    selected ? Color.clear : PeakCanvas.hairline,
+                    lineWidth: 1
+                )
+            }
+            .foregroundStyle(selected ? Color.white : Color.secondary)
             .contentShape(shape)
             .animation(PeakMotion.snappy, value: selected)
         }
@@ -69,39 +101,97 @@ struct EventRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                if let categoryLabel {
-                    Text(categoryLabel.uppercased())
-                        .font(.caption2.weight(.semibold))
-                        .tracking(0.6)
-                        .foregroundStyle(.secondary)
-                }
+            PeakEventThumb(url: event.imageURL, size: 44)
 
+            VStack(alignment: .leading, spacing: 6) {
                 Text(event.title)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(3)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 8) {
-                    Label(PeakFormat.compactCurrency(event.volume24hr), systemImage: "chart.bar.fill")
+                HStack(spacing: 0) {
+                    if let categoryLabel {
+                        Text(categoryLabel)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        metaDot
+                    }
+                    Text(PeakFormat.compactCurrency(event.volume24hr))
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .foregroundStyle(.secondary)
                     if let end = event.endDate {
-                        Label(PeakFormat.relativeEnd(end), systemImage: "clock")
+                        metaDot
+                        Text(PeakFormat.relativeEnd(end))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
             }
-
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let p = probability {
-                ProbabilityBadge(probability: p)
+                PeakOddsMetric(probability: p)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var metaDot: some View {
+        Text(" · ")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.quaternary)
+    }
+}
+
+/// Small market / event image for list rows — falls back to a calm icon tile.
+struct PeakEventThumb: View {
+    let url: URL?
+    var size: CGFloat = 44
+    var cornerRadius: CGFloat = 10
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        placeholder
+                    case .empty:
+                        PeakCanvas.inset
+                            .overlay { ProgressView().controlSize(.mini) }
+                    @unknown default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            PeakCanvas.inset
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: size * 0.34, weight: .semibold))
+                .foregroundStyle(PeakBrand.mid.opacity(0.85))
+        }
     }
 }
 
@@ -129,14 +219,14 @@ struct MarketOutcomeBar: View {
                 let width = max(0.02, min(0.98, yes))
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.secondary.opacity(0.15))
+                        .fill(PeakCanvas.inset)
                     Capsule()
-                        .fill(PeakTradeStyle.buy.opacity(0.92))
+                        .fill(PeakTradeStyle.buy.opacity(0.88))
                         .frame(width: geo.size.width * width)
                         .animation(PeakMotion.soft, value: yes)
                 }
             }
-            .frame(height: 8)
+            .frame(height: 6)
 
             HStack {
                 Text("\(market.yesLabel) \(PeakFormat.cents(yes))")

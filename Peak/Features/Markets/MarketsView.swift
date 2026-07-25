@@ -326,20 +326,18 @@ struct MarketsView: View {
                 }
             }
             .background(PeakMaterialBackground())
-            .navigationTitle("Markets")
-            .navigationBarTitleDisplayMode(.large)
-            .peakChrome()
+            .peakRootTab("Markets")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
                         CompareMarketsView()
                     } label: {
-                        Image(systemName: "arrow.left.arrow.right")
+                        PeakToolbarCircle(systemImage: "arrow.left.arrow.right")
                     }
                     .accessibilityLabel("Compare markets")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         if model.isRefreshing {
                             ProgressView()
                                 .controlSize(.small)
@@ -358,8 +356,9 @@ struct MarketsView: View {
                                 }
                             }
                         } label: {
-                            Label(model.sort.title, systemImage: "line.3.horizontal.decrease.circle")
+                            PeakToolbarCircle(systemImage: "line.3.horizontal.decrease")
                         }
+                        .accessibilityLabel("Sort \(model.sort.title)")
                     }
                 }
             }
@@ -381,6 +380,11 @@ struct MarketsView: View {
 
     private var listContent: some View {
         List {
+            Section {
+                PeakPageHeader(title: "Markets")
+                    .peakPageHeaderRow()
+            }
+
             if digest.showBanner, !digest.movers.isEmpty {
                 Section {
                     ForYouRailView(
@@ -391,7 +395,7 @@ struct MarketsView: View {
                         onSelect: { path.append($0) },
                         onDismiss: { digest.dismissBanner() }
                     )
-                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 6, trailing: 12))
+                    .listRowInsets(EdgeInsets(top: 8, leading: PeakLayout.gutter, bottom: 8, trailing: PeakLayout.gutter))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 }
@@ -406,16 +410,9 @@ struct MarketsView: View {
                         displayedOdds: model.displayOdds,
                         onSelect: { path.append($0) }
                     )
-                    .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 6, trailing: 12))
+                    .listRowInsets(EdgeInsets(top: 8, leading: PeakLayout.gutter, bottom: 8, trailing: PeakLayout.gutter))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                }
-            } else if !model.isLoading {
-                Section {
-                    marketsHeroFallback
-                        .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
                 }
             }
 
@@ -459,6 +456,10 @@ struct MarketsView: View {
                         )
                     }
                     .modifier(MarketsRowAppear(index: index))
+                    .listRowInsets(EdgeInsets(top: 2, leading: PeakLayout.gutter, bottom: 2, trailing: PeakLayout.gutter))
+                    .listRowBackground(PeakCanvas.background)
+                    .listRowSeparatorTint(PeakCanvas.hairline)
+                    .navigationLinkIndicatorVisibility(.hidden)
                     .contextMenu {
                         Button {
                             shareEvent = event
@@ -483,32 +484,16 @@ struct MarketsView: View {
                 marketsSectionHeader
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .listSectionSpacing(12)
-        .contentMargins(.top, 4, for: .scrollContent)
+        .listRowSeparatorTint(PeakCanvas.hairline)
+        .contentMargins(.top, 0, for: .scrollContent)
         .navigationDestination(for: PeakEvent.self) { event in
             EventDetailView(eventID: event.id, seed: event)
         }
         .sheet(item: $shareEvent) { event in
             ShareMarketSheet(event: event, market: event.primaryMarket)
         }
-    }
-
-    private var marketsHeroFallback: some View {
-        HStack(alignment: .center, spacing: 12) {
-            PeakAppLogo(size: 32, showGlow: false)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Markets")
-                    .font(.title3.weight(.bold))
-                Text(model.sort.title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-        .peakAppear()
     }
 
     @ViewBuilder
@@ -523,34 +508,27 @@ struct MarketsView: View {
             return model.sort.title
         }()
         Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.primary)
-            .textCase(nil)
+            .font(.caption.weight(.semibold))
+            .tracking(0.6)
+            .foregroundStyle(.tertiary)
+            .textCase(.uppercase)
     }
 
     private var skeletonList: some View {
         List {
             Section {
-                HStack(alignment: .center, spacing: 12) {
-                    PeakSkeleton(height: 32, width: 32, cornerRadius: 8)
-                    VStack(alignment: .leading, spacing: 6) {
-                        PeakSkeleton(height: 16, width: 100, cornerRadius: 5)
-                        PeakSkeleton(height: 10, width: 140, cornerRadius: 4)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 4)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                PeakPageHeader(title: "Markets")
+                    .peakPageHeaderRow()
             }
             categoryStrip
             Section {
                 ForEach(0..<8, id: \.self) { _ in
                     PeakSkeletonRow()
+                        .listRowBackground(PeakCanvas.background)
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .allowsHitTesting(false)
         .accessibilityLabel("Loading markets")
@@ -573,9 +551,9 @@ struct MarketsView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
             }
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 2, leading: PeakLayout.gutter, bottom: 6, trailing: PeakLayout.gutter))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }

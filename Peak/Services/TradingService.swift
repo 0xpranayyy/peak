@@ -174,6 +174,8 @@ enum TradingError: LocalizedError, Sendable {
             || lower.contains("trading/setup")
             || lower.contains("deposit wallet")
             || lower.contains("finish setup")
+            || lower.contains("finish set up")
+            || lower.contains("set up trading")
         {
             return .setupRequired
         }

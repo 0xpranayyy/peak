@@ -286,63 +286,14 @@ private enum OnboardingPage: Int, CaseIterable, Identifiable {
 
 // MARK: - Backdrop
 
-/// Editorial onboarding ground: calm base, strong teal horizon, soft vignette.
+/// Editorial onboarding ground — flat Peak canvas (no wash / blob gradients).
 private struct OnboardingBackdrop: View {
     var page: Int
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let isLight = colorScheme == .light
-        let shift = CGFloat(page) * 0.04
-
-        ZStack {
-            // Solid product canvas (not muddy grey wash).
-            (isLight ? Color(red: 0.97, green: 0.98, blue: 0.975) : Color(red: 0.06, green: 0.08, blue: 0.09))
-
-            // Top brand field
-            LinearGradient(
-                colors: [
-                    PeakBrand.deep.opacity(isLight ? 0.16 : 0.38),
-                    PeakBrand.mid.opacity(isLight ? 0.08 : 0.16),
-                    Color.clear,
-                ],
-                startPoint: UnitPoint(x: 0.1, y: 0),
-                endPoint: UnitPoint(x: 0.55, y: 0.55 + shift)
-            )
-
-            // Bottom horizon band
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    PeakBrand.deep.opacity(isLight ? 0.05 : 0.22),
-                ],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-
-            // Right accent bloom (subtle, not neon)
-            RadialGradient(
-                colors: [
-                    PeakBrand.soft.opacity(isLight ? 0.12 : 0.18),
-                    Color.clear,
-                ],
-                center: UnitPoint(x: 0.95, y: 0.22 + shift * 0.5),
-                startRadius: 10,
-                endRadius: 280
-            )
-
-            // Edge vignette for depth
-            RadialGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(isLight ? 0.04 : 0.45),
-                ],
-                center: .center,
-                startRadius: 80,
-                endRadius: 520
-            )
-        }
-        .ignoresSafeArea()
+        PeakCanvas.background
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 }
 

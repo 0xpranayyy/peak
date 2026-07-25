@@ -1231,7 +1231,38 @@ app.post("/deposit-address", wrap(async (req, res) => {
         code: "setup_required",
       });
     }
-    if (session?.needsDeploy && !session?.accountWallet) {
+    // Prefer account wallet; for existing path allow EOA when account wallet isn't linked yet.
+    if (!funder) {
+      funder = session.path === "existing" ? session.eoa : null;
+    }
+    // New path without a deploy yet: try a soft derive so deposit isn't blocked after a partial setup.
+    if (!funder && session.path === "new" && builderConfigured) {
+      try {
+        const walletClient = await walletClientForSession(session);
+        const soft = await deployOrLinkDepositWallet({
+          walletClient,
+          cfg: tradingCfg,
+          alreadyDeployedAddress: session.accountWallet || null,
+        });
+        if (soft?.accountWallet) {
+          funder = soft.accountWallet;
+          const next = {
+            ...session,
+            accountWallet: soft.accountWallet,
+            safeAddress: soft.accountWallet,
+            walletType: 3,
+            walletTypeName: "DEPOSIT_WALLET",
+            needsDeploy: false,
+            ready: true,
+          };
+          setSession(req.auth.userId, next);
+          session = next;
+        }
+      } catch (e) {
+        console.warn("deposit-address soft setup failed:", e?.message ?? e);
+      }
+    }
+    if (!funder && session?.needsDeploy && !session?.accountWallet) {
       return res.status(400).json({
         error: "Finish Set up trading first, then request a deposit address.",
         code: "setup_required",
@@ -1240,10 +1271,6 @@ app.post("/deposit-address", wrap(async (req, res) => {
         builderConfigured,
         relayerConfigured,
       });
-    }
-    // Prefer account wallet; fall back to EOA only for existing path that traded as EOA.
-    if (!funder) {
-      funder = session.path === "existing" ? session.eoa : null;
     }
     if (!funder) {
       return res.status(400).json({

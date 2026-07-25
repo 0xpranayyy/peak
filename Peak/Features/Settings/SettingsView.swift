@@ -14,6 +14,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    PeakPageHeader(title: "Settings")
+                        .peakPageHeaderRow()
+                }
+
                 accountSection
                 preferencesSection
                 portfolioSection
@@ -21,10 +26,12 @@ struct SettingsView: View {
                 aboutSection
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .listRowSeparatorTint(PeakCanvas.hairline)
+            .listSectionSpacing(18)
+            .contentMargins(.horizontal, 16, for: .scrollContent)
             .background(PeakMaterialBackground())
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
-            .peakChrome()
+            .peakRootTab("Settings")
             .task {
                 await auth.start()
             }
@@ -54,17 +61,23 @@ struct SettingsView: View {
                     systemImage: auth.isAuthenticated ? "person.crop.circle.fill" : "person.crop.circle"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
         } header: {
-            Text("Account")
+            sectionHeader("Account")
         } footer: {
             Text("Sign in to trade from Peak.")
+                .font(.footnote)
         }
     }
 
     private var preferencesSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                Label("Appearance", systemImage: "circle.lefthalf.filled")
+                settingsRow(
+                    title: "Appearance",
+                    subtitle: nil,
+                    systemImage: "circle.lefthalf.filled"
+                )
                 Picker("Appearance", selection: $appearance.preference) {
                     ForEach(PeakAppearance.allCases) { mode in
                         Text(mode.title).tag(mode)
@@ -74,7 +87,8 @@ struct SettingsView: View {
                 .labelsHidden()
                 .accessibilityLabel("Appearance")
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
+            .listRowBackground(PeakCanvas.elevated)
 
             NavigationLink {
                 InterestsSettingsView()
@@ -85,10 +99,12 @@ struct SettingsView: View {
                     systemImage: "square.grid.2x2"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
         } header: {
-            Text("Preferences")
+            sectionHeader("Preferences")
         } footer: {
-            Text("Appearance follows your iPhone setting unless you choose Light or Dark. Pinned categories appear first on Markets.")
+            Text("Light and Dark override your iPhone setting. Pinned categories appear first on Markets.")
+                .font(.footnote)
         }
     }
 
@@ -103,10 +119,12 @@ struct SettingsView: View {
                     systemImage: "wallet.pass"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
         } header: {
-            Text("Portfolio")
+            sectionHeader("Portfolio")
         } footer: {
-            Text("Paste a Polymarket address for view-only positions. To trade, connect a wallet or import a key under Account.")
+            Text("Paste a Polymarket address for view-only positions. To trade, connect under Account.")
+                .font(.footnote)
         }
     }
 
@@ -122,6 +140,7 @@ struct SettingsView: View {
                     systemImage: "bell"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
 
             NavigationLink {
                 DailyDigestSettingsView()
@@ -132,27 +151,30 @@ struct SettingsView: View {
                     systemImage: "sun.max"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
         } header: {
-            Text("Alerts")
+            sectionHeader("Alerts")
         } footer: {
             Text("Price alerts use live prices while the app is open.")
+                .font(.footnote)
         }
     }
 
     private var aboutSection: some View {
         Section {
-            HStack(spacing: 14) {
-                PeakAppLogo(size: 48, showGlow: false)
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                PeakAppLogo(size: 40, showGlow: false)
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Peak")
-                        .font(.title3.weight(.bold))
+                        .font(.body.weight(.semibold))
                     Text("Version \(appVersion)")
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 2)
+            .listRowBackground(PeakCanvas.elevated)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Peak, version \(appVersion)")
 
@@ -170,6 +192,7 @@ struct SettingsView: View {
                 )
             }
             .foregroundStyle(.primary)
+            .listRowBackground(PeakCanvas.elevated)
 
             if !watchlist.eventIDs.isEmpty {
                 Button(role: .destructive) {
@@ -181,10 +204,19 @@ struct SettingsView: View {
                         systemImage: "star.slash"
                     )
                 }
+                .listRowBackground(PeakCanvas.elevated)
             }
         } header: {
-            Text("About")
+            sectionHeader("About")
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .tracking(0.4)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
     }
 
     private var accountSubtitle: String {
@@ -223,6 +255,7 @@ struct SettingsView: View {
                     systemImage: "arrow.up.right.square"
                 )
             }
+            .listRowBackground(PeakCanvas.elevated)
         }
     }
 
@@ -240,19 +273,27 @@ struct SettingsView: View {
     }
 
     private func settingsRow(title: String, subtitle: String?, systemImage: String) -> some View {
-        Label {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(PeakBrand.mid)
+                .frame(width: 28, height: 28)
+                .background(PeakCanvas.inset, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
-        } icon: {
-            Image(systemName: systemImage)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -269,22 +310,26 @@ struct InterestsSettingsView: View {
                         HStack(spacing: 12) {
                             Image(systemName: category.systemImage)
                                 .frame(width: 22)
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(PeakBrand.mid)
                             Text(category.title)
                                 .foregroundStyle(.primary)
                             Spacer()
                             if categoryPrefs.isInterested(category) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(PeakBrand.mid)
                             } else {
                                 Image(systemName: "circle")
                                     .foregroundStyle(.tertiary)
                             }
                         }
                     }
+                    .listRowBackground(PeakCanvas.elevated)
                 }
             } header: {
                 Text("Pinned on Markets")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
             } footer: {
                 Text("Order follows this list. Unpinned categories still appear after your picks.")
             }
@@ -294,9 +339,13 @@ struct InterestsSettingsView: View {
                     Button("Clear all pins", role: .destructive) {
                         categoryPrefs.setInterests([])
                     }
+                    .listRowBackground(PeakCanvas.elevated)
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(PeakMaterialBackground())
         .navigationTitle("Interests")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -314,11 +363,12 @@ struct WalletSettingsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
-        } header: {
-            Text("Portfolio wallet")
-        } footer: {
-            Text("Paste the address from polymarket.com (Profile). View only. Sign in or import a key under Account to trade.")
-        }
+                    .listRowBackground(PeakCanvas.elevated)
+            } header: {
+                Text("Portfolio wallet")
+            } footer: {
+                Text("Paste the address from polymarket.com (Profile). View only. Sign in or import a key under Account to trade.")
+            }
 
             Section {
                 Button("Save") {
@@ -331,12 +381,15 @@ struct WalletSettingsView: View {
                         message = wallet.isValid ? "Saved." : "That doesn’t look like a valid address."
                     }
                 }
+                .listRowBackground(PeakCanvas.elevated)
+
                 if wallet.isValid {
                     Button("Clear", role: .destructive) {
                         wallet.clear()
                         draft = ""
                         message = "Cleared."
                     }
+                    .listRowBackground(PeakCanvas.elevated)
                 }
             }
 
@@ -345,9 +398,12 @@ struct WalletSettingsView: View {
                     Text(message)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .listRowBackground(PeakCanvas.elevated)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(PeakMaterialBackground())
         .navigationTitle("Wallet")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

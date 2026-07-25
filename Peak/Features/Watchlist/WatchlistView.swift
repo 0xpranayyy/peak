@@ -49,27 +49,38 @@ struct WatchlistView: View {
         NavigationStack {
             Group {
                 if env.watchlist.eventIDs.isEmpty {
-                    EmptyStateView(
-                        kind: .watchlist,
-                        title: "No watchlist yet",
-                        message: "Star an event from Markets to keep an eye on it.",
-                        actionTitle: "Browse markets"
-                    ) {
-                        PeakRootTab.select(.markets)
-                    }
+                    emptyWatchlist
                 } else if model.isLoading && model.events.isEmpty {
-                    ProgressView("Loading watchlist…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 0) {
+                        PeakPageHeader(title: "Watchlist")
+                            .padding(.horizontal, PeakLayout.gutter)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer()
+                        ProgressView("Loading watchlist…")
+                        Spacer()
+                    }
                 } else if let error = model.errorMessage, model.events.isEmpty {
-                    LoadingErrorView(message: error) {
-                        Task { await model.reload(ids: env.watchlist.eventIDs) }
+                    VStack(spacing: 0) {
+                        PeakPageHeader(title: "Watchlist")
+                            .padding(.horizontal, PeakLayout.gutter)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        LoadingErrorView(message: error) {
+                            Task { await model.reload(ids: env.watchlist.eventIDs) }
+                        }
                     }
                 } else {
                     List {
+                        Section {
+                            PeakPageHeader(title: "Watchlist")
+                                .peakPageHeaderRow()
+                        }
                         ForEach(model.events) { event in
                             NavigationLink(value: event) {
                                 EventRowView(event: event)
                             }
+                            .listRowInsets(EdgeInsets(top: 2, leading: PeakLayout.gutter, bottom: 2, trailing: PeakLayout.gutter))
+                            .listRowBackground(PeakCanvas.background)
+                            .navigationLinkIndicatorVisibility(.hidden)
                         }
                         .onDelete { indexSet in
                             let ids = indexSet.map { model.events[$0].id }
@@ -81,14 +92,20 @@ struct WatchlistView: View {
                             env.watchlist.replaceAll(model.events.map(\.id))
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .toolbar { EditButton() }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .listRowSeparatorTint(PeakCanvas.hairline)
                 }
             }
             .background(PeakMaterialBackground())
-            .navigationTitle("Watchlist")
-            .navigationBarTitleDisplayMode(.large)
-            .peakChrome()
+            .peakRootTab("Watchlist")
+            .toolbar {
+                if !env.watchlist.eventIDs.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        EditButton()
+                    }
+                }
+            }
             .navigationDestination(for: PeakEvent.self) { event in
                 EventDetailView(eventID: event.id, seed: event)
             }
@@ -98,6 +115,23 @@ struct WatchlistView: View {
             .refreshable {
                 await model.reload(ids: env.watchlist.eventIDs)
                 PeakHaptics.refresh()
+            }
+        }
+    }
+
+    private var emptyWatchlist: some View {
+        VStack(spacing: 0) {
+            PeakPageHeader(title: "Watchlist")
+                .padding(.horizontal, PeakLayout.gutter)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            EmptyStateView(
+                kind: .watchlist,
+                title: "No watchlist yet",
+                message: "Star an event from Markets to keep an eye on it.",
+                actionTitle: "Browse markets"
+            ) {
+                PeakRootTab.select(.markets)
             }
         }
     }

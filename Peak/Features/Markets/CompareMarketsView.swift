@@ -64,6 +64,7 @@ struct CompareMarketsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .listRowSeparatorTint(PeakCanvas.hairline)
         .navigationTitle("Compare")
         .navigationBarTitleDisplayMode(.inline)
         .background(PeakMaterialBackground())

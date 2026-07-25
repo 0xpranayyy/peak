@@ -104,7 +104,7 @@ struct TradingPathSheet: View {
                         .font(.body.monospaced())
                         .padding(12)
                         .background(
-                            Color(.secondarySystemGroupedBackground),
+                            PeakCanvas.inset,
                             in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
                         )
 
@@ -156,7 +156,7 @@ struct TradingPathSheet: View {
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
             .background(
-                Color(.secondarySystemGroupedBackground),
+                PeakCanvas.inset,
                 in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
             )
         }
