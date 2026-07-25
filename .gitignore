@@ -32,3 +32,6 @@ Peak/PrivySecrets.local.plist
 *.pem
 *.p12
 *.key
+
+# Local build output (Cursor/Xcode -derivedDataPath)
+.derivedData/
