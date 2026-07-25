@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Sign-in: Connect wallet, Import seed/key, or Email / Apple / Google.
+/// Sign-in: Social (Google / Apple / Email) or Import seed/key — Polymarket-style entry.
 struct PeakSignInSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: PrivyAuthService
@@ -17,7 +17,7 @@ struct PeakSignInSheet: View {
     @State private var walletInput = ""
     @State private var statusMessage: String?
     @State private var isBusy = false
-    @State private var showViewOnly = false
+    @State private var showAdvanced = false
     @State private var showImportWallet = false
 
     private enum Mode {
@@ -83,7 +83,7 @@ struct PeakSignInSheet: View {
         .interactiveDismissDisabled(isBusy)
     }
 
-    // MARK: - Home (wallet first)
+    // MARK: - Home (social + import)
 
     private var methodsContent: some View {
         ScrollView {
@@ -93,7 +93,7 @@ struct PeakSignInSheet: View {
                         .padding(.bottom, 4)
                     Text("Sign in")
                         .font(.title2.weight(.bold))
-                    Text("Import your Polymarket key to trade, or connect a wallet / email.")
+                    Text("Continue with a social account, or import your Polymarket wallet.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -104,6 +104,36 @@ struct PeakSignInSheet: View {
                 .padding(.bottom, 28)
 
                 VStack(spacing: 12) {
+                    socialButton(
+                        title: "Continue with Google",
+                        systemImage: "globe"
+                    ) {
+                        Task { await runSocial { try await auth.loginWithGoogle() } }
+                    }
+
+                    socialButton(
+                        title: "Continue with Apple",
+                        systemImage: "apple.logo"
+                    ) {
+                        Task { await runSocial { try await auth.loginWithApple() } }
+                    }
+
+                    socialButton(
+                        title: "Continue with Email",
+                        systemImage: "envelope.fill"
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) { mode = .email }
+                    }
+
+                    HStack {
+                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(height: 1)
+                        Text("or")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(height: 1)
+                    }
+                    .padding(.vertical, 8)
+
                     Button {
                         showImportWallet = true
                     } label: {
@@ -111,45 +141,11 @@ struct PeakSignInSheet: View {
                             Image(systemName: "key.fill")
                                 .font(.title3)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Import private key or seed")
-                                    .font(.headline)
-                                Text("Use your Polymarket wallet to trade in Peak")
-                                    .font(.caption)
-                                    .opacity(0.9)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
-                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                        .background(
-                            Color.accentColor,
-                            in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous))
-                    }
-                    .peakPressable()
-                    .disabled(isBusy)
-
-                    Button {
-                        Task { await connectWallet() }
-                    } label: {
-                        HStack(spacing: 12) {
-                            if isBusy {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "wallet.pass.fill")
-                                    .font(.title3)
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(isBusy ? "Connecting…" : "Connect wallet")
+                                Text("Import wallet")
                                     .font(.headline.weight(.semibold))
-                                if !isBusy {
-                                    Text("MetaMask, Rainbow, Coinbase — then import key once to trade")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+                                Text("Seed phrase or private key")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
                         }
@@ -167,52 +163,40 @@ struct PeakSignInSheet: View {
                         }
                     }
                     .peakPressable()
-                    .disabled(isBusy || !WalletConnectCredentials.isConfigured)
-
-                    #if DEBUG
-                    if !WalletConnectCredentials.isConfigured {
-                        Text("Add WALLETCONNECT_PROJECT_ID in PrivySecrets.local.plist to enable Connect wallet.")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    #endif
-
-                    HStack {
-                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(height: 1)
-                        Text("or")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(height: 1)
-                    }
-                    .padding(.vertical, 8)
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { mode = .email }
-                    } label: {
-                        Label("Continue with email", systemImage: "envelope.fill")
-                            .font(.body.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
                     .disabled(isBusy)
 
-                    HStack(spacing: 10) {
-                        compactSocial("Google", systemImage: "globe") {
-                            Task { await runSocial { try await auth.loginWithGoogle() } }
-                        }
-                        compactSocial("Apple", systemImage: "apple.logo") {
-                            Task { await runSocial { try await auth.loginWithApple() } }
-                        }
-                    }
-                    .disabled(isBusy)
+                    Text(PeakUserCopy.securedByPrivy)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
                 }
                 .padding(.horizontal, 24)
 
-                DisclosureGroup(isExpanded: $showViewOnly) {
+                DisclosureGroup(isExpanded: $showAdvanced) {
                     VStack(spacing: 12) {
+                        Button {
+                            Task { await connectWallet() }
+                        } label: {
+                            Label(
+                                isBusy ? "Connecting…" : "Connect wallet",
+                                systemImage: "wallet.pass.fill"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isBusy || !WalletConnectCredentials.isConfigured)
+
+                        #if DEBUG
+                        if !WalletConnectCredentials.isConfigured {
+                            Text("Add WALLETCONNECT_PROJECT_ID in PrivySecrets.local.plist to enable Connect wallet.")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        #endif
+
                         Text("Paste a profile address to view positions only. Sign in to trade.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -247,7 +231,7 @@ struct PeakSignInSheet: View {
                     }
                     .padding(.top, 8)
                 } label: {
-                    Text("View positions with an address")
+                    Text("Need help?")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -278,6 +262,38 @@ struct PeakSignInSheet: View {
     private var statusLooksGood: Bool {
         let s = statusMessage ?? ""
         return s.contains("Saved") || s.contains("Imported") || s.contains("Connected")
+            || s.contains("Wallet ready") || s.contains("Deposit")
+    }
+
+    private func socialButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                if isBusy {
+                    ProgressView()
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.title3)
+                        .frame(width: 22)
+                }
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .background(
+                PeakCanvas.inset,
+                in: RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: PeakLayout.ctaRadius, style: .continuous)
+                    .strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            }
+        }
+        .peakPressable()
+        .disabled(isBusy)
     }
 
     // MARK: - Email
@@ -353,17 +369,6 @@ struct PeakSignInSheet: View {
 
     // MARK: - Helpers
 
-    private func compactSocial(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-    }
-
     @ViewBuilder
     private func busyTitle(_ title: String) -> some View {
         if isBusy {
@@ -427,7 +432,7 @@ struct PeakSignInSheet: View {
         do {
             try await auth.loginWithEmailCode(codeInput)
             await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
-            statusMessage = nil
+            statusMessage = TradingPathStore.shared.snapshot.message
         } catch {
             statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t verify that code. Try again.")
         }
@@ -439,7 +444,7 @@ struct PeakSignInSheet: View {
         do {
             try await work()
             await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
-            statusMessage = nil
+            statusMessage = TradingPathStore.shared.snapshot.message
         } catch {
             statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t sign in. Try again.")
         }
@@ -462,11 +467,45 @@ struct ImportTradingWalletSheet: View {
     @State private var failureMessage: String?
     @State private var isBusy = false
     @State private var phase: Phase = .form
+    @State private var kind: ImportKind = .seed
 
     private enum Phase: Equatable {
         case form
         case success
         case failure
+    }
+
+    private enum ImportKind: String, CaseIterable, Identifiable {
+        case seed
+        case privateKey
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .seed: return "Seed Phrase"
+            case .privateKey: return "Private Key"
+            }
+        }
+
+        var placeholder: String {
+            switch self {
+            case .seed: return "word1 word2 word3 …"
+            case .privateKey: return "0x… or hex private key"
+            }
+        }
+
+        var fieldLabel: String {
+            switch self {
+            case .seed: return "Seed phrase"
+            case .privateKey: return "Private key"
+            }
+        }
+    }
+
+    private var canImport: Bool {
+        guard !isBusy, tradingConfig.hasBackendURL else { return false }
+        return Self.isValidSecret(secretInput, kind: kind)
     }
 
     var body: some View {
@@ -507,19 +546,42 @@ struct ImportTradingWalletSheet: View {
     private var importForm: some View {
         Form {
             Section {
-                SecureField("Private key or seed phrase", text: $secretInput)
+                Picker("Import type", selection: $kind) {
+                    ForEach(ImportKind.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(isBusy)
+                .onChange(of: kind) { _, _ in
+                    secretInput = ""
+                }
+
+                SecureField(kind.placeholder, text: $secretInput)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.body.monospaced())
                     .disabled(isBusy)
+
+                Button("Paste") {
+                    if let pasted = UIPasteboard.general.string {
+                        secretInput = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                .disabled(isBusy)
             } header: {
-                Text("Key or seed")
+                Text(kind.fieldLabel)
             } footer: {
-                Text(
-                    auth.isAuthenticated
-                        ? "Your key is sent once securely and never stored on this device."
-                        : "Paste your Polymarket key or seed. Peak signs you in with that wallet — no Apple or Google needed."
-                )
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(
+                        auth.isAuthenticated
+                            ? "Your key is sent once securely and never stored on this device."
+                            : "Paste your Polymarket \(kind == .seed ? "seed phrase" : "private key"). Peak signs you in with that wallet — no Apple or Google needed."
+                    )
+                    Text(PeakUserCopy.securedByPrivy)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {
@@ -534,11 +596,7 @@ struct ImportTradingWalletSheet: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
-                .disabled(
-                    isBusy
-                        || secretInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || !tradingConfig.hasBackendURL
-                )
+                .disabled(!canImport)
 
                 #if DEBUG
                 if !tradingConfig.hasBackendURL {
@@ -622,7 +680,7 @@ struct ImportTradingWalletSheet: View {
 
     private func importSecret() async {
         let trimmed = secretInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard Self.isValidSecret(trimmed, kind: kind) else { return }
 
         isBusy = true
         defer {
@@ -645,6 +703,24 @@ struct ImportTradingWalletSheet: View {
             )
             phase = .failure
             UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
+    }
+
+    /// Lightweight client-side checks so Import stays disabled until input looks valid.
+    private static func isValidSecret(_ raw: String, kind: ImportKind) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        switch kind {
+        case .seed:
+            let words = trimmed.split(whereSeparator: \.isWhitespace)
+            return words.count >= 12
+        case .privateKey:
+            var hex = trimmed
+            if hex.hasPrefix("0x") || hex.hasPrefix("0X") {
+                hex = String(hex.dropFirst(2))
+            }
+            guard hex.count == 64 else { return false }
+            return hex.allSatisfy(\.isHexDigit)
         }
     }
 }
@@ -670,6 +746,8 @@ struct AccountView: View {
     /// Path not chosen yet, or chosen but wallet still not linked / deployed.
     private var needsSetup: Bool {
         guard auth.isAuthenticated else { return false }
+        if tradingPath.snapshot.imported { return false }
+        if tradingPath.isOnboardingComplete { return false }
         if tradingPath.needsPathChoice { return true }
         if tradingPath.snapshot.path != nil, !tradingPath.snapshot.syncReady { return true }
         return false
@@ -820,16 +898,11 @@ struct AccountView: View {
             if needsSetup {
                 Text(
                     tradingPath.needsPathChoice
-                        ? "One more step. Set up trading to buy and sell."
+                        ? "Finishing wallet setup…"
                         : "Trading setup isn’t finished yet. Tap below to continue."
                 )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                if tradingPath.needsPathChoice {
-                    Text("Already on Polymarket? You can link that wallet in setup.")
-                        .font(.caption)
-                        .foregroundStyle(PeakBrand.mid)
-                }
             } else if tradingPath.snapshot.imported {
                 Text(PeakUserCopy.connectedPolymarketAccount)
                     .font(.footnote)
@@ -849,29 +922,28 @@ struct AccountView: View {
             if needsSetup {
                 Section {
                     Button {
-                        showTradingPath = true
+                        Task {
+                            await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
+                            statusMessage = tradingPath.snapshot.message
+                        }
                     } label: {
                         PeakPrimaryCTA(
-                            title: tradingPath.needsPathChoice ? "Set up trading" : "Continue setup",
-                            systemImage: "arrow.triangle.branch",
+                            title: "Finish setup",
+                            systemImage: "arrow.clockwise",
                             color: PeakBrand.mid
                         )
                     }
                     .peakPressable()
                 } footer: {
-                    Text(
-                        tradingPath.needsPathChoice
-                            ? "Choose a new wallet or connect one you already use."
-                            : "We’ll retry linking your trading wallet."
-                    )
+                    Text("We’ll link your Polymarket account or create a Peak wallet.")
                 }
 
                 Section {
-                    moreOptionsMenu
+                    needHelpMenu
                 }
             } else {
                 Section {
-                    moreOptionsMenu
+                    needHelpMenu
                 }
             }
 
@@ -885,14 +957,20 @@ struct AccountView: View {
         }
     }
 
-    private var moreOptionsMenu: some View {
+    private var needHelpMenu: some View {
         Menu {
-            if !needsSetup {
-                Button {
-                    showTradingPath = true
-                } label: {
-                    Label("Change trading setup", systemImage: "arrow.triangle.branch")
+            Button {
+                Task {
+                    await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
+                    statusMessage = tradingPath.snapshot.message
                 }
+            } label: {
+                Label("Retry wallet setup", systemImage: "arrow.clockwise")
+            }
+            Button {
+                showTradingPath = true
+            } label: {
+                Label("Advanced trading setup", systemImage: "arrow.triangle.branch")
             }
             Button {
                 Task { await connectWalletFromAccount() }
@@ -913,7 +991,7 @@ struct AccountView: View {
                 Label("Paste address", systemImage: "doc.on.clipboard")
             }
         } label: {
-            Label("More options", systemImage: "ellipsis.circle")
+            Label("Need help?", systemImage: "questionmark.circle")
         }
     }
 

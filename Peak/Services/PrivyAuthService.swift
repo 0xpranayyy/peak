@@ -165,6 +165,7 @@ final class PrivyAuthService: ObservableObject {
                 await apply(user: user)
             }
 
+            TradingPathStore.shared.bind(userID: userID)
             TradingPathStore.shared.choose(.existing)
             showTradingPathSheet = false
             tradingConfig.ensureBackendURLIfNeeded()
@@ -173,12 +174,13 @@ final class PrivyAuthService: ObservableObject {
             if let address = result["address"] as? String {
                 await adoptImportedWallet(address, wallet: wallet, tradingConfig: tradingConfig)
             }
-            let syncReady = (result["syncReady"] as? Bool) ?? false
             TradingPathStore.shared.apply(server: result)
+            // Imported key is enough to leave onboarding — never reopen setup.
             TradingPathStore.shared.markImported(
-                syncReady: syncReady || TradingPathStore.shared.snapshot.syncReady,
+                syncReady: true,
                 message: PeakUserCopy.connectedPolymarketAccount
             )
+            showTradingPathSheet = false
             phase = .authenticated
         } catch {
             let message = PeakUserCopy.fromError(
@@ -296,7 +298,7 @@ final class PrivyAuthService: ObservableObject {
         phase = .unauthenticated
     }
 
-    /// After login: bind portfolio wallet, ensure backend URL, sync session.
+    /// After login: bind wallet and auto-pick existing Polymarket or new Peak wallet. No quiz sheet.
     func finishTradingSetup(wallet: WalletStore, tradingConfig: TradingConfigStore) async {
         TradingPathStore.shared.bind(userID: userID)
         if let address = walletAddress {
@@ -305,22 +307,60 @@ final class PrivyAuthService: ObservableObject {
         tradingConfig.ensureBackendURLIfNeeded()
         guard walletAddress != nil, tradingConfig.hasBackendURL else { return }
 
-        if TradingPathStore.shared.needsPathChoice {
-            showTradingPathSheet = true
+        // Imported keys are done — never reopen setup.
+        if TradingPathStore.shared.snapshot.imported {
+            showTradingPathSheet = false
             return
         }
 
-        let path = TradingPathStore.shared.snapshot.path
+        // Path already chosen — sync quietly; don't force the quiz on soft sync failures.
+        if let path = TradingPathStore.shared.snapshot.path {
+            _ = try? await syncTradingPath(
+                path,
+                wallet: wallet,
+                tradingConfig: tradingConfig,
+                tradingPath: TradingPathStore.shared
+            )
+            showTradingPathSheet = false
+            return
+        }
+
+        // Social / first login: try existing Polymarket book, else create Peak wallet.
+        await autoConfigureTradingPath(wallet: wallet, tradingConfig: tradingConfig)
+    }
+
+    /// Resolve Polymarket link or deploy a new Peak wallet without showing the quiz.
+    private func autoConfigureTradingPath(wallet: WalletStore, tradingConfig: TradingConfigStore) async {
+        showTradingPathSheet = false
+        // Prefer existing account if Gamma finds a proxy / book for this signer.
+        if (try? await syncTradingPath(
+            .existing,
+            wallet: wallet,
+            tradingConfig: tradingConfig,
+            tradingPath: TradingPathStore.shared
+        )) != nil, TradingPathStore.shared.snapshot.syncReady {
+            TradingPathStore.shared.choose(.existing)
+            TradingPathStore.shared.apply(server: [
+                "path": TradingPathStore.Path.existing.rawValue,
+                "syncReady": true,
+                "message": PeakUserCopy.walletReady,
+            ])
+            return
+        }
+
+        // No existing book — new Peak trading wallet.
+        TradingPathStore.shared.choose(.new)
         _ = try? await syncTradingPath(
-            path ?? .new,
+            .new,
             wallet: wallet,
             tradingConfig: tradingConfig,
             tradingPath: TradingPathStore.shared
         )
-        // Incomplete deploy / link — prompt again so the user isn’t stuck without a CTA.
-        if !TradingPathStore.shared.snapshot.syncReady {
-            showTradingPathSheet = true
-        }
+        TradingPathStore.shared.apply(server: [
+            "path": TradingPathStore.Path.new.rawValue,
+            "message": PeakUserCopy.depositToStart,
+        ])
+        showTradingPathSheet = false
     }
 
     /// Sync chosen path with backend (resolve account wallet + optional setup).
@@ -467,18 +507,18 @@ final class PrivyAuthService: ObservableObject {
         return try await user.getAccessToken()
     }
 
+    /// Apply Privy user. Never opens the trading-path quiz — social finishes via `finishTradingSetup`.
     private func apply(user: any PrivyUser) async {
         userID = user.id
         email = linkedEmail(from: user)
         TradingPathStore.shared.bind(userID: user.id)
+        // Never open Set up trading from auth apply (imported or otherwise).
+        showTradingPathSheet = false
         do {
             walletAddress = try await resolveWalletAddress(for: user)
             phase = .authenticated
             if let walletAddress {
                 PeakProfileStore.shared.refresh(primary: walletAddress)
-            }
-            if TradingPathStore.shared.needsPathChoice {
-                showTradingPathSheet = true
             }
         } catch {
             walletAddress = externalWalletAddress(from: user)
@@ -487,9 +527,6 @@ final class PrivyAuthService: ObservableObject {
                 phase = .authenticated
                 if let walletAddress {
                     PeakProfileStore.shared.refresh(primary: walletAddress)
-                }
-                if TradingPathStore.shared.needsPathChoice {
-                    showTradingPathSheet = true
                 }
             } else {
                 phase = .failed(PeakUserCopy.fromError(error, fallback: "Couldn’t finish sign-in. Try again."))

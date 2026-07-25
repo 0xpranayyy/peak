@@ -131,7 +131,6 @@ struct PortfolioView: View {
     @State private var showWalletEditor = false
     @State private var showAccount = false
     @State private var showDeposit = false
-    @State private var showTradingPath = false
     @State private var showImportKey = false
     @State private var sharePosition: PortfolioPosition?
     @AppStorage("peak.portfolio.linkBanner.dismissed") private var linkBannerDismissed = false
@@ -141,7 +140,9 @@ struct PortfolioView: View {
     }
 
     private var needsTradingSetup: Bool {
-        auth.isAuthenticated && tradingPath.needsPathChoice
+        auth.isAuthenticated
+            && !tradingPath.snapshot.imported
+            && tradingPath.shouldShowSetupSheet
     }
 
     /// Signed in / trading proxy ready: cash is the hero number (wallet-style).
@@ -262,13 +263,6 @@ struct PortfolioView: View {
                     .environmentObject(tradingPath)
                     .environmentObject(tradingConfig)
             }
-            .sheet(isPresented: $showTradingPath) {
-                TradingPathSheet()
-                    .environmentObject(auth)
-                    .environmentObject(tradingConfig)
-                    .environmentObject(env.wallet)
-                    .environmentObject(tradingPath)
-            }
             .sheet(isPresented: $showImportKey) {
                 ImportTradingWalletSheet()
                     .environmentObject(auth)
@@ -380,17 +374,22 @@ struct PortfolioView: View {
             if needsTradingSetup {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Set up trading")
+                        Text("Finishing setup")
                             .font(.body.weight(.semibold))
-                        Text("Choose a new wallet or connect one you already use.")
+                        Text("Linking your wallet. You can retry from Account if this takes a moment.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Button {
-                            showTradingPath = true
+                            Task {
+                                await auth.finishTradingSetup(
+                                    wallet: env.wallet,
+                                    tradingConfig: tradingConfig
+                                )
+                            }
                         } label: {
                             PeakPrimaryCTA(
-                                title: "Set up trading",
-                                systemImage: "arrow.triangle.branch",
+                                title: "Retry setup",
+                                systemImage: "arrow.clockwise",
                                 color: PeakBrand.mid
                             )
                         }
@@ -445,7 +444,7 @@ struct PortfolioView: View {
             Text(
                 model.needsImportWallet || tradingPath.snapshot.needsImport
                     ? PeakUserCopy.importWalletRequired
-                    : "Already on Polymarket? Link your account under Set up trading."
+                    : "Already on Polymarket? Import your wallet under Account → Need help?"
             )
                 .font(.subheadline)
                 .foregroundStyle(.primary)
@@ -475,7 +474,9 @@ struct PortfolioView: View {
             if (model.needsImportWallet || tradingPath.snapshot.needsImport), tradingPath.shouldOfferImport {
                 showImportKey = true
             } else {
-                showTradingPath = true
+                Task {
+                    await auth.finishTradingSetup(wallet: env.wallet, tradingConfig: tradingConfig)
+                }
             }
         }
         .accessibilityElement(children: .combine)
@@ -483,7 +484,7 @@ struct PortfolioView: View {
         .accessibilityHint(
             (model.needsImportWallet || tradingPath.snapshot.needsImport) && tradingPath.shouldOfferImport
                 ? "Opens import wallet"
-                : "Opens trading setup"
+                : "Retries wallet setup"
         )
         .peakAppear()
     }

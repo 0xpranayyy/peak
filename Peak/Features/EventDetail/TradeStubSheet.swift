@@ -48,7 +48,6 @@ struct TradeStubSheet: View {
     @State private var didSucceed = false
     @State private var showSignIn = false
     @State private var showDeposit = false
-    @State private var showTradingPath = false
     @State private var showImportKey = false
     @FocusState private var focusedField: TradeField?
 
@@ -101,12 +100,15 @@ struct TradeStubSheet: View {
     /// Path chosen but account wallet not linked / deposit wallet not deployed yet.
     private var walletNotSynced: Bool {
         auth.isAuthenticated
+            && !tradingPath.snapshot.imported
             && tradingPath.snapshot.path != nil
             && !tradingPath.snapshot.syncReady
     }
 
     private var setupBlocked: Bool {
-        auth.isAuthenticated && tradingPath.needsPathChoice
+        auth.isAuthenticated
+            && !tradingPath.snapshot.imported
+            && tradingPath.needsPathChoice
     }
 
     private var price: Double {
@@ -216,17 +218,22 @@ struct TradeStubSheet: View {
                 } else if setupBlocked {
                     Section {
                         TradeBlockedPanel(
-                            systemImage: "arrow.triangle.branch",
-                            title: "Set up trading",
-                            message: "Choose a new wallet or connect one you already use.",
+                            systemImage: "arrow.clockwise",
+                            title: "Finishing setup",
+                            message: "We’re linking your trading wallet. Retry, or open Account → Need help?",
                             accent: action.color
                         ) {
                             Button {
-                                showTradingPath = true
+                                Task {
+                                    await auth.finishTradingSetup(
+                                        wallet: env.wallet,
+                                        tradingConfig: tradingConfig
+                                    )
+                                }
                             } label: {
                                 PeakPrimaryCTA(
-                                    title: "Set up trading",
-                                    systemImage: "arrow.triangle.branch",
+                                    title: "Retry setup",
+                                    systemImage: "arrow.clockwise",
                                     color: action.color
                                 )
                             }
@@ -237,17 +244,22 @@ struct TradeStubSheet: View {
                 } else if walletNotSynced {
                     Section {
                         TradeBlockedPanel(
-                            systemImage: "arrow.triangle.branch",
+                            systemImage: "arrow.clockwise",
                             title: "Finish setup",
-                            message: "Your trading wallet isn’t linked yet. Open Account to finish setup, then try again.",
+                            message: "Your trading wallet isn’t linked yet. Retry setup, then try again.",
                             accent: action.color
                         ) {
                             Button {
-                                showTradingPath = true
+                                Task {
+                                    await auth.finishTradingSetup(
+                                        wallet: env.wallet,
+                                        tradingConfig: tradingConfig
+                                    )
+                                }
                             } label: {
                                 PeakPrimaryCTA(
-                                    title: "Continue setup",
-                                    systemImage: "arrow.triangle.branch",
+                                    title: "Retry setup",
+                                    systemImage: "arrow.clockwise",
                                     color: action.color
                                 )
                             }
@@ -427,13 +439,6 @@ struct TradeStubSheet: View {
                     .environmentObject(tradingPath)
                     .environmentObject(tradingConfig)
             }
-            .sheet(isPresented: $showTradingPath) {
-                TradingPathSheet()
-                    .environmentObject(auth)
-                    .environmentObject(tradingConfig)
-                    .environmentObject(env.wallet)
-                    .environmentObject(tradingPath)
-            }
             .sheet(isPresented: $showImportKey) {
                 ImportTradingWalletSheet()
                     .environmentObject(auth)
@@ -527,7 +532,9 @@ struct TradeStubSheet: View {
             withAnimation(PeakMotion.soft) {
                 message = TradingError.setupRequired.localizedDescription
             }
-            showTradingPath = true
+            Task {
+                await auth.finishTradingSetup(wallet: env.wallet, tradingConfig: tradingConfig)
+            }
             return
         }
         if builderBlocked {

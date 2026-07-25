@@ -1,6 +1,6 @@
 import Foundation
 
-/// Persists whether this Privy user chose "new trader" or "existing Polymarket" path.
+/// Persists trading path + whether this user imported a Polymarket key for signing.
 @MainActor
 final class TradingPathStore: ObservableObject {
     static let shared = TradingPathStore()
@@ -71,6 +71,19 @@ final class TradingPathStore: ObservableObject {
         return snapshot.path == .existing
     }
 
+    /// Blocking setup sheet should almost never show for imported / path-chosen users.
+    var shouldShowSetupSheet: Bool {
+        if snapshot.imported { return false }
+        return needsPathChoice
+    }
+
+    /// Trading identity is settled (imported key or path chosen + linked).
+    var isOnboardingComplete: Bool {
+        if snapshot.imported { return true }
+        if snapshot.path != nil, snapshot.syncReady { return true }
+        return false
+    }
+
     func bind(userID: String?) {
         userKey = userID
         guard let userID else {
@@ -85,31 +98,42 @@ final class TradingPathStore: ObservableObject {
         next.imported = UserDefaults.standard.bool(forKey: importedKeyPrefix + userID)
         if next.imported {
             next.needsImport = false
+            if next.path == nil {
+                next.path = .existing
+                UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
+            }
         }
         snapshot = next
-        needsPathChoice = path == nil
+        // Imported users never need the quiz sheet; treat as path settled.
+        needsPathChoice = !next.imported && path == nil
     }
 
     func choose(_ path: Path) {
-        guard let userID = userKey ?? PrivyAuthService.shared.userID else { return }
+        let userID = ensureUserID()
+        guard let userID else { return }
         UserDefaults.standard.set(path.rawValue, forKey: pathKeyPrefix + userID)
-        snapshot.path = path
+        var next = snapshot
+        next.path = path
+        snapshot = next
         needsPathChoice = false
     }
 
     /// Mark seed/key import complete and persist until logout / clear.
     func markImported(syncReady: Bool? = nil, message: String? = nil) {
-        guard let userID = userKey ?? PrivyAuthService.shared.userID else { return }
+        let userID = ensureUserID()
+        guard let userID else { return }
+
         UserDefaults.standard.set(true, forKey: importedKeyPrefix + userID)
+        UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
+
         var next = snapshot
         next.imported = true
         next.needsImport = false
-        next.path = next.path ?? .existing
-        if let syncReady { next.syncReady = syncReady }
-        next.message = message ?? PeakUserCopy.connectedPolymarketAccount
-        if let userID = userKey {
-            UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
+        next.path = .existing
+        if let syncReady {
+            next.syncReady = syncReady
         }
+        next.message = message ?? PeakUserCopy.connectedPolymarketAccount
         needsPathChoice = false
         snapshot = next
     }
@@ -120,14 +144,14 @@ final class TradingPathStore: ObservableObject {
             UserDefaults.standard.removeObject(forKey: importedKeyPrefix + userID)
         }
         snapshot = .empty
-        needsPathChoice = userKey != nil
+        needsPathChoice = false
     }
 
     func apply(server: [String: Any]) {
         var next = snapshot
         if let pathRaw = server["path"] as? String, let path = Path(rawValue: pathRaw) {
             next.path = path
-            if let userID = userKey {
+            if let userID = userKey ?? PrivyAuthService.shared.userID {
                 UserDefaults.standard.set(path.rawValue, forKey: pathKeyPrefix + userID)
             }
             needsPathChoice = false
@@ -152,27 +176,46 @@ final class TradingPathStore: ObservableObject {
         if let imported = server["imported"] as? Bool, imported {
             next.imported = true
             next.needsImport = false
-            if let userID = userKey {
+            next.path = next.path ?? .existing
+            if let userID = userKey ?? PrivyAuthService.shared.userID {
                 UserDefaults.standard.set(true, forKey: importedKeyPrefix + userID)
+                UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
             }
+            needsPathChoice = false
         }
 
-        if let needsImport = server["needsImport"] as? Bool {
-            // Never re-offer import after a successful local/server import for this user.
-            next.needsImport = next.imported ? false : needsImport
+        // Never clear a locally persisted import from a stale server flag.
+        if next.imported {
+            next.needsImport = false
+        } else if let needsImport = server["needsImport"] as? Bool {
+            next.needsImport = needsImport
         } else if let code = (server["code"] as? String ?? server["cashErrorCode"] as? String)?.lowercased(),
                   code == "import_wallet_required"
         {
-            next.needsImport = !next.imported
+            next.needsImport = true
         } else if let message = server["message"] as? String ?? server["error"] as? String,
                   PeakUserCopy.isImportWalletMessage(message)
         {
-            next.needsImport = !next.imported
+            next.needsImport = true
         }
 
         if let rawMessage = server["message"] as? String {
             next.message = PeakUserCopy.accountStatus(rawMessage)
         }
         snapshot = next
+        if next.imported || next.path != nil {
+            needsPathChoice = false
+        }
+    }
+
+    /// Prefer bound key; fall back to live Privy user id and bind it.
+    @discardableResult
+    private func ensureUserID() -> String? {
+        if let userKey { return userKey }
+        if let id = PrivyAuthService.shared.userID {
+            userKey = id
+            return id
+        }
+        return nil
     }
 }

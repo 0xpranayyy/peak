@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// After sign-in: new Peak wallet vs existing Polymarket account.
+/// Advanced recovery: new Peak wallet vs existing Polymarket account.
+/// Not shown after import or after social auto-configure — Account → Need help? only.
 struct TradingPathSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: PrivyAuthService
@@ -20,35 +21,6 @@ struct TradingPathSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("How do you want to trade?")
-                            .font(.title2.weight(.bold))
-                        Text("Pick one. You can change this later under Account.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    pathCard(
-                        title: "I’m new",
-                        subtitle: "Peak creates a wallet for you. Deposit, then trade.",
-                        systemImage: "plus.circle"
-                    ) {
-                        Task { await chooseNew() }
-                    }
-
-                    pathCard(
-                        title: "I already trade elsewhere",
-                        subtitle: "Use the same wallet you already have.",
-                        systemImage: "wallet.pass"
-                    ) {
-                        Task { await chooseExisting() }
-                    }
-
-                    if tradingPath.snapshot.path == .existing, showLinkMethods, !tradingPath.snapshot.imported {
-                        existingLinkMethods
-                    }
-
                     if tradingPath.snapshot.imported {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "checkmark.circle.fill")
@@ -62,10 +34,41 @@ struct TradingPathSheet: View {
                             }
                         }
                         .padding(.top, 4)
-                    } else if let statusMessage {
-                        Text(userFacingMessage(statusMessage))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("How do you want to trade?")
+                                .font(.title2.weight(.bold))
+                            Text("Pick one. You can change this later under Account → Need help?")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        pathCard(
+                            title: "I’m new",
+                            subtitle: "Peak creates a wallet for you. Deposit, then trade.",
+                            systemImage: "plus.circle"
+                        ) {
+                            Task { await chooseNew() }
+                        }
+
+                        pathCard(
+                            title: "I already trade elsewhere",
+                            subtitle: "Use the same wallet you already have.",
+                            systemImage: "wallet.pass"
+                        ) {
+                            Task { await chooseExisting() }
+                        }
+
+                        if tradingPath.snapshot.path == .existing, showLinkMethods, !tradingPath.snapshot.imported {
+                            existingLinkMethods
+                        }
+
+                        if let statusMessage {
+                            Text(userFacingMessage(statusMessage))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding(24)
@@ -79,14 +82,31 @@ struct TradingPathSheet: View {
                 }
             }
             .interactiveDismissDisabled(isBusy)
+            .task {
+                // Imported users should never see this sheet — dismiss immediately.
+                if tradingPath.snapshot.imported {
+                    auth.showTradingPathSheet = false
+                    dismiss()
+                    return
+                }
+                if tradingPath.snapshot.path == .existing,
+                   !tradingPath.snapshot.syncReady || tradingPath.snapshot.needsImport
+                {
+                    showLinkMethods = true
+                }
+            }
+            .onChange(of: tradingPath.snapshot.imported) { _, imported in
+                if imported {
+                    auth.showTradingPathSheet = false
+                    dismiss()
+                }
+            }
             .sheet(isPresented: $showImportKey, onDismiss: {
                 if tradingPath.snapshot.imported {
                     showLinkMethods = false
                     statusMessage = PeakUserCopy.readyToTrade
-                    if tradingPath.snapshot.syncReady {
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
-                        dismiss()
-                    }
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    dismiss()
                 }
             }) {
                 ImportTradingWalletSheet()
@@ -102,22 +122,11 @@ struct TradingPathSheet: View {
                 .environmentObject(auth)
                 .environmentObject(tradingConfig)
                 .environmentObject(wallet)
+                .environmentObject(tradingPath)
             }
         }
         .presentationDetents([.medium, .large])
         .peakSheetChrome()
-        .onAppear {
-            // Continuing incomplete existing setup — surface Connect / Import / Paste immediately.
-            if tradingPath.snapshot.imported {
-                showLinkMethods = false
-                return
-            }
-            if tradingPath.snapshot.path == .existing,
-               !tradingPath.snapshot.syncReady || tradingPath.snapshot.needsImport
-            {
-                showLinkMethods = true
-            }
-        }
     }
 
     // MARK: - Existing path: Connect / Import / Paste
@@ -388,10 +397,8 @@ struct TradingPathSheet: View {
     private func finishExistingPathIfReady() {
         if tradingPath.snapshot.imported {
             showLinkMethods = false
-            if tradingPath.snapshot.syncReady {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                dismiss()
-            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
             return
         }
         if tradingPath.snapshot.needsImport || PeakUserCopy.isImportWalletMessage(statusMessage ?? "") {

@@ -51,7 +51,10 @@ struct PeakApp: App {
             .task {
                 PriceAlertMonitor.shared.start()
             }
-            .sheet(isPresented: $privyAuth.showTradingPathSheet) {
+            .sheet(isPresented: Binding(
+                get: { privyAuth.showTradingPathSheet && tradingPath.shouldShowSetupSheet },
+                set: { privyAuth.showTradingPathSheet = $0 }
+            )) {
                 TradingPathSheet()
                     .environmentObject(privyAuth)
                     .environmentObject(environment.tradingConfig)
