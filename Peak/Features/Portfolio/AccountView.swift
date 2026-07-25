@@ -502,6 +502,7 @@ struct AccountView: View {
     @EnvironmentObject private var tradingConfig: TradingConfigStore
     @EnvironmentObject private var wallet: WalletStore
     @EnvironmentObject private var tradingPath: TradingPathStore
+    @EnvironmentObject private var peakProfile: PeakProfileStore
     @Environment(\.dismiss) private var dismiss
 
     var isPresentedModally: Bool = false
@@ -509,7 +510,9 @@ struct AccountView: View {
     @State private var statusMessage: String?
     @State private var showSignIn = false
     @State private var showImportKey = false
+    @State private var showPasteAddress = false
     @State private var showTradingPath = false
+    @State private var isConnectingWallet = false
 
     /// Path not chosen yet, or chosen but wallet still not linked / deployed.
     private var needsSetup: Bool {
@@ -580,6 +583,13 @@ struct AccountView: View {
                 .environmentObject(tradingConfig)
                 .environmentObject(wallet)
         }
+        .sheet(isPresented: $showPasteAddress) {
+            PasteProfileAddressSheet()
+                .environmentObject(auth)
+                .environmentObject(tradingConfig)
+                .environmentObject(wallet)
+                .environmentObject(tradingPath)
+        }
         .sheet(isPresented: $showTradingPath) {
             TradingPathSheet()
                 .environmentObject(auth)
@@ -590,6 +600,10 @@ struct AccountView: View {
         .task {
             await auth.start()
             tradingPath.bind(userID: auth.userID)
+            peakProfile.refresh(
+                primary: auth.walletAddress ?? wallet.address,
+                secondary: tradingPath.snapshot.accountWallet
+            )
         }
     }
 
@@ -597,14 +611,24 @@ struct AccountView: View {
     private var signedInSection: some View {
         Section {
             HStack(spacing: 12) {
-                PeakAppLogo(size: 40, showGlow: false)
+                PeakAvatar(
+                    imageURL: peakProfile.profile?.profileImageURL,
+                    title: peakProfile.displayName(
+                        fallbackAddress: auth.walletAddress,
+                        email: auth.email
+                    ),
+                    size: 48,
+                    verified: peakProfile.profile?.verifiedBadge ?? false
+                )
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .foregroundStyle(PeakTradeStyle.buy)
-                        Text("Signed in")
-                            .font(.headline)
-                    }
+                    Text(
+                        peakProfile.displayName(
+                            fallbackAddress: auth.walletAddress,
+                            email: auth.email
+                        )
+                    )
+                    .font(.headline)
+                    .lineLimit(1)
                     if let email = auth.email {
                         Text(email)
                             .font(.caption)
@@ -621,6 +645,9 @@ struct AccountView: View {
             }
             .padding(.vertical, 4)
 
+            if peakProfile.profile?.name != nil || peakProfile.profile?.pseudonym != nil {
+                LabeledContent("Username", value: peakProfile.displayName(fallbackAddress: auth.walletAddress))
+            }
             if let email = auth.email {
                 LabeledContent("Account", value: email)
             }
@@ -704,12 +731,143 @@ struct AccountView: View {
                 }
             }
             Button {
+                Task { await connectWalletFromAccount() }
+            } label: {
+                Label("Connect wallet", systemImage: "wallet.pass.fill")
+            }
+            .disabled(isConnectingWallet)
+            Button {
                 showImportKey = true
             } label: {
-                Label("Import wallet", systemImage: "key.fill")
+                Label("Import private key", systemImage: "key.fill")
+            }
+            Button {
+                showPasteAddress = true
+            } label: {
+                Label("Paste address", systemImage: "doc.on.clipboard")
             }
         } label: {
             Label("More options", systemImage: "ellipsis.circle")
+        }
+    }
+
+    private func connectWalletFromAccount() async {
+        guard WalletConnectCredentials.isConfigured else {
+            #if DEBUG
+            statusMessage = "Add WALLETCONNECT_PROJECT_ID from cloud.reown.com to PrivySecrets.local.plist."
+            #else
+            statusMessage = "Couldn’t connect. Try again later."
+            #endif
+            return
+        }
+        isConnectingWallet = true
+        defer { isConnectingWallet = false }
+        do {
+            try await auth.loginWithExternalWallet()
+            statusMessage = try await auth.syncTradingPath(
+                .existing,
+                wallet: wallet,
+                tradingConfig: tradingConfig,
+                tradingPath: tradingPath
+            )
+            peakProfile.refresh(
+                primary: auth.walletAddress ?? wallet.address,
+                secondary: tradingPath.snapshot.accountWallet,
+                force: true
+            )
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t connect. Try again.")
+        }
+    }
+}
+
+/// Paste a profile address to view positions (Account more-options).
+private struct PasteProfileAddressSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var auth: PrivyAuthService
+    @EnvironmentObject private var tradingConfig: TradingConfigStore
+    @EnvironmentObject private var wallet: WalletStore
+    @EnvironmentObject private var tradingPath: TradingPathStore
+
+    @State private var profileAddress = ""
+    @State private var statusMessage: String?
+    @State private var isBusy = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("0x…", text: $profileAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                        .disabled(isBusy)
+
+                    Button("Paste") {
+                        if let pasted = UIPasteboard.general.string {
+                            profileAddress = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+                    .disabled(isBusy)
+
+                    Button {
+                        Task { await save() }
+                    } label: {
+                        if isBusy {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Save")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .disabled(isBusy || !WalletStore.isValidAddress(profileAddress))
+                } header: {
+                    Text("Profile address")
+                } footer: {
+                    Text("View positions only. Trading still needs Connect wallet or Import private key.")
+                }
+
+                if let statusMessage {
+                    Section {
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(PeakTradeStyle.sell)
+                    }
+                }
+            }
+            .navigationTitle("Paste address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .interactiveDismissDisabled(isBusy)
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func save() async {
+        let trimmed = profileAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard WalletStore.isValidAddress(trimmed) else { return }
+        isBusy = true
+        defer { isBusy = false }
+        tradingPath.choose(.existing)
+        wallet.save(trimmed)
+        do {
+            _ = try await auth.syncTradingPath(
+                .existing,
+                wallet: wallet,
+                tradingConfig: tradingConfig,
+                tradingPath: tradingPath,
+                accountWalletHint: trimmed
+            )
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
+        } catch {
+            statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t save that address. Try again.")
         }
     }
 }

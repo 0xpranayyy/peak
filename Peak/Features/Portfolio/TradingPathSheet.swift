@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// After sign-in: new Peak wallet vs existing Polymarket account.
 struct TradingPathSheet: View {
@@ -11,7 +12,8 @@ struct TradingPathSheet: View {
     @State private var statusMessage: String?
     @State private var isBusy = false
     @State private var showImportKey = false
-    @State private var showMoreOptions = false
+    @State private var showSignIn = false
+    @State private var showLinkMethods = false
     @State private var profileAddress = ""
 
     var body: some View {
@@ -43,8 +45,8 @@ struct TradingPathSheet: View {
                         Task { await chooseExisting() }
                     }
 
-                    if tradingPath.snapshot.path == .existing {
-                        existingExtras
+                    if tradingPath.snapshot.path == .existing, showLinkMethods {
+                        existingLinkMethods
                     }
 
                     if let statusMessage {
@@ -71,62 +73,153 @@ struct TradingPathSheet: View {
                     .environmentObject(wallet)
                     .environmentObject(tradingPath)
             }
+            .sheet(isPresented: $showSignIn) {
+                PeakSignInSheet {
+                    Task { await finishConnectAfterSignIn() }
+                }
+                .environmentObject(auth)
+                .environmentObject(tradingConfig)
+                .environmentObject(wallet)
+            }
         }
         .presentationDetents([.medium, .large])
         .peakSheetChrome()
+        .onAppear {
+            // Continuing incomplete existing setup — surface Connect / Import / Paste immediately.
+            if tradingPath.snapshot.path == .existing,
+               !tradingPath.snapshot.syncReady || tradingPath.snapshot.needsImport
+            {
+                showLinkMethods = true
+            }
+        }
     }
 
-    private var existingExtras: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("If your wallet didn’t link automatically, use an option below.")
+    // MARK: - Existing path: Connect / Import / Paste
+
+    private var existingLinkMethods: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Same wallet as Polymarket → fastest is Connect or Import key.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            DisclosureGroup("More options", isExpanded: $showMoreOptions) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Button {
-                        showImportKey = true
-                    } label: {
-                        Label("Import wallet", systemImage: "key.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy)
-
-                    Text("Or paste a profile address to view positions (trading still needs a connected wallet).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    TextField("0x…", text: $profileAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                        .padding(12)
-                        .background(
-                            PeakCanvas.inset,
-                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                        )
-
-                    Button("Save address") {
-                        Task { await linkProfileAddress() }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isBusy || !WalletStore.isValidAddress(profileAddress))
-                }
-                .padding(.top, 8)
+            linkMethodCard(
+                title: "Connect wallet",
+                subtitle: "MetaMask, Rainbow, Coinbase, and more",
+                systemImage: "wallet.pass.fill"
+            ) {
+                Task { await connectWallet() }
             }
-            .font(.subheadline.weight(.medium))
+
+            linkMethodCard(
+                title: "Import private key",
+                subtitle: "Paste a key or seed to trade with that wallet",
+                systemImage: "key.fill"
+            ) {
+                showImportKey = true
+            }
+
+            pasteAddressCard
         }
         .padding(.top, 4)
-        .onAppear {
-            if statusMessage != nil || !(tradingPath.snapshot.syncReady) {
-                showMoreOptions = true
+    }
+
+    private var pasteAddressCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Paste address")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("View positions only — trading still needs Connect or Import key.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
+
+            TextField("0x…", text: $profileAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .padding(12)
+                .background(
+                    PeakCanvas.inset,
+                    in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
+                )
+                .disabled(isBusy)
+
+            HStack(spacing: 10) {
+                Button("Paste") {
+                    if let pasted = UIPasteboard.general.string {
+                        profileAddress = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy)
+
+                Button("Save") {
+                    Task { await linkProfileAddress() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.accentColor)
+                .disabled(isBusy || !WalletStore.isValidAddress(profileAddress))
+            }
+            .frame(maxWidth: .infinity)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            PeakCanvas.inset,
+            in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
+        )
     }
 
     private func pathCard(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if isBusy {
+                    ProgressView()
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .background(
+                PeakCanvas.inset,
+                in: RoundedRectangle(cornerRadius: PeakLayout.cardRadius, style: .continuous)
+            )
+        }
+        .peakPressable()
+        .disabled(isBusy)
+    }
+
+    private func linkMethodCard(
         title: String,
         subtitle: String,
         systemImage: String,
@@ -168,9 +261,12 @@ struct TradingPathSheet: View {
         PeakUserCopy.sanitize(raw, fallback: "Couldn’t finish setup. Try again.")
     }
 
+    // MARK: - Actions
+
     private func chooseNew() async {
         isBusy = true
         defer { isBusy = false }
+        showLinkMethods = false
         tradingPath.choose(.new)
         do {
             let result = try await auth.syncTradingPath(
@@ -205,15 +301,72 @@ struct TradingPathSheet: View {
                 tradingConfig: tradingConfig,
                 tradingPath: tradingPath
             )
-            if tradingPath.snapshot.syncReady {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                dismiss()
-            } else {
-                showMoreOptions = true
-            }
+            finishExistingPathIfReady()
         } catch {
             statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t finish setup. Try again.")
-            showMoreOptions = true
+            showLinkMethods = true
+        }
+    }
+
+    private func connectWallet() async {
+        guard auth.isAuthenticated else {
+            showSignIn = true
+            return
+        }
+        guard WalletConnectCredentials.isConfigured else {
+            #if DEBUG
+            statusMessage = "Add WALLETCONNECT_PROJECT_ID from cloud.reown.com to PrivySecrets.local.plist."
+            #else
+            statusMessage = "Couldn’t connect. Try again later."
+            #endif
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await auth.loginWithExternalWallet()
+            statusMessage = try await auth.syncTradingPath(
+                .existing,
+                wallet: wallet,
+                tradingConfig: tradingConfig,
+                tradingPath: tradingPath
+            )
+            finishExistingPathIfReady()
+        } catch {
+            statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t connect. Try again.")
+            showLinkMethods = true
+        }
+    }
+
+    private func finishConnectAfterSignIn() async {
+        tradingPath.choose(.existing)
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            statusMessage = try await auth.syncTradingPath(
+                .existing,
+                wallet: wallet,
+                tradingConfig: tradingConfig,
+                tradingPath: tradingPath
+            )
+            finishExistingPathIfReady()
+        } catch {
+            statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t finish setup. Try again.")
+            showLinkMethods = true
+        }
+    }
+
+    /// Existing path can be syncReady for viewing while still needing a Privy-signable import for orders.
+    private func finishExistingPathIfReady() {
+        if tradingPath.snapshot.needsImport || PeakUserCopy.isImportWalletMessage(statusMessage ?? "") {
+            showLinkMethods = true
+            return
+        }
+        if tradingPath.snapshot.syncReady {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            dismiss()
+        } else {
+            showLinkMethods = true
         }
     }
 

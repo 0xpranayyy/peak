@@ -3,8 +3,8 @@
  * Requires wallet authorization key when Privy policies demand it (PEAK_PRIVY_AUTH_KEY).
  * Create at: Privy Dashboard → Wallets → Authorization keys → New key (private key once).
  */
+import { createViemAccount } from "@privy-io/node/viem";
 import { createWalletClient, http } from "viem";
-import { toAccount } from "viem/accounts";
 import { polygon } from "viem/chains";
 
 /**
@@ -17,29 +17,15 @@ import { polygon } from "viem/chains";
  * }} opts
  */
 export function createPrivyWalletClient({ privy, walletId, address, rpcUrl, authorizationKey }) {
-  const auth = authorizationKey
-    ? { authorization_context: { authorization_private_keys: [authorizationKey] } }
-    : {};
+  const authorizationContext = authorizationKey
+    ? { authorization_private_keys: [authorizationKey] }
+    : undefined;
 
-  const account = toAccount({
+  // Official helper: wraps typed_data under params (Privy API requires params.typed_data).
+  const account = createViemAccount(privy, {
+    walletId,
     address,
-    async signMessage({ message }) {
-      const result = await privy.wallets().ethereum().signMessage(walletId, {
-        message: typeof message === "string" ? message : message.raw,
-        ...auth,
-      });
-      return result.signature;
-    },
-    async signTypedData(typedData) {
-      const result = await privy.wallets().ethereum().signTypedData(walletId, {
-        typed_data: typedData,
-        ...auth,
-      });
-      return result.signature;
-    },
-    async signTransaction() {
-      throw new Error("signTransaction via Privy is not used for Polymarket CLOB; use signTypedData.");
-    },
+    ...(authorizationContext ? { authorizationContext } : {}),
   });
 
   return createWalletClient({
@@ -70,25 +56,40 @@ function isEmbeddedEthereum(a) {
 }
 
 /**
+ * Find a Privy-signable wallet whose address exactly matches `eoa`.
+ * Does not fall back to a different Peak embedded wallet.
+ * @param {import('@privy-io/node').PrivyClient} privy
+ * @param {string} userId
+ * @param {string} eoa
+ */
+export async function findSignableWalletForAddress(privy, userId, eoa) {
+  if (!eoa) return null;
+  const user = await privy.users()._get(userId);
+  const target = String(eoa).toLowerCase();
+  const accounts = user?.linked_accounts || [];
+
+  for (const a of accounts) {
+    if (String(a.address || "").toLowerCase() !== target) continue;
+    if (!isEmbeddedEthereum(a) && a.imported !== true) continue;
+    const id = walletIdFromAccount(a);
+    if (id) return { walletId: id, address: a.address };
+  }
+  return null;
+}
+
+/**
  * Find Privy ethereum wallet id for a user (+ optional address match).
+ * When `eoa` is set, prefers an exact match, then any embedded wallet.
  * @param {import('@privy-io/node').PrivyClient} privy
  * @param {string} userId
  * @param {string|null|undefined} eoa
  */
 export async function findEmbeddedWalletId(privy, userId, eoa) {
-  const user = await privy.users()._get(userId);
-  const target = eoa ? String(eoa).toLowerCase() : null;
-  const accounts = user?.linked_accounts || [];
+  const exact = eoa ? await findSignableWalletForAddress(privy, userId, eoa) : null;
+  if (exact) return exact;
 
-  // Exact address match only if that account is Privy-signable.
-  if (target) {
-    for (const a of accounts) {
-      if (String(a.address || "").toLowerCase() !== target) continue;
-      if (!isEmbeddedEthereum(a) && a.imported !== true) continue;
-      const id = walletIdFromAccount(a);
-      if (id) return { walletId: id, address: a.address };
-    }
-  }
+  const user = await privy.users()._get(userId);
+  const accounts = user?.linked_accounts || [];
 
   for (const a of accounts) {
     if (!isEmbeddedEthereum(a)) continue;
@@ -103,6 +104,7 @@ export async function findEmbeddedWalletId(privy, userId, eoa) {
 /**
  * Ensure the Privy user has a server-signable ethereum wallet.
  * WalletConnect-only users get a new Peak embedded wallet for "I'm new" trading.
+ * Do not call this on the existing-PM path (use findSignableWalletForAddress instead).
  * @returns {Promise<{ walletId: string, address: string, created: boolean }>}
  */
 export async function ensureEmbeddedWallet(privy, userId, preferredEoa = null) {

@@ -91,6 +91,12 @@ export async function resolvePolymarketAccount({ signer, path = "new", accountWa
   // 1) Explicit hint (user pasted Polymarket profile address)
   if (accountWallet && /^0x[a-fA-F0-9]{40}$/.test(accountWallet)) {
     profileFound = true;
+    try {
+      const hinted = await fetchPublicProfile(accountWallet);
+      profile = hinted.profile;
+    } catch (e) {
+      console.warn("public-profile (hint) lookup failed:", e?.message ?? e);
+    }
   } else {
     // 2) Gamma public profile by signer
     try {
@@ -166,6 +172,11 @@ export async function resolvePolymarketAccount({ signer, path = "new", accountWa
           name: profile.name ?? null,
           pseudonym: profile.pseudonym ?? null,
           proxyWallet: profile.proxyWallet ?? null,
+          profileImage: profile.profileImage ?? null,
+          displayUsernamePublic: profile.displayUsernamePublic ?? null,
+          verifiedBadge: profile.verifiedBadge ?? null,
+          bio: profile.bio ?? null,
+          xUsername: profile.xUsername ?? null,
         }
       : null,
     needsDeploy: path === "new" && !accountWallet,

@@ -35,7 +35,21 @@ enum PeakUserCopy {
     static let offline = "You’re offline. Check your connection and try again."
     static let timedOut = "That took too long. Try again."
     static let couldNotConnect = "Couldn’t connect. Try again."
+    static let importWalletRequired =
+        "Import the private key or seed for this Polymarket wallet to enable trading."
+    static let signFailed = "Couldn’t sign this order. Try again."
+    static let insufficientFunds =
+        "Not enough funds or allowance. Deposit under Portfolio, then try again."
+    static let approvalsNeeded =
+        "Trading approvals aren’t ready yet. Open Account → Set up trading, then try again."
 
+    static func isImportWalletMessage(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("import_wallet")
+            || lower.contains("import the private key")
+            || lower.contains("import your wallet")
+            || lower == importWalletRequired.lowercased()
+    }
     static func sanitize(_ text: String, fallback: String = "Something went wrong. Try again.") -> String {
         #if DEBUG
         return text
@@ -47,8 +61,13 @@ enum PeakUserCopy {
             "app client", "allowed app", "bundle id", "walletconnect",
             "privysecrets", "decode response", "invalid url", "server returned",
             "empty response", "http ", "signer", "gnosis", "safe address",
+            "typed_data", "unrecognized_keys", "invalid_data",
         ]
         if banned.contains(where: { lower.contains($0) }) {
+            return fallback
+        }
+        // Never surface raw JSON error blobs.
+        if text.hasPrefix("{"), text.contains("\"") {
             return fallback
         }
         return text
@@ -58,6 +77,9 @@ enum PeakUserCopy {
     /// Account status banner — always consumer-facing (even in DEBUG).
     static func accountStatus(_ text: String) -> String {
         let lower = text.lowercased()
+        if isImportWalletMessage(text) {
+            return importWalletRequired
+        }
         if lower.contains("no polymarket account") || lower.contains("for this signer") {
             return missingPolymarketAccount
         }
@@ -75,7 +97,29 @@ enum PeakUserCopy {
             return mapped
         }
         let raw = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        return sanitize(raw, fallback: fallback)
+        return sanitizeOrderOrServerCopy(raw, fallback: fallback)
+    }
+
+    /// Map known order / signing failure shapes before generic sanitize.
+    static func sanitizeOrderOrServerCopy(_ text: String, fallback: String) -> String {
+        let lower = text.lowercased()
+        if isImportWalletMessage(text) {
+            return importWalletRequired
+        }
+        if lower.contains("typed_data")
+            || lower.contains("unrecognized_keys")
+            || lower.contains("invalid_data")
+            || (lower.contains("params") && lower.contains("required"))
+        {
+            return signFailed
+        }
+        if lower.contains("allowance") || lower.contains("insufficient funds") || lower.contains("not enough balance") {
+            return sanitize(text, fallback: insufficientFunds)
+        }
+        if lower.contains("approvals") {
+            return approvalsNeeded
+        }
+        return sanitize(text, fallback: fallback)
     }
 
     /// Map transport failures to calm offline / timeout copy.

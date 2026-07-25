@@ -3,7 +3,7 @@
  * Activates when Builder (+ optional Relayer) credentials are present.
  * Privy remote signing uses walletId from session when available.
  */
-import { createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, encodeFunctionData, http, maxUint256 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { polygon } from "viem/chains";
 import { ClobClient, SignatureTypeV2 } from "@polymarket/clob-client-v2";
@@ -11,6 +11,58 @@ import { ClobClient, SignatureTypeV2 } from "@polymarket/clob-client-v2";
 const HOST = "https://clob.polymarket.com";
 const CHAIN_ID = 137;
 const DEFAULT_RELAYER_URL = "https://relayer-v2.polymarket.com/";
+
+/** Polygon V2 trading contracts (docs.polymarket.com/trading/deposit-wallets). */
+const PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+const CONDITIONAL_TOKENS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+const CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B";
+const NEG_RISK_EXCHANGE = "0xe2222d279d744050d28e00520010520000310F59";
+
+const erc20Abi = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+];
+
+const erc1155Abi = [
+  {
+    type: "function",
+    name: "setApprovalForAll",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isApprovedForAll",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+];
 
 /**
  * @param {{
@@ -134,4 +186,106 @@ export function signatureTypeFromWalletName(name, fallback = 3) {
   if (n.includes("DEPOSIT") || n.includes("1271") || n.includes("POLY_1271")) return 3;
   if (n.includes("EOA")) return 0;
   return fallback ?? 3;
+}
+
+/**
+ * Gasless ERC-20 / ERC-1155 trading approvals for a Deposit Wallet via Relayer.
+ * Checks on-chain allowances and submits only missing approvals.
+ * @returns {Promise<{ skipped: boolean, txHash?: string, message: string, approvalsSet: number }>}
+ */
+export async function setupDepositWalletTradingApprovals({
+  walletClient,
+  cfg,
+  depositWalletAddress,
+  rpcUrl,
+}) {
+  if (!depositWalletAddress) {
+    throw new Error("Deposit wallet address required for trading approvals");
+  }
+
+  const publicClient = createPublicClient({
+    chain: polygon,
+    transport: http(rpcUrl || cfg.polygonRpcUrl || undefined),
+  });
+
+  const wallet = /** @type {`0x${string}`} */ (depositWalletAddress);
+  const exchanges = [CTF_EXCHANGE, NEG_RISK_EXCHANGE];
+  /** @type {{ target: string, value: string, data: `0x${string}` }[]} */
+  const calls = [];
+
+  for (const exchange of exchanges) {
+    const spender = /** @type {`0x${string}`} */ (exchange);
+    let allowance = 0n;
+    try {
+      allowance = await publicClient.readContract({
+        address: PUSD,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [wallet, spender],
+      });
+    } catch {
+      allowance = 0n;
+    }
+    if (allowance < maxUint256 / 2n) {
+      calls.push({
+        target: PUSD,
+        value: "0",
+        data: encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [spender, maxUint256],
+        }),
+      });
+    }
+
+    let approved = false;
+    try {
+      approved = await publicClient.readContract({
+        address: CONDITIONAL_TOKENS,
+        abi: erc1155Abi,
+        functionName: "isApprovedForAll",
+        args: [wallet, spender],
+      });
+    } catch {
+      approved = false;
+    }
+    if (!approved) {
+      calls.push({
+        target: CONDITIONAL_TOKENS,
+        value: "0",
+        data: encodeFunctionData({
+          abi: erc1155Abi,
+          functionName: "setApprovalForAll",
+          args: [spender, true],
+        }),
+      });
+    }
+  }
+
+  if (calls.length === 0) {
+    return {
+      skipped: true,
+      approvalsSet: 0,
+      message: "Trading approvals already set.",
+    };
+  }
+
+  const relay = await createRelayClient(walletClient, cfg);
+  const deadline = String(Math.floor(Date.now() / 1000) + 240);
+  const response = await relay.executeDepositWalletBatch(calls, depositWalletAddress, deadline);
+  const result = await response.wait();
+  if (!result) {
+    const err = new Error("Trading approvals failed (no confirmation from relayer)");
+    err.code = "approvals_failed";
+    err.safeMessage =
+      "Couldn’t finish trading approvals. Try Set up trading again, or deposit and retry.";
+    throw err;
+  }
+
+  return {
+    skipped: false,
+    approvalsSet: calls.length,
+    txHash: result.transactionHash,
+    message: "Trading approvals confirmed.",
+  };
 }

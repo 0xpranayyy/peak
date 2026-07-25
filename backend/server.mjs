@@ -15,8 +15,15 @@ import {
   deployOrLinkDepositWallet,
   createUserClobClient,
   signatureTypeFromWalletName,
+  setupDepositWalletTradingApprovals,
 } from "./tradingSetup.mjs";
-import { createPrivyWalletClient, findEmbeddedWalletId, ensureEmbeddedWallet } from "./privyViemAccount.mjs";
+import {
+  createPrivyWalletClient,
+  findEmbeddedWalletId,
+  findSignableWalletForAddress,
+  ensureEmbeddedWallet,
+} from "./privyViemAccount.mjs";
+import { mapOrderError, isImportWalletError, mapCashError } from "./orderErrors.mjs";
 import { mountLegalPages } from "./legalPages.mjs";
 
 const {
@@ -226,8 +233,55 @@ async function walletClientForSession(session) {
 
   let walletId = session.walletId;
   let signingAddress = session.eoa;
+  const isExisting = session.path === "existing";
 
-  if (!walletId) {
+  if (isExisting) {
+    // Existing PM path: always resolve a Privy-signable wallet that matches the linked
+    // signer. Ignore any stale session.walletId from a prior mismatched Peak EOA.
+    // Never auto-create a different embedded wallet here.
+    try {
+      const found = await findSignableWalletForAddress(privy, session.userId, session.eoa);
+      if (!found?.walletId || !found?.address) {
+        const err = new Error("import_wallet_required");
+        err.code = "import_wallet_required";
+        err.httpStatus = 400;
+        err.safeMessage =
+          "Import the private key or seed for this Polymarket wallet to enable trading.";
+        err.publicFields = {
+          needsDeploy: false,
+          syncReady: Boolean(session.accountWallet),
+          builderConfigured,
+          relayerConfigured,
+        };
+        throw err;
+      }
+      walletId = found.walletId;
+      signingAddress = found.address;
+      if (
+        session.walletId !== walletId ||
+        String(session.eoa || "").toLowerCase() !== String(signingAddress).toLowerCase()
+      ) {
+        const patch = { ...session, walletId, eoa: signingAddress, clobClient: null };
+        setSession(session.userId, patch);
+        Object.assign(session, patch);
+      }
+    } catch (e) {
+      if (e?.code === "import_wallet_required") throw e;
+      console.error("findSignableWalletForAddress failed:", e?.message ?? e);
+      const err = new Error(e?.message ?? "Could not resolve trading wallet");
+      err.code = "import_wallet_required";
+      err.httpStatus = 400;
+      err.safeMessage =
+        "Import the private key or seed for this Polymarket wallet to enable trading.";
+      err.publicFields = {
+        needsDeploy: false,
+        syncReady: Boolean(session.accountWallet),
+        builderConfigured,
+        relayerConfigured,
+      };
+      throw err;
+    }
+  } else if (!walletId) {
     try {
       const ensured = await ensureEmbeddedWallet(privy, session.userId, session.eoa);
       walletId = ensured.walletId;
@@ -264,6 +318,20 @@ async function walletClientForSession(session) {
   }
 
   if (!walletId || !signingAddress) {
+    if (isExisting) {
+      const err = new Error("import_wallet_required");
+      err.code = "import_wallet_required";
+      err.httpStatus = 400;
+      err.safeMessage =
+        "Import the private key or seed for this Polymarket wallet to enable trading.";
+      err.publicFields = {
+        needsDeploy: false,
+        syncReady: Boolean(session.accountWallet),
+        builderConfigured,
+        relayerConfigured,
+      };
+      throw err;
+    }
     const err = new Error("No Privy embedded wallet id for this user");
     err.code = "embedded_wallet_required";
     err.httpStatus = 501;
@@ -319,66 +387,6 @@ function extractClobError(err) {
   return String(err);
 }
 
-/**
- * Map raw CLOB / proxy errors to actionable copy for the iOS client.
- * @returns {{ error: string, code: string, status: number }}
- */
-function mapOrderError(raw, { balanceUSD = null } = {}) {
-  const text = String(raw || "").trim();
-  const lower = text.toLowerCase();
-
-  if (
-    lower.includes("not enough balance") ||
-    lower.includes("insufficient") ||
-    lower.includes("balance / allowance") ||
-    lower.includes("allowance")
-  ) {
-    const balNote =
-      balanceUSD != null && Number.isFinite(balanceUSD)
-        ? ` Available cash: $${balanceUSD.toFixed(2)}.`
-        : "";
-    return {
-      error: `Insufficient funds or allowance.${balNote} Deposit USDC / pUSD to your trading wallet, then try again.`,
-      code: "insufficient_funds",
-      status: 400,
-    };
-  }
-  if (lower.includes("no match") || lower.includes("couldn't be fully filled") || lower.includes("fok")) {
-    return {
-      error: "No fill at this price (liquidity too thin). Try a limit order or a smaller size.",
-      code: "no_fill",
-      status: 400,
-    };
-  }
-  if (lower.includes("closed") || lower.includes("not accepting") || lower.includes("inactive")) {
-    return {
-      error: "This market is closed or not accepting orders.",
-      code: "market_closed",
-      status: 400,
-    };
-  }
-  if (lower.includes("builder")) {
-    return {
-      error: "Trading isn’t ready yet — Builder credentials are missing on the Peak backend.",
-      code: "builder_not_ready",
-      status: 503,
-    };
-  }
-  if (lower.includes("tick") || lower.includes("invalid price") || lower.includes("min size")) {
-    return {
-      error: "Invalid price or size for this market. Adjust the amount or limit price.",
-      code: "invalid_order",
-      status: 400,
-    };
-  }
-
-  return {
-    error: text || "Order failed",
-    code: "order_failed",
-    status: 400,
-  };
-}
-
 /** CLOB collateral balance is typically 6-decimal micro-units when very large. */
 function normalizeCollateralUSD(raw) {
   const n = Number(raw);
@@ -393,34 +401,37 @@ function normalizeShareBalance(raw) {
   return n > 1_000_000 ? n / 1_000_000 : n;
 }
 
-async function fetchCollateralBalance(client) {
+async function fetchCollateralBalance(client, signatureType = null) {
   try {
-    await client.updateBalanceAllowance?.({ asset_type: AssetType.COLLATERAL }).catch(() => {});
-    const bal = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    const params = { asset_type: AssetType.COLLATERAL };
+    if (signatureType != null && Number.isFinite(Number(signatureType))) {
+      params.signature_type = Number(signatureType);
+    }
+    await client.updateBalanceAllowance?.(params).catch(() => {});
+    const bal = await client.getBalanceAllowance(params);
     return {
       raw: bal,
       usd: normalizeCollateralUSD(bal?.balance),
     };
-  } catch {
-    return { raw: null, usd: null };
+  } catch (e) {
+    return { raw: null, usd: null, error: e };
   }
 }
 
-async function fetchConditionalBalance(client, tokenID) {
+async function fetchConditionalBalance(client, tokenID, signatureType = null) {
   try {
-    await client
-      .updateBalanceAllowance?.({ asset_type: AssetType.CONDITIONAL, token_id: tokenID })
-      .catch(() => {});
-    const bal = await client.getBalanceAllowance({
-      asset_type: AssetType.CONDITIONAL,
-      token_id: tokenID,
-    });
+    const params = { asset_type: AssetType.CONDITIONAL, token_id: tokenID };
+    if (signatureType != null && Number.isFinite(Number(signatureType))) {
+      params.signature_type = Number(signatureType);
+    }
+    await client.updateBalanceAllowance?.(params).catch(() => {});
+    const bal = await client.getBalanceAllowance(params);
     return {
       raw: bal,
       shares: normalizeShareBalance(bal?.balance),
     };
-  } catch {
-    return { raw: null, shares: null };
+  } catch (e) {
+    return { raw: null, shares: null, error: e };
   }
 }
 
@@ -595,6 +606,20 @@ app.post("/auth/session", wrap(async (req, res) => {
       }
     } catch (e) {
       console.warn("auth/session ensureEmbeddedWallet:", e?.message ?? e);
+    }
+  } else if (privy && resolvedPath === "existing") {
+    // Exact match only — never attach a mismatched Peak embedded wallet.
+    try {
+      const found = await findSignableWalletForAddress(privy, req.auth.userId, eoa);
+      if (found?.walletId) {
+        walletId = found.walletId;
+        if (found.address) eoaForSession = found.address;
+      } else {
+        walletId = null;
+      }
+    } catch (e) {
+      console.warn("auth/session findSignableWalletForAddress:", e?.message ?? e);
+      walletId = null;
     }
   } else if (privy && !walletId) {
     try {
@@ -836,6 +861,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
   setSession(req.auth.userId, session);
 
   // Existing Polymarket account — link only; orders need Builder + signer.
+  // Do not run deposit-wallet approvals here (usually already approved on PM).
   if (session.path === "existing" && resolved.syncReady) {
     if (builderConfigured) {
       try {
@@ -847,17 +873,39 @@ app.post("/trading/setup", wrap(async (req, res) => {
           syncReady: true,
           builderConfigured: true,
           relayerConfigured,
+          needsImport: false,
           message: "Account linked. Ready to trade.",
           status: "linked_ready",
         });
       } catch (e) {
+        if (isImportWalletError(e)) {
+          return res.json({
+            ...toPublicSession(session),
+            signer: session.eoa,
+            syncReady: true,
+            builderConfigured: true,
+            relayerConfigured,
+            needsImport: true,
+            code: "import_wallet_required",
+            error:
+              e.safeMessage ||
+              "Import the private key or seed for this Polymarket wallet to enable trading.",
+            message:
+              e.safeMessage ||
+              "Import the private key or seed for this Polymarket wallet to enable trading.",
+            status: "linked_needs_import",
+          });
+        }
+        const mapped = mapOrderError(e?.safeMessage || e?.message || e, { code: e?.code });
         return res.json({
           ...toPublicSession(session),
           signer: session.eoa,
           syncReady: true,
           builderConfigured: true,
           relayerConfigured,
-          message: `Account linked. CLOB setup pending: ${e?.message ?? e}`,
+          needsImport: false,
+          code: mapped.code,
+          message: mapped.error,
           status: "linked_builder_ready",
         });
       }
@@ -868,6 +916,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
       syncReady: true,
       builderConfigured: false,
       relayerConfigured,
+      needsImport: false,
       message: "Account linked. Add Builder credentials on the server to enable live orders.",
       status: "linked_pending_builder",
     });
@@ -913,6 +962,23 @@ app.post("/trading/setup", wrap(async (req, res) => {
     };
     setSession(req.auth.userId, next);
 
+    let approvalsMessage = null;
+    try {
+      const approvals = await setupDepositWalletTradingApprovals({
+        walletClient,
+        cfg: tradingCfg,
+        depositWalletAddress: deploy.accountWallet,
+        rpcUrl: POLYGON_RPC_URL,
+      });
+      approvalsMessage = approvals.message;
+    } catch (e) {
+      console.warn("trading approvals after deploy failed:", e?.message ?? e);
+      approvalsMessage =
+        typeof e?.safeMessage === "string" && e.safeMessage.trim()
+          ? e.safeMessage.trim()
+          : "Deposit wallet ready. Trading approvals still pending — retry Set up trading.";
+    }
+
     try {
       await ensureUserClob(next);
     } catch (e) {
@@ -927,8 +993,9 @@ app.post("/trading/setup", wrap(async (req, res) => {
       builderConfigured: true,
       relayerConfigured,
       txHash: deploy.txHash,
-      message: deploy.message,
+      message: approvalsMessage ? `${deploy.message} ${approvalsMessage}` : deploy.message,
       status: deploy.status,
+      approvalsMessage,
     });
   } catch (e) {
     console.error("trading/setup deploy failed:", e?.message ?? e);
@@ -1000,14 +1067,31 @@ app.get("/portfolio", wrap(async (req, res) => {
 
   let balance = null;
   let cashUSD = null;
+  let cashError = null;
+  let cashErrorCode = null;
+  let needsImport = false;
   if (builderConfigured && session?.eoa) {
     try {
       const client = await ensureUserClob(session);
-      const collateral = await fetchCollateralBalance(client);
+      // signature_type is also injected by ClobClient from construction; pass explicitly for clarity.
+      const sigType = Number(session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3));
+      const collateral = await fetchCollateralBalance(client, sigType);
       balance = collateral.raw;
       cashUSD = collateral.usd;
+      if (cashUSD == null) {
+        const mapped = mapCashError(
+          collateral.error || { message: "cash_sync_failed", code: "cash_sync_failed" }
+        );
+        cashError = mapped.cashError;
+        cashErrorCode = mapped.cashErrorCode;
+        needsImport = mapped.needsImport;
+      }
     } catch (e) {
       console.warn("portfolio balance:", e?.message ?? e);
+      const mapped = mapCashError(e);
+      cashError = mapped.cashError;
+      cashErrorCode = mapped.cashErrorCode;
+      needsImport = mapped.needsImport;
     }
   }
 
@@ -1020,6 +1104,9 @@ app.get("/portfolio", wrap(async (req, res) => {
     value,
     balance,
     cashUSD,
+    cashError,
+    cashErrorCode,
+    needsImport,
     funder: user,
     signer: session?.eoa ?? null,
     accountWallet: session?.accountWallet ?? null,
@@ -1112,6 +1199,7 @@ app.post("/orders", wrap(async (req, res) => {
     let cashUSD = null;
     try {
       const client = await ensureUserClob(session);
+      const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
       const sideUpper = String(side).toUpperCase();
       const orderCostUSD =
         amount != null && Number(amount) > 0 && sideUpper === "BUY"
@@ -1119,7 +1207,7 @@ app.post("/orders", wrap(async (req, res) => {
           : sizeN * priceN;
 
       if (sideUpper === "BUY") {
-        const collateral = await fetchCollateralBalance(client);
+        const collateral = await fetchCollateralBalance(client, sigType);
         cashUSD = collateral.usd;
         if (cashUSD != null && cashUSD + 1e-9 < orderCostUSD) {
           return res.status(400).json({
@@ -1130,7 +1218,7 @@ app.post("/orders", wrap(async (req, res) => {
           });
         }
       } else {
-        const conditional = await fetchConditionalBalance(client, tokenID);
+        const conditional = await fetchConditionalBalance(client, tokenID, sigType);
         if (conditional.shares != null && conditional.shares + 1e-9 < sizeN) {
           return res.status(400).json({
             error: `Not enough shares to sell. You hold about ${conditional.shares.toFixed(2)} but tried to sell ${sizeN.toFixed(2)}.`,
@@ -1153,7 +1241,22 @@ app.post("/orders", wrap(async (req, res) => {
       });
       return res.json({ ...result, success: result?.success !== false });
     } catch (e) {
-      const mapped = mapOrderError(extractClobError(e), { balanceUSD: cashUSD });
+      if (e?.code === "import_wallet_required" || e?.safeMessage) {
+        const mapped = mapOrderError(e.safeMessage || extractClobError(e), {
+          balanceUSD: cashUSD,
+          code: e.code,
+        });
+        return res.status(e.httpStatus || mapped.status || 400).json({
+          error: e.safeMessage || mapped.error,
+          code: e.code || mapped.code,
+          success: false,
+          ...(e.publicFields && typeof e.publicFields === "object" ? e.publicFields : {}),
+        });
+      }
+      const mapped = mapOrderError(extractClobError(e), {
+        balanceUSD: cashUSD,
+        code: e.code,
+      });
       const status = e.httpStatus || mapped.status || 400;
       return res.status(status).json({
         error: e.code === "invalid_order" ? e.message : mapped.error,

@@ -417,4 +417,61 @@ enum GammaAPI {
             markets: MarketShowcase.filter(uniqueMarkets)
         )
     }
+
+    // MARK: - Public profile
+
+    struct PublicProfileDTO: Decodable {
+        let name: String?
+        let pseudonym: String?
+        let profileImage: String?
+        let displayUsernamePublic: Bool?
+        let proxyWallet: String?
+        let bio: String?
+        let xUsername: String?
+        let verifiedBadge: Bool?
+    }
+
+    /// Gamma `GET /public-profile?address=` — 404 means no public profile.
+    static func fetchPublicProfile(address: String) async throws -> PeakUserProfile? {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isEthereumAddress(trimmed) else { return nil }
+
+        let url = PeakAPIBase.gamma.appendingPathComponent("public-profile")
+        do {
+            let dto: PublicProfileDTO = try await APIClient.shared.get(
+                url,
+                query: [.init(name: "address", value: trimmed)]
+            )
+            return PeakUserProfile(
+                address: trimmed,
+                name: Self.nonEmpty(dto.name),
+                pseudonym: Self.nonEmpty(dto.pseudonym),
+                profileImageURL: Self.imageURL(dto.profileImage),
+                displayUsernamePublic: dto.displayUsernamePublic ?? true,
+                verifiedBadge: dto.verifiedBadge ?? false,
+                bio: Self.nonEmpty(dto.bio),
+                xUsername: Self.nonEmpty(dto.xUsername),
+                proxyWallet: Self.nonEmpty(dto.proxyWallet)
+            )
+        } catch APIError.badStatus(404) {
+            return nil
+        }
+    }
+
+    private static func isEthereumAddress(_ raw: String) -> Bool {
+        let lower = raw.lowercased()
+        guard lower.hasPrefix("0x"), lower.count == 42 else { return false }
+        return lower.dropFirst(2).allSatisfy { $0.isHexDigit }
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func imageURL(_ raw: String?) -> URL? {
+        guard let raw = nonEmpty(raw) else { return nil }
+        return URL(string: raw)
+    }
 }

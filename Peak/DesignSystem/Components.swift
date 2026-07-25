@@ -195,6 +195,77 @@ struct PeakEventThumb: View {
     }
 }
 
+/// Circular user avatar — remote Polymarket image, else initials tile.
+struct PeakAvatar: View {
+    let imageURL: URL?
+    var title: String = ""
+    var size: CGFloat = 40
+    var verified: Bool = false
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let imageURL {
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        case .failure:
+                            initialsTile
+                        case .empty:
+                            PeakCanvas.inset
+                                .overlay { ProgressView().controlSize(.mini) }
+                        @unknown default:
+                            initialsTile
+                        }
+                    }
+                } else {
+                    initialsTile
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay {
+                Circle().strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            }
+
+            if verified {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: max(10, size * 0.28)))
+                    .foregroundStyle(PeakTradeStyle.buy)
+                    .background(Circle().fill(PeakCanvas.elevated).padding(-1))
+                    .offset(x: 2, y: 2)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var initialsTile: some View {
+        ZStack {
+            PeakBrand.mid.opacity(0.18)
+            Text(initials)
+                .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
+                .foregroundStyle(PeakBrand.mid)
+        }
+    }
+
+    private var initials: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "?" }
+        if trimmed.lowercased().hasPrefix("0x"), trimmed.count >= 4 {
+            return String(trimmed.suffix(2)).uppercased()
+        }
+        let parts = trimmed.split(whereSeparator: { $0.isWhitespace || $0 == "-" || $0 == "_" })
+        if parts.count >= 2 {
+            return "\(parts[0].prefix(1))\(parts[1].prefix(1))".uppercased()
+        }
+        return String(trimmed.prefix(2)).uppercased()
+    }
+}
+
 struct MarketOutcomeBar: View {
     let market: Market
     /// When set (event detail), prefer CLOB display odds over Gamma snapshot.

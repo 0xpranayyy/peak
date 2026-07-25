@@ -13,6 +13,7 @@ final class PortfolioViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var draftAddress = ""
     @Published var statusBanner: String?
+    @Published var needsImportWallet = false
 
     var totalValue: Double {
         reportedValue ?? positions.reduce(0) { $0 + $1.currentValue }
@@ -44,6 +45,7 @@ final class PortfolioViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         statusBanner = nil
+        needsImportWallet = false
 
         if env.tradingConfig.isConfigured || (PrivyAuthService.shared.isAuthenticated && env.tradingConfig.hasBackendURL) {
             do {
@@ -60,6 +62,19 @@ final class PortfolioViewModel: ObservableObject {
                 if let funder = snap.funder, !env.wallet.isValid {
                     env.wallet.save(funder)
                     draftAddress = funder
+                }
+                PeakProfileStore.shared.refresh(
+                    primary: PrivyAuthService.shared.walletAddress ?? snap.funder ?? env.wallet.address,
+                    secondary: TradingPathStore.shared.snapshot.accountWallet ?? snap.funder
+                )
+                needsImportWallet = snap.needsImport
+                    || TradingPathStore.shared.snapshot.needsImport
+                    || PeakUserCopy.isImportWalletMessage(snap.cashError ?? "")
+                if snap.cash == nil, let cashError = snap.cashError, !cashError.isEmpty {
+                    statusBanner = PeakUserCopy.sanitizeOrderOrServerCopy(
+                        cashError,
+                        fallback: "Couldn’t sync cash balance. Try again."
+                    )
                 }
                 return
             } catch {
@@ -110,11 +125,13 @@ struct PortfolioView: View {
     @EnvironmentObject private var tradingConfig: TradingConfigStore
     @EnvironmentObject private var auth: PrivyAuthService
     @EnvironmentObject private var tradingPath: TradingPathStore
+    @EnvironmentObject private var peakProfile: PeakProfileStore
     @StateObject private var model = PortfolioViewModel()
     @State private var showWalletEditor = false
     @State private var showAccount = false
     @State private var showDeposit = false
     @State private var showTradingPath = false
+    @State private var showImportKey = false
     @State private var sharePosition: PortfolioPosition?
     @AppStorage("peak.portfolio.linkBanner.dismissed") private var linkBannerDismissed = false
 
@@ -135,6 +152,7 @@ struct PortfolioView: View {
         guard auth.isAuthenticated, !linkBannerDismissed else { return false }
         if tradingPath.needsPathChoice { return true }
         if tradingPath.snapshot.path == .existing, !tradingPath.snapshot.syncReady { return true }
+        if tradingPath.snapshot.needsImport || model.needsImportWallet { return true }
         return false
     }
 
@@ -187,10 +205,19 @@ struct PortfolioView: View {
                     Button {
                         showAccount = true
                     } label: {
-                        PeakToolbarCircle(
-                            systemImage: auth.isAuthenticated ? "person.crop.circle.fill" : "person.crop.circle",
-                            emphasized: auth.isAuthenticated
-                        )
+                        if let profile = peakProfile.profile, profile.profileImageURL != nil || profile.hasIdentity {
+                            PeakAvatar(
+                                imageURL: profile.profileImageURL,
+                                title: profile.displayName,
+                                size: 34,
+                                verified: profile.verifiedBadge
+                            )
+                        } else {
+                            PeakToolbarCircle(
+                                systemImage: auth.isAuthenticated ? "person.crop.circle.fill" : "person.crop.circle",
+                                emphasized: auth.isAuthenticated
+                            )
+                        }
                     }
                     .accessibilityLabel("Account")
                 }
@@ -215,6 +242,7 @@ struct PortfolioView: View {
                             .environmentObject(tradingConfig)
                             .environmentObject(env.wallet)
                             .environmentObject(tradingPath)
+                            .environmentObject(peakProfile)
                     }
                     .presentationDetents([.medium, .large])
                 } else {
@@ -238,11 +266,22 @@ struct PortfolioView: View {
                     .environmentObject(env.wallet)
                     .environmentObject(tradingPath)
             }
+            .sheet(isPresented: $showImportKey) {
+                ImportTradingWalletSheet()
+                    .environmentObject(auth)
+                    .environmentObject(tradingConfig)
+                    .environmentObject(env.wallet)
+                    .environmentObject(tradingPath)
+            }
             .sheet(item: $sharePosition) { position in
                 SharePositionSheet(position: position)
             }
-            .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)-\(auth.isAuthenticated)") {
+            .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)-\(auth.isAuthenticated)-\(auth.walletAddress ?? "")") {
                 model.syncDraft(from: env.wallet)
+                peakProfile.refresh(
+                    primary: auth.walletAddress ?? env.wallet.address,
+                    secondary: tradingPath.snapshot.accountWallet ?? model.funder
+                )
                 await model.load(env: env)
             }
             .onReceive(NotificationCenter.default.publisher(for: .peakTradingPortfolioShouldRefresh)) { _ in
@@ -301,9 +340,22 @@ struct PortfolioView: View {
 
             if let banner = model.statusBanner {
                 Section {
-                    Text(banner)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(banner)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if model.needsImportWallet {
+                            Button {
+                                showImportKey = true
+                            } label: {
+                                Label("Import private key", systemImage: "key.fill")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.accentColor)
+                        }
+                    }
                 }
             }
 
@@ -380,12 +432,18 @@ struct PortfolioView: View {
 
     private var linkPolymarketBanner: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "link.circle.fill")
+            Image(systemName: model.needsImportWallet || tradingPath.snapshot.needsImport
+                  ? "key.fill"
+                  : "link.circle.fill")
                 .font(.title3)
                 .foregroundStyle(PeakBrand.mid)
                 .accessibilityHidden(true)
 
-            Text("Already on Polymarket? Link your account under Set up trading.")
+            Text(
+                model.needsImportWallet || tradingPath.snapshot.needsImport
+                    ? PeakUserCopy.importWalletRequired
+                    : "Already on Polymarket? Link your account under Set up trading."
+            )
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -411,16 +469,26 @@ struct PortfolioView: View {
         }
         .contentShape(PeakLayout.cardShape)
         .onTapGesture {
-            showTradingPath = true
+            if model.needsImportWallet || tradingPath.snapshot.needsImport {
+                showImportKey = true
+            } else {
+                showTradingPath = true
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Opens trading setup")
+        .accessibilityHint(
+            model.needsImportWallet || tradingPath.snapshot.needsImport
+                ? "Opens import wallet"
+                : "Opens trading setup"
+        )
         .peakAppear()
     }
 
     private var portfolioSummary: some View {
         VStack(alignment: .leading, spacing: PeakLayout.stack) {
+            identityRow
+
             HStack(alignment: .firstTextBaseline) {
                 Text(showCashHero ? "Cash" : "Portfolio value")
                     .font(.caption.weight(.semibold))
@@ -506,7 +574,9 @@ struct PortfolioView: View {
                 }
             }
 
-            if let address = model.funder ?? env.wallet.address {
+            if let address = model.funder ?? env.wallet.address,
+               peakProfile.profile?.hasIdentity != true,
+               !auth.isAuthenticated {
                 Text(shorten(address))
                     .font(.caption.monospaced())
                     .foregroundStyle(.tertiary)
@@ -515,6 +585,51 @@ struct PortfolioView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var identityRow: some View {
+        let address = auth.walletAddress ?? model.funder ?? env.wallet.address
+        let name = peakProfile.displayName(fallbackAddress: address, email: auth.email)
+        let showIdentity = auth.isAuthenticated || peakProfile.profile?.hasIdentity == true || address != nil
+        if showIdentity {
+            Button {
+                showAccount = true
+            } label: {
+                HStack(spacing: 12) {
+                    PeakAvatar(
+                        imageURL: peakProfile.profile?.profileImageURL,
+                        title: name,
+                        size: 44,
+                        verified: peakProfile.profile?.verifiedBadge ?? false
+                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if let address {
+                            Text(shorten(address))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        } else if let email = auth.email, name != email {
+                            Text(email)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Account, \(name)")
+        }
     }
 
     private var metricDivider: some View {

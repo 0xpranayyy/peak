@@ -37,6 +37,7 @@ final class TradingPathStore: ObservableObject {
         var needsDeploy: Bool
         var builderConfigured: Bool
         var relayerConfigured: Bool
+        var needsImport: Bool
         var message: String?
 
         static let empty = Snapshot(
@@ -48,6 +49,7 @@ final class TradingPathStore: ObservableObject {
             needsDeploy: false,
             builderConfigured: false,
             relayerConfigured: false,
+            needsImport: false,
             message: nil
         )
     }
@@ -111,6 +113,17 @@ final class TradingPathStore: ObservableObject {
         next.needsDeploy = (server["needsDeploy"] as? Bool) ?? next.needsDeploy
         next.builderConfigured = (server["builderConfigured"] as? Bool) ?? next.builderConfigured
         next.relayerConfigured = (server["relayerConfigured"] as? Bool) ?? next.relayerConfigured
+        if let needsImport = server["needsImport"] as? Bool {
+            next.needsImport = needsImport
+        } else if let code = (server["code"] as? String ?? server["cashErrorCode"] as? String)?.lowercased(),
+                  code == "import_wallet_required"
+        {
+            next.needsImport = true
+        } else if let message = server["message"] as? String ?? server["error"] as? String,
+                  PeakUserCopy.isImportWalletMessage(message)
+        {
+            next.needsImport = true
+        }
         next.message = server["message"] as? String ?? next.message
         snapshot = next
     }

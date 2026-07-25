@@ -22,6 +22,7 @@ struct TradingPathFlags: Sendable {
     var needsDeploy: Bool?
     var builderConfigured: Bool?
     var relayerConfigured: Bool?
+    var needsImport: Bool?
 
     func asServerDict() -> [String: Any] {
         var out: [String: Any] = [:]
@@ -33,6 +34,7 @@ struct TradingPathFlags: Sendable {
         if let needsDeploy { out["needsDeploy"] = needsDeploy }
         if let builderConfigured { out["builderConfigured"] = builderConfigured }
         if let relayerConfigured { out["relayerConfigured"] = relayerConfigured }
+        if let needsImport { out["needsImport"] = needsImport }
         return out
     }
 
@@ -45,7 +47,9 @@ struct TradingPathFlags: Sendable {
             syncReady: root["syncReady"] as? Bool ?? root["ready"] as? Bool,
             needsDeploy: root["needsDeploy"] as? Bool,
             builderConfigured: root["builderConfigured"] as? Bool,
-            relayerConfigured: root["relayerConfigured"] as? Bool
+            relayerConfigured: root["relayerConfigured"] as? Bool,
+            needsImport: root["needsImport"] as? Bool
+                ?? ((root["cashErrorCode"] as? String)?.lowercased() == "import_wallet_required")
         )
     }
 }
@@ -53,6 +57,9 @@ struct TradingPathFlags: Sendable {
 struct TradingPortfolioSnapshot: Sendable {
     let funder: String?
     let cash: Double?
+    let cashError: String?
+    let cashErrorCode: String?
+    let needsImport: Bool
     let totalValue: Double?
     let positions: [PortfolioPosition]
     let activity: [PortfolioActivity]
@@ -134,6 +141,23 @@ enum TradingError: LocalizedError, Sendable {
         let lower = text.lowercased()
         let codeLower = (code ?? "").lowercased()
 
+        if codeLower == "import_wallet_required"
+            || lower.contains("import_wallet_required")
+            || lower.contains("import the private key")
+        {
+            return .server(PeakUserCopy.importWalletRequired)
+        }
+        if codeLower == "sign_failed"
+            || lower.contains("typed_data")
+            || lower.contains("unrecognized_keys")
+            || lower.contains("invalid_data")
+            || (lower.contains("params") && lower.contains("required"))
+        {
+            return .server(PeakUserCopy.signFailed)
+        }
+        if codeLower == "approvals_failed" || lower.contains("trading approvals") {
+            return .server(PeakUserCopy.approvalsNeeded)
+        }
         if codeLower == "insufficient_funds"
             || codeLower == "insufficient_shares"
             || lower.contains("not enough balance")
@@ -141,8 +165,7 @@ enum TradingError: LocalizedError, Sendable {
             || lower.contains("balance / allowance")
             || lower.contains("not enough shares")
         {
-            let fallback =
-                "Not enough funds. Deposit under Portfolio, then try again."
+            let fallback = PeakUserCopy.insufficientFunds
             return .insufficientFunds(text.isEmpty ? fallback : Self.sanitizeServerCopy(text, fallback: fallback))
         }
         if codeLower == "builder_not_ready" || lower.contains("builder credential") {
@@ -192,6 +215,16 @@ enum TradingError: LocalizedError, Sendable {
             return .server("Couldn’t place order. Try again.")
         }
         return .server(sanitizeServerCopy(text, fallback: "Couldn’t place order. Try again."))
+    }
+
+    /// True when the server wants the user to import a matching PM private key.
+    var isImportWalletRequired: Bool {
+        switch self {
+        case .server(let message):
+            return PeakUserCopy.isImportWalletMessage(message)
+        default:
+            return false
+        }
     }
 
     /// Strip infra jargon from server copy in Release; keep precise text in DEBUG.
@@ -339,6 +372,10 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         return TradingPortfolioSnapshot(
             funder: portfolioRoot["funder"] as? String,
             cash: cash,
+            cashError: portfolioRoot["cashError"] as? String,
+            cashErrorCode: portfolioRoot["cashErrorCode"] as? String,
+            needsImport: (portfolioRoot["needsImport"] as? Bool)
+                ?? ((portfolioRoot["cashErrorCode"] as? String)?.lowercased() == "import_wallet_required"),
             totalValue: totalValue,
             positions: positions,
             activity: activity,

@@ -117,7 +117,19 @@ Code path: **Connect wallet** → WalletConnect → Privy `siwe.generateMessage`
 3. Confirm Portfolio shows the same positions as polymarket.com for that account wallet
 4. Place / cancel an order (Builder + per-user CLOB signing path required)
 
+### B2 — Imported PM key → cash + tiny order (device retest)
 
+After a backend deploy that includes Privy `params.typed_data` signing + existing-path import guard:
+
+1. Sign in (email / Apple / Connect).
+2. **Set up trading** → **I already trade elsewhere**.
+3. If Connect alone was used: tap **Import private key** and paste the **same** key/seed as the Polymarket account (never commit secrets).
+4. Confirm Portfolio **Cash** matches ~pUSD on polymarket.com (not empty with a silent failure).
+5. If Cash shows “Import the private key…” → Import CTA must appear; complete import and pull-to-refresh.
+6. Place a **tiny** buy (~$1) → order posts; open orders / positions update.
+7. Cancel the open order if still resting.
+
+Backend smoke without secrets: `cd backend && npm run check` (includes `smoke-trading.mjs`).
 
 ### C — Magic / Google Polymarket (no exportable key) → view-only
 

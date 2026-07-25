@@ -216,6 +216,7 @@ final class PrivyAuthService: ObservableObject {
             await user.logout()
         }
         TradingPathStore.shared.clear()
+        PeakProfileStore.shared.clear()
         showTradingPathSheet = false
         clearUser()
         phase = .unauthenticated
@@ -269,6 +270,17 @@ final class PrivyAuthService: ObservableObject {
             accountWallet: accountWalletHint
         )
         tradingPath.apply(server: session)
+        PeakProfileStore.shared.apply(
+            serverProfile: session["profile"],
+            address: (session["accountWallet"] as? String)
+                ?? (session["signer"] as? String)
+                ?? eoa
+        )
+        PeakProfileStore.shared.refresh(
+            primary: eoa,
+            secondary: session["accountWallet"] as? String,
+            force: true
+        )
 
         if let account = session["accountWallet"] as? String, WalletStore.isValidAddress(account) {
             wallet.save(account)
@@ -283,6 +295,9 @@ final class PrivyAuthService: ObservableObject {
             if let account = setup["accountWallet"] as? String, WalletStore.isValidAddress(account) {
                 wallet.save(account)
             }
+            if tradingPath.snapshot.needsImport {
+                return PeakUserCopy.importWalletRequired
+            }
             return (setup["message"] as? String)
                 ?? (session["message"] as? String)
                 ?? "Trading path saved."
@@ -293,9 +308,13 @@ final class PrivyAuthService: ObservableObject {
             }
             // Existing path may already be syncReady (view-only / linked) even if CLOB setup failed.
             if path == .existing, tradingPath.snapshot.syncReady {
-                return (http.body["message"] as? String)
+                let msg = (http.body["message"] as? String)
                     ?? (session["message"] as? String)
                     ?? "Account linked. Finish wallet setup if trading is still blocked."
+                if tradingPath.snapshot.needsImport || PeakUserCopy.isImportWalletMessage(msg) {
+                    return PeakUserCopy.importWalletRequired
+                }
+                return msg
             }
             throw http.tradingError
         } catch {
@@ -308,6 +327,9 @@ final class PrivyAuthService: ObservableObject {
                 tradingPath.apply(server: resolved)
             }
             if path == .existing, tradingPath.snapshot.syncReady {
+                if tradingPath.snapshot.needsImport {
+                    return PeakUserCopy.importWalletRequired
+                }
                 return (session["message"] as? String) ?? "Account linked."
             }
             throw error
@@ -328,6 +350,15 @@ final class PrivyAuthService: ObservableObject {
             path: TradingPathStore.Path.existing.rawValue
         ) {
             TradingPathStore.shared.apply(server: result)
+            PeakProfileStore.shared.apply(
+                serverProfile: result["profile"],
+                address: (result["accountWallet"] as? String) ?? address
+            )
+            PeakProfileStore.shared.refresh(
+                primary: address,
+                secondary: result["accountWallet"] as? String,
+                force: true
+            )
             if let account = result["accountWallet"] as? String, WalletStore.isValidAddress(account) {
                 wallet.save(account)
             }
@@ -356,6 +387,9 @@ final class PrivyAuthService: ObservableObject {
         do {
             walletAddress = try await resolveWalletAddress(for: user)
             phase = .authenticated
+            if let walletAddress {
+                PeakProfileStore.shared.refresh(primary: walletAddress)
+            }
             if TradingPathStore.shared.needsPathChoice {
                 showTradingPathSheet = true
             }
@@ -364,6 +398,9 @@ final class PrivyAuthService: ObservableObject {
                 ?? user.embeddedEthereumWallets.first?.address
             if walletAddress != nil {
                 phase = .authenticated
+                if let walletAddress {
+                    PeakProfileStore.shared.refresh(primary: walletAddress)
+                }
                 if TradingPathStore.shared.needsPathChoice {
                     showTradingPathSheet = true
                 }

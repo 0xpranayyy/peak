@@ -81,6 +81,36 @@ final class TradingErrorMappingTests: XCTestCase {
             return XCTFail("expected .server, got \(error)")
         }
     }
+
+    func testImportWalletRequiredByCode() {
+        let error = TradingError.fromServerMessage("raw", code: "import_wallet_required")
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertTrue(PeakUserCopy.isImportWalletMessage(message))
+        XCTAssertTrue(error.isImportWalletRequired)
+    }
+
+    func testSignFailedFromTypedDataBlob() {
+        let error = TradingError.fromServerMessage(
+            #"{"error":"invalid_data","message":"params required","unrecognized_keys":["typed_data"]}"#,
+            code: nil
+        )
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertEqual(message, PeakUserCopy.signFailed)
+        XCTAssertFalse(message.contains("typed_data"))
+        XCTAssertFalse(message.hasPrefix("{"))
+    }
+
+    func testApprovalsFailedByCode() {
+        let error = TradingError.fromServerMessage("raw", code: "approvals_failed")
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertEqual(message, PeakUserCopy.approvalsNeeded)
+    }
 }
 
 final class OpenOrderTests: XCTestCase {

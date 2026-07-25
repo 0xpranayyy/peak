@@ -13,6 +13,7 @@ struct PeakApp: App {
     @StateObject private var digest = DailyDigestStore.shared
     @StateObject private var tradingPath = TradingPathStore.shared
     @StateObject private var appearance = AppearanceStore.shared
+    @StateObject private var peakProfile = PeakProfileStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -34,6 +35,7 @@ struct PeakApp: App {
             .environmentObject(digest)
             .environmentObject(tradingPath)
             .environmentObject(appearance)
+            .environmentObject(peakProfile)
             .preferredColorScheme(appearance.preference.preferredColorScheme)
             .animation(.easeInOut(duration: 0.45), value: categoryPrefs.hasCompletedOnboarding)
             .onOpenURL { url in

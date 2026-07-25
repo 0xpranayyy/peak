@@ -49,6 +49,7 @@ struct TradeStubSheet: View {
     @State private var showSignIn = false
     @State private var showDeposit = false
     @State private var showTradingPath = false
+    @State private var showImportKey = false
     @FocusState private var focusedField: TradeField?
 
     private enum TradeField: Hashable {
@@ -344,7 +345,18 @@ struct TradeStubSheet: View {
                             message: message,
                             accent: didSucceed ? PeakTradeStyle.buy : PeakTradeStyle.sell
                         ) {
-                            if !didSucceed, shouldOfferDeposit {
+                            if !didSucceed, shouldOfferImport {
+                                Button {
+                                    showImportKey = true
+                                } label: {
+                                    PeakPrimaryCTA(
+                                        title: "Import private key",
+                                        systemImage: "key.fill",
+                                        color: action.color
+                                    )
+                                }
+                                .peakPressable()
+                            } else if !didSucceed, shouldOfferDeposit {
                                 Button {
                                     showDeposit = true
                                 } label: {
@@ -421,6 +433,13 @@ struct TradeStubSheet: View {
                     .environmentObject(env.wallet)
                     .environmentObject(tradingPath)
             }
+            .sheet(isPresented: $showImportKey) {
+                ImportTradingWalletSheet()
+                    .environmentObject(auth)
+                    .environmentObject(tradingConfig)
+                    .environmentObject(env.wallet)
+                    .environmentObject(tradingPath)
+            }
             .onAppear {
                 limitPrice = String(format: "%.3f", quotePrice > 0 ? quotePrice : price)
                 if !isSignedIn {
@@ -453,12 +472,19 @@ struct TradeStubSheet: View {
 
     private var shouldOfferDeposit: Bool {
         guard let message else { return false }
+        if shouldOfferImport { return false }
         let lower = message.lowercased()
         return lower.contains("insufficient")
             || lower.contains("deposit")
             || lower.contains("funds")
             || lower.contains("allowance")
             || lower.contains("not enough")
+    }
+
+    private var shouldOfferImport: Bool {
+        if tradingPath.snapshot.needsImport { return true }
+        guard let message else { return false }
+        return PeakUserCopy.isImportWalletMessage(message)
     }
 
     private func submit() async {
