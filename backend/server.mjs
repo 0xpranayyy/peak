@@ -610,7 +610,52 @@ app.get("/health/live", (_req, res) => {
 // Public legal / support pages (App Store URLs → same HTTPS API host after deploy).
 mountLegalPages(app);
 
-// Public enough for health + legal; everything else needs auth.
+/**
+ * Derive address from a private key / seed without requiring a Peak login.
+ * Used so Import can SIWE-authenticate as the Polymarket wallet directly.
+ */
+app.post("/auth/resolve-secret", wrap(async (req, res) => {
+  let keyForImport = "";
+  try {
+    keyForImport = await resolvePrivateKeyHex(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e?.message ?? String(e) });
+  }
+  let account;
+  try {
+    account = privateKeyToAccount(keyForImport);
+  } catch (e) {
+    return res.status(400).json({ error: `Invalid key: ${e?.message ?? e}` });
+  }
+  res.json({ address: account.address });
+}));
+
+/**
+ * Sign a Privy SIWE message with the imported key (one-shot; key not stored).
+ * Enables “Import seed” without Apple/Google first.
+ */
+app.post("/auth/sign-siwe", wrap(async (req, res) => {
+  const message = String(req.body?.message || "");
+  if (!message || message.length < 32 || message.length > 4000) {
+    return res.status(400).json({ error: "Valid SIWE message required" });
+  }
+  let keyForImport = "";
+  try {
+    keyForImport = await resolvePrivateKeyHex(req.body || {});
+  } catch (e) {
+    return res.status(400).json({ error: e?.message ?? String(e) });
+  }
+  let account;
+  try {
+    account = privateKeyToAccount(keyForImport);
+  } catch (e) {
+    return res.status(400).json({ error: `Invalid key: ${e?.message ?? e}` });
+  }
+  const signature = await account.signMessage({ message });
+  res.json({ address: account.address, signature });
+}));
+
+// Public enough for health + legal + import SIWE bootstrap; everything else needs auth.
 app.use(authenticate);
 
 app.post("/auth/session", wrap(async (req, res) => {

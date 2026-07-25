@@ -125,6 +125,80 @@ final class PrivyAuthService: ObservableObject {
         try await loginWithOAuth(.google)
     }
 
+    /// Import seed/key: SIWE as that wallet (no Apple/Google), then register for trading.
+    func loginAndImportTradingWallet(
+        _ secret: String,
+        wallet: WalletStore,
+        tradingConfig: TradingConfigStore
+    ) async throws {
+        guard let privy else { throw TradingError.notConfigured }
+        let trimmed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw TradingError.server("Enter a private key or seed phrase.")
+        }
+
+        tradingConfig.ensureBackendURLIfNeeded()
+        phase = .authenticating
+
+        do {
+            if !isAuthenticated {
+                let address = try await TradingProxyClient.resolveSecretAddress(secret: trimmed)
+                let wc = WalletConnectAuthService.shared
+                let params = SiweMessageParams(
+                    appDomain: wc.siweDomain,
+                    appUri: wc.siweURI,
+                    chainId: wc.siweChainID,
+                    walletAddress: address
+                )
+                let message = try await privy.siwe.generateMessage(params: params)
+                let signed = try await TradingProxyClient.signSiwe(secret: trimmed, message: message)
+                let metadata = WalletLoginMetadata(
+                    walletClientType: .other,
+                    connectorType: "imported_key"
+                )
+                let user = try await privy.siwe.login(
+                    message: message,
+                    signature: signed.signature,
+                    params: params,
+                    metadata: metadata
+                )
+                await apply(user: user)
+            }
+
+            TradingPathStore.shared.choose(.existing)
+            showTradingPathSheet = false
+            tradingConfig.ensureBackendURLIfNeeded()
+
+            let result = try await TradingProxyClient.importWallet(secret: trimmed)
+            if let address = result["address"] as? String {
+                await adoptImportedWallet(address, wallet: wallet, tradingConfig: tradingConfig)
+            }
+            let syncReady = (result["syncReady"] as? Bool) ?? false
+            TradingPathStore.shared.apply(server: result)
+            TradingPathStore.shared.markImported(
+                syncReady: syncReady || TradingPathStore.shared.snapshot.syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
+            phase = .authenticated
+        } catch {
+            let message = PeakUserCopy.fromError(
+                error,
+                fallback: Self.friendlyMessage(for: error)
+            )
+            if !isAuthenticated {
+                phase = .failed(message)
+            } else if case .authenticated = phase {
+                // keep authenticated
+            } else {
+                phase = .authenticated
+            }
+            if let trading = error as? TradingError {
+                throw trading
+            }
+            throw TradingError.server(message)
+        }
+    }
+
     /// WalletConnect → SIWE → Privy session with the user's existing wallet.
     func loginWithExternalWallet() async throws {
         guard let privy else { throw TradingError.notConfigured }

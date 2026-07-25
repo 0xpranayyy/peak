@@ -446,8 +446,7 @@ struct PeakSignInSheet: View {
     }
 }
 
-/// Import a private key or seed into Privy for an existing Polymarket wallet.
-/// If the user isn’t signed in yet, shows a short sign-in step first (email / Apple / Google).
+/// Import a private key or seed — signs you into Peak as that wallet (no Apple/Google gate).
 struct ImportTradingWalletSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: PrivyAuthService
@@ -463,8 +462,6 @@ struct ImportTradingWalletSheet: View {
     @State private var failureMessage: String?
     @State private var isBusy = false
     @State private var phase: Phase = .form
-    @State private var emailInput = ""
-    @State private var codeInput = ""
 
     private enum Phase: Equatable {
         case form
@@ -472,31 +469,19 @@ struct ImportTradingWalletSheet: View {
         case failure
     }
 
-    private var needsAccountFirst: Bool {
-        !auth.isAuthenticated
-    }
-
     var body: some View {
         NavigationStack {
             Group {
                 switch phase {
                 case .form:
-                    if needsAccountFirst {
-                        accountGate
-                    } else {
-                        importForm
-                    }
+                    importForm
                 case .success:
                     successConfirmation
                 case .failure:
                     failureConfirmation
                 }
             }
-            .navigationTitle(
-                phase == .form
-                    ? (needsAccountFirst ? "Almost there" : "Import wallet")
-                    : ""
-            )
+            .navigationTitle(phase == .form ? "Import wallet" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -511,97 +496,12 @@ struct ImportTradingWalletSheet: View {
                 }
             }
             .interactiveDismissDisabled(isBusy)
-            .task { await auth.start() }
+            .task {
+                await auth.start()
+                tradingConfig.ensureBackendURLIfNeeded()
+            }
         }
         .presentationDetents([.medium, .large])
-    }
-
-    /// Quick Peak account so Privy can own the imported key — then paste seed.
-    private var accountGate: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Create a Peak login, then paste your Polymarket seed or private key. One-time setup.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    Task { await runGateSocial { try await auth.loginWithApple() } }
-                } label: {
-                    Label("Continue with Apple", systemImage: "apple.logo")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.accentColor)
-                .controlSize(.large)
-                .disabled(isBusy)
-
-                Button {
-                    Task { await runGateSocial { try await auth.loginWithGoogle() } }
-                } label: {
-                    Label("Continue with Google", systemImage: "globe")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(isBusy)
-
-                Text("Or email")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-
-                TextField("you@email.com", text: $emailInput)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                    .padding(12)
-                    .background(
-                        PeakCanvas.inset,
-                        in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                    )
-                    .disabled(isBusy)
-
-                if auth.pendingEmail != nil {
-                    TextField("6-digit code", text: $codeInput)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .padding(12)
-                        .background(
-                            PeakCanvas.inset,
-                            in: RoundedRectangle(cornerRadius: PeakLayout.controlRadius, style: .continuous)
-                        )
-                        .disabled(isBusy)
-
-                    Button {
-                        Task { await verifyGateCode() }
-                    } label: {
-                        if isBusy { ProgressView().frame(maxWidth: .infinity) }
-                        else { Text("Verify code").frame(maxWidth: .infinity) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.accentColor)
-                    .disabled(isBusy || codeInput.count < 4)
-                }
-
-                Button {
-                    Task { await sendGateCode() }
-                } label: {
-                    Text(auth.pendingEmail == nil ? "Send code" : "Resend code")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBusy || emailInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                if let failureMessage, phase == .form {
-                    Text(failureMessage)
-                        .font(.footnote)
-                        .foregroundStyle(PeakTradeStyle.sell)
-                }
-            }
-            .padding(24)
-        }
-        .background(PeakMaterialBackground())
     }
 
     private var importForm: some View {
@@ -615,7 +515,11 @@ struct ImportTradingWalletSheet: View {
             } header: {
                 Text("Key or seed")
             } footer: {
-                Text("Your private key or seed phrase is sent once securely and never stored on this device. Peak uses it to sign Polymarket trades for you.")
+                Text(
+                    auth.isAuthenticated
+                        ? "Your key is sent once securely and never stored on this device."
+                        : "Paste your Polymarket key or seed. Peak signs you in with that wallet — no Apple or Google needed."
+                )
             }
 
             Section {
@@ -626,7 +530,7 @@ struct ImportTradingWalletSheet: View {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text("Import and enable trading")
+                        Text(auth.isAuthenticated ? "Import and enable trading" : "Import and sign in")
                             .frame(maxWidth: .infinity)
                     }
                 }
@@ -716,50 +620,9 @@ struct ImportTradingWalletSheet: View {
         dismiss()
     }
 
-    private func runGateSocial(_ work: @escaping () async throws -> Void) async {
-        isBusy = true
-        failureMessage = nil
-        defer { isBusy = false }
-        do {
-            try await work()
-            tradingConfig.ensureBackendURLIfNeeded()
-            await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
-        } catch {
-            failureMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t sign in. Try again.")
-        }
-    }
-
-    private func sendGateCode() async {
-        isBusy = true
-        failureMessage = nil
-        defer { isBusy = false }
-        do {
-            try await auth.sendEmailCode(to: emailInput)
-        } catch {
-            failureMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t send code. Try again.")
-        }
-    }
-
-    private func verifyGateCode() async {
-        isBusy = true
-        failureMessage = nil
-        defer { isBusy = false }
-        do {
-            try await auth.loginWithEmailCode(codeInput)
-            tradingConfig.ensureBackendURLIfNeeded()
-            await auth.finishTradingSetup(wallet: wallet, tradingConfig: tradingConfig)
-        } catch {
-            failureMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t verify that code. Try again.")
-        }
-    }
-
     private func importSecret() async {
         let trimmed = secretInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard auth.isAuthenticated else {
-            failureMessage = "Sign in with Apple, Google, or email first, then paste your key."
-            return
-        }
 
         isBusy = true
         defer {
@@ -768,26 +631,13 @@ struct ImportTradingWalletSheet: View {
         }
 
         do {
-            tradingConfig.ensureBackendURLIfNeeded()
-            let result = try await TradingProxyClient.importWallet(secret: trimmed)
-            if let address = result["address"] as? String {
-                await auth.adoptImportedWallet(address, wallet: wallet, tradingConfig: tradingConfig)
-            }
-            let syncReady = (result["syncReady"] as? Bool) ?? tradingPath.snapshot.syncReady
-            tradingPath.markImported(
-                syncReady: syncReady,
-                message: PeakUserCopy.connectedPolymarketAccount
-            )
-            tradingPath.apply(server: result)
-            tradingPath.markImported(
-                syncReady: syncReady || tradingPath.snapshot.syncReady,
-                message: PeakUserCopy.connectedPolymarketAccount
+            try await auth.loginAndImportTradingWallet(
+                trimmed,
+                wallet: wallet,
+                tradingConfig: tradingConfig
             )
             phase = .success
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            if dismissParentOnSuccess {
-                // Parent closes via Done / Start trading.
-            }
         } catch {
             failureMessage = PeakUserCopy.fromError(
                 error,

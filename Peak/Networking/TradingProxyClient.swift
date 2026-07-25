@@ -234,4 +234,75 @@ enum TradingProxyClient {
             jsonBody: body
         )
     }
+
+    /// Unauthenticated: derive address from key/seed (for SIWE before Peak login).
+    static func resolveSecretAddress(secret: String) async throws -> String {
+        let body = Self.secretBody(secret)
+        let json = try await publicJSONObject(path: "auth/resolve-secret", method: "POST", jsonBody: body)
+        guard let address = json["address"] as? String, Self.isHexAddress(address) else {
+            throw TradingError.server("Couldn’t read that wallet. Check the key or seed.")
+        }
+        return address
+    }
+
+    /// Unauthenticated: sign a SIWE message with the imported key (one-shot on server).
+    static func signSiwe(secret: String, message: String) async throws -> (address: String, signature: String) {
+        var body = Self.secretBody(secret)
+        body["message"] = message
+        let json = try await publicJSONObject(path: "auth/sign-siwe", method: "POST", jsonBody: body)
+        guard
+            let address = json["address"] as? String,
+            let signature = json["signature"] as? String,
+            Self.isHexAddress(address),
+            !signature.isEmpty
+        else {
+            throw TradingError.server("Couldn’t sign in with that wallet. Try again.")
+        }
+        return (address, signature)
+    }
+
+    private static func isHexAddress(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count == 42, trimmed.lowercased().hasPrefix("0x") else { return false }
+        return trimmed.dropFirst(2).allSatisfy(\.isHexDigit)
+    }
+
+    private static func secretBody(_ secret: String) -> [String: Any] {
+        let trimmed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wordCount = trimmed.split(whereSeparator: \.isWhitespace).count
+        if wordCount >= 12 {
+            return ["mnemonic": trimmed.lowercased()]
+        }
+        return ["privateKey": trimmed]
+    }
+
+    /// POST/GET without Bearer auth (import bootstrap only).
+    private static func publicJSONObject(
+        path: String,
+        method: String,
+        jsonBody: [String: Any]
+    ) async throws -> [String: Any] {
+        let base = await MainActor.run { TradingConfigStore.shared.baseURL }
+        guard let base else { throw TradingError.notConfigured }
+        let url = base.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 45
+        request.httpBody = try JSONSerialization.data(withJSONObject: jsonBody)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw TradingError.server("Couldn’t connect. Try again.")
+        }
+        let json = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if !(200..<300).contains(http.statusCode) {
+            let message = (json["error"] as? String)
+                ?? String(data: data, encoding: .utf8)
+                ?? "Request failed"
+            throw TradingError.fromServerMessage(message, code: json["code"] as? String)
+        }
+        return json
+    }
 }
