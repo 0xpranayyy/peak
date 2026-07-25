@@ -45,7 +45,7 @@ enum PeakUserCopy {
     static let readyToTrade = "Ready to trade."
     static let importSuccessTitle = "Wallet connected"
     static let importSuccessBody =
-        "Your Polymarket account is linked. You’re ready to trade."
+        "Your Polymarket wallet is ready. You can buy and sell without importing again until you sign out."
     static let importFailureTitle = "Couldn’t import wallet"
     static let insufficientFunds =
         "Not enough funds or allowance. Deposit under Portfolio, then try again."

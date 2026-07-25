@@ -418,6 +418,7 @@ struct TradeStubSheet: View {
                 .environmentObject(auth)
                 .environmentObject(tradingConfig)
                 .environmentObject(env.wallet)
+                .environmentObject(tradingPath)
             }
             .sheet(isPresented: $showDeposit) {
                 DepositSheet()

@@ -243,13 +243,43 @@ async function walletClientForSession(session, { userJwt } = {}) {
   const isExisting = session.path === "existing";
 
   if (isExisting) {
-    // Existing PM path: always resolve a Privy-signable wallet that matches the linked
-    // signer. Ignore any stale session.walletId from a prior mismatched Peak EOA.
-    // Never auto-create a different embedded wallet here.
-    try {
-      const found = await findSignableWalletForAddress(privy, session.userId, session.eoa);
-      if (!found?.walletId || !found?.address) {
-        const err = new Error("import_wallet_required");
+    // Prefer the walletId stored at import time — linked_accounts can lag briefly.
+    if (session.imported && session.walletId && session.eoa) {
+      walletId = session.walletId;
+      signingAddress = session.eoa;
+    } else {
+      // Existing PM path: resolve a Privy-signable wallet that matches the linked signer.
+      // Never auto-create a different embedded wallet here.
+      try {
+        const found = await findSignableWalletForAddress(privy, session.userId, session.eoa);
+        if (!found?.walletId || !found?.address) {
+          const err = new Error("import_wallet_required");
+          err.code = "import_wallet_required";
+          err.httpStatus = 400;
+          err.safeMessage =
+            "Import the private key or seed for this Polymarket wallet to enable trading.";
+          err.publicFields = {
+            needsDeploy: false,
+            syncReady: Boolean(session.accountWallet),
+            builderConfigured,
+            relayerConfigured,
+          };
+          throw err;
+        }
+        walletId = found.walletId;
+        signingAddress = found.address;
+        if (
+          session.walletId !== walletId ||
+          String(session.eoa || "").toLowerCase() !== String(signingAddress).toLowerCase()
+        ) {
+          const patch = { ...session, walletId, eoa: signingAddress, clobClient: null };
+          setSession(session.userId, patch);
+          Object.assign(session, patch);
+        }
+      } catch (e) {
+        if (e?.code === "import_wallet_required") throw e;
+        console.error("findSignableWalletForAddress failed:", e?.message ?? e);
+        const err = new Error(e?.message ?? "Could not resolve trading wallet");
         err.code = "import_wallet_required";
         err.httpStatus = 400;
         err.safeMessage =
@@ -262,31 +292,6 @@ async function walletClientForSession(session, { userJwt } = {}) {
         };
         throw err;
       }
-      walletId = found.walletId;
-      signingAddress = found.address;
-      if (
-        session.walletId !== walletId ||
-        String(session.eoa || "").toLowerCase() !== String(signingAddress).toLowerCase()
-      ) {
-        const patch = { ...session, walletId, eoa: signingAddress, clobClient: null };
-        setSession(session.userId, patch);
-        Object.assign(session, patch);
-      }
-    } catch (e) {
-      if (e?.code === "import_wallet_required") throw e;
-      console.error("findSignableWalletForAddress failed:", e?.message ?? e);
-      const err = new Error(e?.message ?? "Could not resolve trading wallet");
-      err.code = "import_wallet_required";
-      err.httpStatus = 400;
-      err.safeMessage =
-        "Import the private key or seed for this Polymarket wallet to enable trading.";
-      err.publicFields = {
-        needsDeploy: false,
-        syncReady: Boolean(session.accountWallet),
-        builderConfigured,
-        relayerConfigured,
-      };
-      throw err;
     }
   } else if (!walletId) {
     try {
@@ -353,14 +358,16 @@ async function walletClientForSession(session, { userJwt } = {}) {
     throw err;
   }
 
+  // Imported / user-owned → JWT only. Peak embedded (new path) may use JWT or auth key.
+  const authMode = session.imported || session.path === "existing" ? "user" : "auto";
   return createPrivyWalletClient({
     privy,
     walletId,
     address: signingAddress,
     rpcUrl: POLYGON_RPC_URL,
     authorizationKey: PEAK_PRIVY_AUTH_KEY,
-    // Imported / user-owned wallets require user_jwts; auth key alone is not enough.
     userJwt,
+    authMode,
   });
 }
 
@@ -777,6 +784,7 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
 
   let imported;
   try {
+    // User-owned import so the wallet appears on the Privy user and signs with their JWT.
     imported = await privy.wallets().import({
       wallet: {
         entropy_type: "private-key",
@@ -787,22 +795,36 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
       owner: { user_id: req.auth.userId },
     });
   } catch (e) {
-    console.warn("Privy import with owner failed, retrying bare import:", e?.message ?? e);
-    try {
-      imported = await privy.wallets().import({
-        wallet: {
-          entropy_type: "private-key",
-          chain_type: "ethereum",
-          address: account.address,
-          private_key: keyForImport,
-        },
+    const msg = String(e?.message ?? e);
+    // Already imported for this user — reuse by address lookup.
+    if (/already|exists|duplicate/i.test(msg)) {
+      const found = await findSignableWalletForAddress(privy, req.auth.userId, account.address);
+      if (found?.walletId) {
+        imported = { id: found.walletId, address: found.address };
+      } else {
+        return res.status(502).json({
+          error: "This wallet may already be linked. Sign out, sign in, and try Import again.",
+          code: "import_failed",
+        });
+      }
+    } else {
+      console.warn("Privy import failed:", msg);
+      return res.status(502).json({
+        error: "Couldn’t import that wallet. Check the key or seed and try again.",
+        code: "import_failed",
       });
-    } catch (e2) {
-      return res.status(502).json({ error: `Privy import failed: ${e2?.message ?? e2}` });
     }
   }
 
   const address = imported?.address || account.address;
+  const walletId = imported?.id ?? null;
+  if (!walletId) {
+    return res.status(502).json({
+      error: "Import didn’t return a wallet id. Try again.",
+      code: "import_failed",
+    });
+  }
+
   const resolved = await resolvePolymarketAccount({
     signer: address,
     path: "existing",
@@ -820,12 +842,29 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
     ready: Boolean(resolved.syncReady),
     needsDeploy: false,
     imported: true,
-    walletId: imported?.id ?? null,
+    walletId,
     clobClient: null,
     _privyAuthJwt: null,
   };
   setSession(req.auth.userId, session);
 
+  // Prove signing works before telling the client success.
+  const userJwt = req.auth.accessToken;
+  try {
+    await ensureUserClob(session, { userJwt });
+  } catch (e) {
+    console.warn("import post-sign verify failed:", e?.message ?? e);
+    const mapped = mapOrderError(extractClobError(e), { code: e?.code });
+    return res.status(mapped.status || 401).json({
+      error: mapped.error,
+      code: mapped.code || "wallet_auth_failed",
+      address,
+      imported: true,
+      needsImport: false,
+    });
+  }
+
+  const fresh = getSession(req.auth.userId);
   res.json({
     address,
     signer: address,
@@ -836,7 +875,8 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
     syncReady: resolved.syncReady,
     imported: true,
     needsImport: false,
-    walletId: imported?.id ?? null,
+    walletId,
+    ready: Boolean(fresh?.ready),
     message: resolved.syncReady
       ? "Connected to your Polymarket account. Ready to trade."
       : "Wallet imported. Add your Polymarket profile address if positions are missing.",

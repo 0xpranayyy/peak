@@ -14,18 +14,31 @@ import { polygon } from "viem/chains";
 
 /**
  * Build Privy authorization context for wallet RPC.
- * Prefer user JWT for user-owned wallets; include auth private key when present.
- * @param {{ authorizationKey?: string, userJwt?: string }} opts
+ *
+ * IMPORTANT: Do not combine user JWT + auth key unless the wallet is a real
+ * 2-of-2 quorum. Imported / user-owned wallets are typically user-only — sending
+ * an unrelated PEAK_PRIVY_AUTH_KEY with the JWT causes:
+ *   401 "No valid authorization keys or user signing keys available"
+ *
+ * @param {{ authorizationKey?: string, userJwt?: string, mode?: 'user' | 'app' | 'auto' }} opts
  * @returns {import('@privy-io/node').AuthorizationContext | undefined}
  */
-export function buildAuthorizationContext({ authorizationKey, userJwt } = {}) {
-  /** @type {import('@privy-io/node').AuthorizationContext} */
-  const ctx = {};
+export function buildAuthorizationContext({ authorizationKey, userJwt, mode = "auto" } = {}) {
   const key = typeof authorizationKey === "string" ? authorizationKey.trim() : "";
   const jwt = typeof userJwt === "string" ? userJwt.trim() : "";
-  if (key) ctx.authorization_private_keys = [key];
-  if (jwt) ctx.user_jwts = [jwt];
-  return ctx.authorization_private_keys || ctx.user_jwts ? ctx : undefined;
+
+  // Explicit modes
+  if (mode === "user") {
+    return jwt ? { user_jwts: [jwt] } : undefined;
+  }
+  if (mode === "app") {
+    return key ? { authorization_private_keys: [key] } : undefined;
+  }
+
+  // Auto: prefer user JWT alone for user-owned / imported wallets.
+  if (jwt) return { user_jwts: [jwt] };
+  if (key) return { authorization_private_keys: [key] };
+  return undefined;
 }
 
 /**
@@ -45,8 +58,13 @@ export function createPrivyWalletClient({
   rpcUrl,
   authorizationKey,
   userJwt,
+  authMode = "auto",
 }) {
-  const authorizationContext = buildAuthorizationContext({ authorizationKey, userJwt });
+  const authorizationContext = buildAuthorizationContext({
+    authorizationKey,
+    userJwt,
+    mode: authMode,
+  });
 
   // Official helper: wraps typed_data under params (Privy API requires params.typed_data).
   const account = createViemAccount(privy, {

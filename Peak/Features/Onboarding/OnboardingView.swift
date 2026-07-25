@@ -38,6 +38,7 @@ struct OnboardingView: View {
                 .environmentObject(auth)
                 .environmentObject(TradingConfigStore.shared)
                 .environmentObject(WalletStore.shared)
+                .environmentObject(TradingPathStore.shared)
         }
         .onAppear {
             if reduceMotion {

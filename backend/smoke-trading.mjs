@@ -66,11 +66,17 @@ assert(cashAuth.cashErrorCode === "wallet_auth_failed", "cash wallet_auth_failed
 assert(!cashAuth.cashError.includes("{"), "cash auth copy not JSON");
 
 const ctxBoth = buildAuthorizationContext({ authorizationKey: "k", userJwt: "jwt" });
-assert(ctxBoth.authorization_private_keys?.[0] === "k", "auth key in context");
-assert(ctxBoth.user_jwts?.[0] === "jwt", "user jwt in context");
+assert(ctxBoth.user_jwts?.[0] === "jwt", "auto prefers jwt alone");
+assert(!ctxBoth.authorization_private_keys, "auto must not mix auth key with jwt");
 const ctxJwt = buildAuthorizationContext({ userJwt: "only-jwt" });
 assert(ctxJwt.user_jwts?.[0] === "only-jwt", "jwt-only context");
 assert(!ctxJwt.authorization_private_keys, "no empty auth keys");
+const ctxApp = buildAuthorizationContext({ authorizationKey: "k", userJwt: "jwt", mode: "app" });
+assert(ctxApp.authorization_private_keys?.[0] === "k", "app mode uses key");
+assert(!ctxApp.user_jwts, "app mode ignores jwt");
+const ctxUser = buildAuthorizationContext({ authorizationKey: "k", userJwt: "jwt", mode: "user" });
+assert(ctxUser.user_jwts?.[0] === "jwt", "user mode uses jwt");
+assert(!ctxUser.authorization_private_keys, "user mode ignores key");
 const ctxEmpty = buildAuthorizationContext({});
 assert(ctxEmpty === undefined, "empty context is undefined");
 
