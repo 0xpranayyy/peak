@@ -67,9 +67,10 @@ final class PortfolioViewModel: ObservableObject {
                     primary: PrivyAuthService.shared.walletAddress ?? snap.funder ?? env.wallet.address,
                     secondary: TradingPathStore.shared.snapshot.accountWallet ?? snap.funder
                 )
-                needsImportWallet = snap.needsImport
-                    || TradingPathStore.shared.snapshot.needsImport
-                    || PeakUserCopy.isImportWalletMessage(snap.cashError ?? "")
+                needsImportWallet = !TradingPathStore.shared.snapshot.imported
+                    && (snap.needsImport
+                        || TradingPathStore.shared.snapshot.needsImport
+                        || PeakUserCopy.isImportWalletMessage(snap.cashError ?? ""))
                 if snap.cash == nil, let cashError = snap.cashError, !cashError.isEmpty {
                     statusBanner = PeakUserCopy.sanitizeOrderOrServerCopy(
                         cashError,
@@ -150,6 +151,7 @@ struct PortfolioView: View {
 
     private var showLinkBanner: Bool {
         guard auth.isAuthenticated, !linkBannerDismissed else { return false }
+        if tradingPath.snapshot.imported { return false }
         if tradingPath.needsPathChoice { return true }
         if tradingPath.snapshot.path == .existing, !tradingPath.snapshot.syncReady { return true }
         if tradingPath.snapshot.needsImport || model.needsImportWallet { return true }
@@ -345,7 +347,7 @@ struct PortfolioView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        if model.needsImportWallet {
+                        if model.needsImportWallet, tradingPath.shouldOfferImport {
                             Button {
                                 showImportKey = true
                             } label: {
@@ -469,7 +471,7 @@ struct PortfolioView: View {
         }
         .contentShape(PeakLayout.cardShape)
         .onTapGesture {
-            if model.needsImportWallet || tradingPath.snapshot.needsImport {
+            if (model.needsImportWallet || tradingPath.snapshot.needsImport), tradingPath.shouldOfferImport {
                 showImportKey = true
             } else {
                 showTradingPath = true
@@ -478,7 +480,7 @@ struct PortfolioView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(
-            model.needsImportWallet || tradingPath.snapshot.needsImport
+            (model.needsImportWallet || tradingPath.snapshot.needsImport) && tradingPath.shouldOfferImport
                 ? "Opens import wallet"
                 : "Opens trading setup"
         )

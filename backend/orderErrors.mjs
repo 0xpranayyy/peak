@@ -26,6 +26,23 @@ export function mapOrderError(raw, { balanceUSD = null, code: hintCode = null } 
     };
   }
 
+  // Privy wallet RPC: user-owned / imported wallets need a valid user JWT (or matching auth key).
+  if (
+    hint === "wallet_auth_failed" ||
+    lower.includes("no valid authorization") ||
+    lower.includes("user signing keys") ||
+    lower.includes("authorization keys") ||
+    lower.includes("no_valid_user_session_keys") ||
+    lower.includes("zero_correct_authorization_signatures")
+  ) {
+    return {
+      error:
+        "Couldn’t authorize this wallet to trade. Try importing again or contact support.",
+      code: "wallet_auth_failed",
+      status: 401,
+    };
+  }
+
   if (
     hint === "sign_failed" ||
     (lower.includes("params") && (lower.includes("required") || lower.includes("typed_data"))) ||
@@ -135,6 +152,19 @@ export function mapCashError(err) {
     };
   }
   const msg = String(err?.message || err || "").toLowerCase();
+  if (
+    msg.includes("no valid authorization") ||
+    msg.includes("user signing keys") ||
+    msg.includes("authorization keys") ||
+    err?.code === "wallet_auth_failed"
+  ) {
+    return {
+      cashError:
+        "Couldn’t authorize this wallet to trade. Try importing again or contact support.",
+      cashErrorCode: "wallet_auth_failed",
+      needsImport: false,
+    };
+  }
   if (msg.includes("typed_data") || msg.includes("params") || msg.includes("unrecognized_keys")) {
     return {
       cashError: "Couldn’t sync cash balance. Try again in a moment.",

@@ -147,6 +147,12 @@ enum TradingError: LocalizedError, Sendable {
         {
             return .server(PeakUserCopy.importWalletRequired)
         }
+        if codeLower == "wallet_auth_failed"
+            || PeakUserCopy.isWalletAuthFailure(text)
+            || (lower.contains("401") && lower.contains("authorization"))
+        {
+            return .server(PeakUserCopy.walletAuthFailed)
+        }
         if codeLower == "sign_failed"
             || lower.contains("typed_data")
             || lower.contains("unrecognized_keys")

@@ -1,11 +1,32 @@
 /**
  * Viem account backed by Privy server wallet RPC (signMessage / signTypedData).
- * Requires wallet authorization key when Privy policies demand it (PEAK_PRIVY_AUTH_KEY).
- * Create at: Privy Dashboard → Wallets → Authorization keys → New key (private key once).
+ *
+ * User-owned wallets (embedded + imported with owner.user_id) require the user's
+ * access token in authorizationContext.user_jwts.
+ * App-owned wallets / additional signers may also need PEAK_PRIVY_AUTH_KEY
+ * (authorization_private_keys).
+ *
+ * Create auth key at: Privy Dashboard → Wallets → Authorization keys → New key.
  */
 import { createViemAccount } from "@privy-io/node/viem";
 import { createWalletClient, http } from "viem";
 import { polygon } from "viem/chains";
+
+/**
+ * Build Privy authorization context for wallet RPC.
+ * Prefer user JWT for user-owned wallets; include auth private key when present.
+ * @param {{ authorizationKey?: string, userJwt?: string }} opts
+ * @returns {import('@privy-io/node').AuthorizationContext | undefined}
+ */
+export function buildAuthorizationContext({ authorizationKey, userJwt } = {}) {
+  /** @type {import('@privy-io/node').AuthorizationContext} */
+  const ctx = {};
+  const key = typeof authorizationKey === "string" ? authorizationKey.trim() : "";
+  const jwt = typeof userJwt === "string" ? userJwt.trim() : "";
+  if (key) ctx.authorization_private_keys = [key];
+  if (jwt) ctx.user_jwts = [jwt];
+  return ctx.authorization_private_keys || ctx.user_jwts ? ctx : undefined;
+}
 
 /**
  * @param {{
@@ -14,12 +35,18 @@ import { polygon } from "viem/chains";
  *   address: `0x${string}`,
  *   rpcUrl?: string,
  *   authorizationKey?: string,
+ *   userJwt?: string,
  * }} opts
  */
-export function createPrivyWalletClient({ privy, walletId, address, rpcUrl, authorizationKey }) {
-  const authorizationContext = authorizationKey
-    ? { authorization_private_keys: [authorizationKey] }
-    : undefined;
+export function createPrivyWalletClient({
+  privy,
+  walletId,
+  address,
+  rpcUrl,
+  authorizationKey,
+  userJwt,
+}) {
+  const authorizationContext = buildAuthorizationContext({ authorizationKey, userJwt });
 
   // Official helper: wraps typed_data under params (Privy API requires params.typed_data).
   const account = createViemAccount(privy, {

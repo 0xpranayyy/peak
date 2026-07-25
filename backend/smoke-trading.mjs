@@ -9,6 +9,7 @@ import { AssetType, SignatureTypeV2 } from "@polymarket/clob-client-v2";
 import { createViemAccount } from "@privy-io/node/viem";
 import { signatureTypeFromWalletName } from "./tradingSetup.mjs";
 import { mapOrderError, mapCashError, isImportWalletError } from "./orderErrors.mjs";
+import { buildAuthorizationContext } from "./privyViemAccount.mjs";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -48,5 +49,29 @@ assert(cash.needsImport === true, "cash needsImport");
 assert(cash.cashErrorCode === "import_wallet_required", "cashErrorCode");
 
 assert(isImportWalletError({ code: "import_wallet_required" }), "isImportWalletError");
+
+const authFail = mapOrderError(
+  '401 {"error":"No valid authorization keys or user signing keys available"}'
+);
+assert(authFail.code === "wallet_auth_failed", "wallet_auth_failed code");
+assert(!authFail.error.includes("401"), "no status code in copy");
+assert(!authFail.error.includes("{"), "no raw JSON in auth copy");
+assert(authFail.error.toLowerCase().includes("authorize"), "auth copy mentions authorize");
+
+const cashAuth = mapCashError({
+  code: "wallet_auth_failed",
+  message: "No valid authorization keys or user signing keys available",
+});
+assert(cashAuth.cashErrorCode === "wallet_auth_failed", "cash wallet_auth_failed");
+assert(!cashAuth.cashError.includes("{"), "cash auth copy not JSON");
+
+const ctxBoth = buildAuthorizationContext({ authorizationKey: "k", userJwt: "jwt" });
+assert(ctxBoth.authorization_private_keys?.[0] === "k", "auth key in context");
+assert(ctxBoth.user_jwts?.[0] === "jwt", "user jwt in context");
+const ctxJwt = buildAuthorizationContext({ userJwt: "only-jwt" });
+assert(ctxJwt.user_jwts?.[0] === "only-jwt", "jwt-only context");
+assert(!ctxJwt.authorization_private_keys, "no empty auth keys");
+const ctxEmpty = buildAuthorizationContext({});
+assert(ctxEmpty === undefined, "empty context is undefined");
 
 console.log("smoke-trading: ok");

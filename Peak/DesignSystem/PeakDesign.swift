@@ -38,6 +38,15 @@ enum PeakUserCopy {
     static let importWalletRequired =
         "Import the private key or seed for this Polymarket wallet to enable trading."
     static let signFailed = "Couldn’t sign this order. Try again."
+    static let walletAuthFailed =
+        "Couldn’t authorize this wallet to trade. Try importing again or contact support."
+    static let connectedPolymarketAccount = "Connected to your Polymarket account."
+    static let linkedPolymarketWallet = connectedPolymarketAccount
+    static let readyToTrade = "Ready to trade."
+    static let importSuccessTitle = "Wallet connected"
+    static let importSuccessBody =
+        "Your Polymarket account is linked. You’re ready to trade."
+    static let importFailureTitle = "Couldn’t import wallet"
     static let insufficientFunds =
         "Not enough funds or allowance. Deposit under Portfolio, then try again."
     static let approvalsNeeded =
@@ -50,6 +59,16 @@ enum PeakUserCopy {
             || lower.contains("import your wallet")
             || lower == importWalletRequired.lowercased()
     }
+
+    static func isWalletAuthFailure(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("no valid authorization")
+            || lower.contains("user signing keys")
+            || lower.contains("authorization keys")
+            || lower.contains("wallet_auth_failed")
+            || lower == walletAuthFailed.lowercased()
+    }
+
     static func sanitize(_ text: String, fallback: String = "Something went wrong. Try again.") -> String {
         #if DEBUG
         return text
@@ -62,6 +81,7 @@ enum PeakUserCopy {
             "privysecrets", "decode response", "invalid url", "server returned",
             "empty response", "http ", "signer", "gnosis", "safe address",
             "typed_data", "unrecognized_keys", "invalid_data",
+            "poly_proxy", "authorization keys", "signing keys",
         ]
         if banned.contains(where: { lower.contains($0) }) {
             return fallback
@@ -80,11 +100,29 @@ enum PeakUserCopy {
         if isImportWalletMessage(text) {
             return importWalletRequired
         }
+        if isWalletAuthFailure(text) {
+            return walletAuthFailed
+        }
         if lower.contains("no polymarket account") || lower.contains("for this signer") {
             return missingPolymarketAccount
         }
-        if lower.contains("ready") || lower.contains("synced") || lower.contains("configured") {
-            return "You’re set up to trade."
+        if lower.contains("connected to your polymarket")
+            || lower.contains("linked to your polymarket")
+            || (lower.contains("linked")
+                && (lower.contains("proxy")
+                    || lower.contains("poly_")
+                    || lower.contains("wallet")
+                    || lower.contains("imported")))
+            || (lower.contains("imported") && lower.contains("linked"))
+        {
+            return connectedPolymarketAccount
+        }
+        if lower.contains("ready to trade")
+            || lower.contains("ready")
+            || lower.contains("synced")
+            || lower.contains("configured")
+        {
+            return readyToTrade
         }
         if lower.contains("deploy") || lower.contains("pending") || lower.contains("progress") {
             return "Setup still finishing. Try again in a moment."
@@ -105,6 +143,9 @@ enum PeakUserCopy {
         let lower = text.lowercased()
         if isImportWalletMessage(text) {
             return importWalletRequired
+        }
+        if isWalletAuthFailure(text) {
+            return walletAuthFailed
         }
         if lower.contains("typed_data")
             || lower.contains("unrecognized_keys")

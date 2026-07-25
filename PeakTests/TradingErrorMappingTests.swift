@@ -111,6 +111,27 @@ final class TradingErrorMappingTests: XCTestCase {
         }
         XCTAssertEqual(message, PeakUserCopy.approvalsNeeded)
     }
+
+    func testWalletAuthFailedByCode() {
+        let error = TradingError.fromServerMessage("raw", code: "wallet_auth_failed")
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertEqual(message, PeakUserCopy.walletAuthFailed)
+    }
+
+    func testWalletAuthFailedFromPrivy401Blob() {
+        let error = TradingError.fromServerMessage(
+            #"401 {"error":"No valid authorization keys or user signing keys available"}"#,
+            code: nil
+        )
+        guard case .server(let message) = error else {
+            return XCTFail("expected .server, got \(error)")
+        }
+        XCTAssertEqual(message, PeakUserCopy.walletAuthFailed)
+        XCTAssertFalse(message.hasPrefix("{"))
+        XCTAssertFalse(message.contains("401"))
+    }
 }
 
 final class OpenOrderTests: XCTestCase {

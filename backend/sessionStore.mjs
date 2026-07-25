@@ -101,9 +101,20 @@ export function getSession(userId) {
 export function setSession(userId, session) {
   const prev = memory.get(userId) || {};
   const next = { ...prev, ...session, userId };
-  // Keep non-persistable runtime fields if present
-  if (session.clobClient) next.clobClient = session.clobClient;
-  else if (prev.clobClient && !session.clobClient) next.clobClient = prev.clobClient;
+  // Runtime-only fields: keep prior value unless the patch sets them explicitly
+  // (including explicit `null` to clear after re-import / wallet change).
+  if (Object.prototype.hasOwnProperty.call(session, "clobClient")) {
+    if (session.clobClient) next.clobClient = session.clobClient;
+    else delete next.clobClient;
+  } else if (prev.clobClient) {
+    next.clobClient = prev.clobClient;
+  }
+  if (Object.prototype.hasOwnProperty.call(session, "_privyAuthJwt")) {
+    if (session._privyAuthJwt) next._privyAuthJwt = session._privyAuthJwt;
+    else delete next._privyAuthJwt;
+  } else if (prev._privyAuthJwt) {
+    next._privyAuthJwt = prev._privyAuthJwt;
+  }
   memory.set(userId, next);
   persist();
   return next;

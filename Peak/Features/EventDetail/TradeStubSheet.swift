@@ -482,6 +482,7 @@ struct TradeStubSheet: View {
     }
 
     private var shouldOfferImport: Bool {
+        guard tradingPath.shouldOfferImport else { return false }
         if tradingPath.snapshot.needsImport { return true }
         guard let message else { return false }
         return PeakUserCopy.isImportWalletMessage(message)

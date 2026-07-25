@@ -408,66 +408,149 @@ struct ImportTradingWalletSheet: View {
     @EnvironmentObject private var auth: PrivyAuthService
     @EnvironmentObject private var tradingConfig: TradingConfigStore
     @EnvironmentObject private var wallet: WalletStore
+    @EnvironmentObject private var tradingPath: TradingPathStore
 
     @State private var secretInput = ""
-    @State private var statusMessage: String?
+    @State private var failureMessage: String?
     @State private var isBusy = false
-    @State private var succeeded = false
+    @State private var phase: Phase = .form
+
+    private enum Phase: Equatable {
+        case form
+        case success
+        case failure
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    SecureField("Private key or seed phrase", text: $secretInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                        .disabled(isBusy || succeeded)
-                } header: {
-                    Text("Key or seed")
-                } footer: {
-                    Text("Your private key or seed phrase is sent once securely and never stored on this device.")
-                }
-
-                Section {
-                    Button {
-                        Task { await importSecret() }
-                    } label: {
-                        if isBusy {
-                            ProgressView()
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Text(succeeded ? "Imported" : "Import")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .disabled(isBusy || succeeded || secretInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !tradingConfig.hasBackendURL)
-
-                    #if DEBUG
-                    if !tradingConfig.hasBackendURL {
-                        Text("Trading backend isn’t configured in this build.")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-                    #endif
-
-                    if let statusMessage {
-                        Text(statusMessage)
-                            .font(.footnote)
-                            .foregroundStyle(succeeded ? PeakTradeStyle.buy : PeakTradeStyle.sell)
-                    }
+            Group {
+                switch phase {
+                case .form:
+                    importForm
+                case .success:
+                    successConfirmation
+                case .failure:
+                    failureConfirmation
                 }
             }
-            .navigationTitle("Import wallet")
+            .navigationTitle(phase == .form ? "Import wallet" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button(phase == .success ? "Done" : "Close") { dismiss() }
+                        .disabled(isBusy)
                 }
             }
             .interactiveDismissDisabled(isBusy)
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var importForm: some View {
+        Form {
+            Section {
+                SecureField("Private key or seed phrase", text: $secretInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .disabled(isBusy)
+            } header: {
+                Text("Key or seed")
+            } footer: {
+                Text("Your private key or seed phrase is sent once securely and never stored on this device.")
+            }
+
+            Section {
+                Button {
+                    Task { await importSecret() }
+                } label: {
+                    if isBusy {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Import")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(
+                    isBusy
+                        || secretInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || !tradingConfig.hasBackendURL
+                )
+
+                #if DEBUG
+                if !tradingConfig.hasBackendURL {
+                    Text("Trading backend isn’t configured in this build.")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+                #endif
+            }
+        }
+    }
+
+    private var successConfirmation: some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 12)
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(PeakTradeStyle.buy)
+                .accessibilityHidden(true)
+            Text(PeakUserCopy.importSuccessTitle)
+                .font(.title2.weight(.bold))
+                .multilineTextAlignment(.center)
+            Text(PeakUserCopy.importSuccessBody)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            Button {
+                dismiss()
+            } label: {
+                PeakPrimaryCTA(title: "Continue", systemImage: "checkmark", color: PeakBrand.mid)
+            }
+            .peakPressable()
+            .padding(.horizontal, 24)
+            .padding(.bottom, 16)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PeakMaterialBackground())
+    }
+
+    private var failureConfirmation: some View {
+        VStack(spacing: 20) {
+            Spacer(minLength: 12)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(PeakTradeStyle.sell)
+                .accessibilityHidden(true)
+            Text(PeakUserCopy.importFailureTitle)
+                .font(.title2.weight(.bold))
+                .multilineTextAlignment(.center)
+            Text(failureMessage ?? "Something went wrong. Try again.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            Button {
+                failureMessage = nil
+                phase = .form
+            } label: {
+                PeakPrimaryCTA(title: "Try again", systemImage: "arrow.clockwise", color: PeakBrand.mid)
+            }
+            .peakPressable()
+            .padding(.horizontal, 24)
+            Button("Close") { dismiss() }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 16)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PeakMaterialBackground())
     }
 
     private func importSecret() async {
@@ -485,12 +568,25 @@ struct ImportTradingWalletSheet: View {
             if let address = result["address"] as? String {
                 await auth.adoptImportedWallet(address, wallet: wallet, tradingConfig: tradingConfig)
             }
-            succeeded = true
-            statusMessage = (result["message"] as? String) ?? "Wallet imported."
+            let syncReady = (result["syncReady"] as? Bool) ?? tradingPath.snapshot.syncReady
+            tradingPath.markImported(
+                syncReady: syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
+            tradingPath.apply(server: result)
+            // Re-assert imported after apply (server may omit the flag on older deploys).
+            tradingPath.markImported(
+                syncReady: syncReady || tradingPath.snapshot.syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
+            phase = .success
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
-            succeeded = false
-            statusMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t import that wallet. Try again.")
+            failureMessage = PeakUserCopy.fromError(
+                error,
+                fallback: "Couldn’t import that wallet. Check the key or seed and try again."
+            )
+            phase = .failure
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
     }
@@ -582,6 +678,7 @@ struct AccountView: View {
                 .environmentObject(auth)
                 .environmentObject(tradingConfig)
                 .environmentObject(wallet)
+                .environmentObject(tradingPath)
         }
         .sheet(isPresented: $showPasteAddress) {
             PasteProfileAddressSheet()
@@ -675,6 +772,15 @@ struct AccountView: View {
                         .font(.caption)
                         .foregroundStyle(PeakBrand.mid)
                 }
+            } else if tradingPath.snapshot.imported {
+                Text(PeakUserCopy.connectedPolymarketAccount)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if tradingPath.snapshot.syncReady {
+                    Text(PeakUserCopy.readyToTrade)
+                        .font(.caption)
+                        .foregroundStyle(PeakTradeStyle.buy)
+                }
             } else if let message = tradingPath.snapshot.message ?? statusMessage {
                 Text(PeakUserCopy.accountStatus(message))
                     .font(.footnote)
@@ -736,10 +842,12 @@ struct AccountView: View {
                 Label("Connect wallet", systemImage: "wallet.pass.fill")
             }
             .disabled(isConnectingWallet)
-            Button {
-                showImportKey = true
-            } label: {
-                Label("Import private key", systemImage: "key.fill")
+            if tradingPath.shouldOfferImport {
+                Button {
+                    showImportKey = true
+                } label: {
+                    Label("Import private key", systemImage: "key.fill")
+                }
             }
             Button {
                 showPasteAddress = true

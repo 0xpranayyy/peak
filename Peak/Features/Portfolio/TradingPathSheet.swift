@@ -45,11 +45,24 @@ struct TradingPathSheet: View {
                         Task { await chooseExisting() }
                     }
 
-                    if tradingPath.snapshot.path == .existing, showLinkMethods {
+                    if tradingPath.snapshot.path == .existing, showLinkMethods, !tradingPath.snapshot.imported {
                         existingLinkMethods
                     }
 
-                    if let statusMessage {
+                    if tradingPath.snapshot.imported {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(PeakTradeStyle.buy)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(PeakUserCopy.connectedPolymarketAccount)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(PeakUserCopy.readyToTrade)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 4)
+                    } else if let statusMessage {
                         Text(userFacingMessage(statusMessage))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -66,7 +79,16 @@ struct TradingPathSheet: View {
                 }
             }
             .interactiveDismissDisabled(isBusy)
-            .sheet(isPresented: $showImportKey) {
+            .sheet(isPresented: $showImportKey, onDismiss: {
+                if tradingPath.snapshot.imported {
+                    showLinkMethods = false
+                    statusMessage = PeakUserCopy.readyToTrade
+                    if tradingPath.snapshot.syncReady {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        dismiss()
+                    }
+                }
+            }) {
                 ImportTradingWalletSheet()
                     .environmentObject(auth)
                     .environmentObject(tradingConfig)
@@ -86,6 +108,10 @@ struct TradingPathSheet: View {
         .peakSheetChrome()
         .onAppear {
             // Continuing incomplete existing setup — surface Connect / Import / Paste immediately.
+            if tradingPath.snapshot.imported {
+                showLinkMethods = false
+                return
+            }
             if tradingPath.snapshot.path == .existing,
                !tradingPath.snapshot.syncReady || tradingPath.snapshot.needsImport
             {
@@ -111,12 +137,14 @@ struct TradingPathSheet: View {
                 Task { await connectWallet() }
             }
 
-            linkMethodCard(
-                title: "Import private key",
-                subtitle: "Paste a key or seed to trade with that wallet",
-                systemImage: "key.fill"
-            ) {
-                showImportKey = true
+            if tradingPath.shouldOfferImport {
+                linkMethodCard(
+                    title: "Import private key",
+                    subtitle: "Paste a key or seed to trade with that wallet",
+                    systemImage: "key.fill"
+                ) {
+                    showImportKey = true
+                }
             }
 
             pasteAddressCard
@@ -358,6 +386,14 @@ struct TradingPathSheet: View {
 
     /// Existing path can be syncReady for viewing while still needing a Privy-signable import for orders.
     private func finishExistingPathIfReady() {
+        if tradingPath.snapshot.imported {
+            showLinkMethods = false
+            if tradingPath.snapshot.syncReady {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                dismiss()
+            }
+            return
+        }
         if tradingPath.snapshot.needsImport || PeakUserCopy.isImportWalletMessage(statusMessage ?? "") {
             showLinkMethods = true
             return

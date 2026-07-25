@@ -342,6 +342,7 @@ final class PrivyAuthService: ObservableObject {
         walletAddress = address
         wallet.save(address)
         TradingPathStore.shared.choose(.existing)
+        TradingPathStore.shared.markImported(message: PeakUserCopy.connectedPolymarketAccount)
         showTradingPathSheet = false
         tradingConfig.ensureBackendURLIfNeeded()
         guard tradingConfig.hasBackendURL else { return }
@@ -350,6 +351,10 @@ final class PrivyAuthService: ObservableObject {
             path: TradingPathStore.Path.existing.rawValue
         ) {
             TradingPathStore.shared.apply(server: result)
+            TradingPathStore.shared.markImported(
+                syncReady: (result["syncReady"] as? Bool) ?? TradingPathStore.shared.snapshot.syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
             PeakProfileStore.shared.apply(
                 serverProfile: result["profile"],
                 address: (result["accountWallet"] as? String) ?? address
@@ -366,8 +371,16 @@ final class PrivyAuthService: ObservableObject {
         do {
             let setup = try await TradingProxyClient.setupTrading()
             TradingPathStore.shared.apply(server: setup)
+            TradingPathStore.shared.markImported(
+                syncReady: TradingPathStore.shared.snapshot.syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
         } catch let http as TradingProxyClient.HTTPBodyError {
             TradingPathStore.shared.apply(server: http.body)
+            TradingPathStore.shared.markImported(
+                syncReady: TradingPathStore.shared.snapshot.syncReady,
+                message: PeakUserCopy.connectedPolymarketAccount
+            )
         } catch {
             // Import already linked the EOA; setup can finish later from Account.
         }

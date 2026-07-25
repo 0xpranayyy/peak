@@ -221,8 +221,15 @@ const wrap = (fn) => (req, res) =>
     res.status(status).json({ error, code, ...publicFields });
   });
 
+/** Auth opts for Privy wallet RPC (user-owned wallets need the access token). */
+function privySignOpts(req) {
+  return {
+    userJwt: req?.auth?.mode === "privy" ? req.auth.accessToken : undefined,
+  };
+}
+
 /** Resolve a Privy-backed viem wallet client for the session. */
-async function walletClientForSession(session) {
+async function walletClientForSession(session, { userJwt } = {}) {
   if (!privy) {
     const err = new Error("Privy is not configured");
     err.code = "setup_failed";
@@ -352,21 +359,43 @@ async function walletClientForSession(session) {
     address: signingAddress,
     rpcUrl: POLYGON_RPC_URL,
     authorizationKey: PEAK_PRIVY_AUTH_KEY,
+    // Imported / user-owned wallets require user_jwts; auth key alone is not enough.
+    userJwt,
   });
 }
 
-async function ensureUserClob(session) {
-  if (session.clobClient) return session.clobClient;
+async function ensureUserClob(session, { userJwt } = {}) {
+  // Rebuild when the access token changes — Privy user signing keys are JWT-bound.
+  if (session.clobClient && session._privyAuthJwt && session._privyAuthJwt === userJwt) {
+    return session.clobClient;
+  }
   const funder = session.accountWallet || session.eoa;
-  const walletClient = await walletClientForSession(session);
+  const walletClient = await walletClientForSession(session, { userJwt });
   const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
-  const client = await createUserClobClient({
-    walletClient,
-    funderAddress: funder,
-    signatureType: sigType,
-  });
-  setSession(session.userId, { ...session, clobClient: client, ready: true });
-  return client;
+  try {
+    const client = await createUserClobClient({
+      walletClient,
+      funderAddress: funder,
+      signatureType: sigType,
+    });
+    setSession(session.userId, {
+      ...session,
+      clobClient: client,
+      _privyAuthJwt: userJwt || null,
+      ready: true,
+    });
+    return client;
+  } catch (e) {
+    const mapped = mapOrderError(extractClobError(e), { code: e?.code });
+    if (mapped.code === "wallet_auth_failed") {
+      const err = new Error(mapped.error);
+      err.code = mapped.code;
+      err.httpStatus = mapped.status;
+      err.safeMessage = mapped.error;
+      throw err;
+    }
+    throw e;
+  }
 }
 
 /** Pull a readable string from CLOB / Axios / ApiError shapes. */
@@ -539,6 +568,8 @@ async function authenticate(req, res, next) {
         mode: "privy",
         userId: claims.user_id || claims.userId,
         sessionId: claims.session_id || claims.sessionId,
+        // Needed for Privy wallet RPC on user-owned / imported wallets.
+        accessToken: token,
       };
       return next();
     } catch (e) {
@@ -790,6 +821,8 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
     needsDeploy: false,
     imported: true,
     walletId: imported?.id ?? null,
+    clobClient: null,
+    _privyAuthJwt: null,
   };
   setSession(req.auth.userId, session);
 
@@ -801,10 +834,12 @@ app.post("/auth/import-wallet", wrap(async (req, res) => {
     walletTypeName: resolved.walletTypeName,
     path: "existing",
     syncReady: resolved.syncReady,
+    imported: true,
+    needsImport: false,
     walletId: imported?.id ?? null,
     message: resolved.syncReady
-      ? `Imported. Linked to ${resolved.walletTypeName}.`
-      : "Imported. Add your Polymarket profile address if positions are missing.",
+      ? "Connected to your Polymarket account. Ready to trade."
+      : "Wallet imported. Add your Polymarket profile address if positions are missing.",
   });
 }));
 
@@ -865,7 +900,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
   if (session.path === "existing" && resolved.syncReady) {
     if (builderConfigured) {
       try {
-        await ensureUserClob(session);
+        await ensureUserClob(session, privySignOpts(req));
         const fresh = getSession(req.auth.userId);
         return res.json({
           ...toPublicSession(fresh),
@@ -944,7 +979,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
 
   // New path: deploy Deposit Wallet via Relayer.
   try {
-    const walletClient = await walletClientForSession(session);
+    const walletClient = await walletClientForSession(session, privySignOpts(req));
     const deploy = await deployOrLinkDepositWallet({
       walletClient,
       cfg: tradingCfg,
@@ -980,7 +1015,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
     }
 
     try {
-      await ensureUserClob(next);
+      await ensureUserClob(next, privySignOpts(req));
     } catch (e) {
       console.warn("CLOB derive after deploy failed:", e?.message ?? e);
     }
@@ -1029,7 +1064,7 @@ app.post("/trading/setup", wrap(async (req, res) => {
 
 function toPublicSession(session) {
   if (!session) return {};
-  const { clobClient, ...rest } = session;
+  const { clobClient, _privyAuthJwt, ...rest } = session;
   return rest;
 }
 
@@ -1072,7 +1107,7 @@ app.get("/portfolio", wrap(async (req, res) => {
   let needsImport = false;
   if (builderConfigured && session?.eoa) {
     try {
-      const client = await ensureUserClob(session);
+      const client = await ensureUserClob(session, privySignOpts(req));
       // signature_type is also injected by ClobClient from construction; pass explicitly for clarity.
       const sigType = Number(session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3));
       const collateral = await fetchCollateralBalance(client, sigType);
@@ -1144,14 +1179,19 @@ app.get("/orders", wrap(async (req, res) => {
     return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
   }
   try {
-    const client = await ensureUserClob(session);
+    const client = await ensureUserClob(session, privySignOpts(req));
     const [open, trades] = await Promise.all([
       client.getOpenOrders(),
       client.getTrades?.() ?? Promise.resolve([]),
     ]);
     return res.json({ open, trades, builderConfigured: true });
   } catch (e) {
-    return res.status(501).json({ error: String(e?.message ?? e), builderConfigured: true });
+    const mapped = mapOrderError(e?.safeMessage || extractClobError(e), { code: e?.code });
+    return res.status(e?.httpStatus || mapped.status || 501).json({
+      error: e?.safeMessage || mapped.error,
+      code: e?.code || mapped.code,
+      builderConfigured: true,
+    });
   }
 }));
 
@@ -1198,7 +1238,7 @@ app.post("/orders", wrap(async (req, res) => {
 
     let cashUSD = null;
     try {
-      const client = await ensureUserClob(session);
+      const client = await ensureUserClob(session, privySignOpts(req));
       const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
       const sideUpper = String(side).toUpperCase();
       const orderCostUSD =
@@ -1301,14 +1341,18 @@ app.delete("/orders/:id", wrap(async (req, res) => {
     }
     const id = req.params.id;
     try {
-      const client = await ensureUserClob(session);
+      const client = await ensureUserClob(session, privySignOpts(req));
       try {
         return res.json(await client.cancelOrder(id));
       } catch {
         return res.json(await client.cancelOrder({ orderID: id }));
       }
     } catch (e) {
-      return res.status(501).json({ error: String(e?.message ?? e) });
+      const mapped = mapOrderError(e?.safeMessage || extractClobError(e), { code: e?.code });
+      return res.status(e?.httpStatus || mapped.status || 501).json({
+        error: e?.safeMessage || mapped.error,
+        code: e?.code || mapped.code,
+      });
     }
   }
   const id = req.params.id;
@@ -1341,7 +1385,7 @@ app.post("/deposit-address", wrap(async (req, res) => {
     // New path without a deploy yet: try a soft derive so deposit isn't blocked after a partial setup.
     if (!funder && session.path === "new" && builderConfigured) {
       try {
-        const walletClient = await walletClientForSession(session);
+        const walletClient = await walletClientForSession(session, privySignOpts(req));
         const soft = await deployOrLinkDepositWallet({
           walletClient,
           cfg: tradingCfg,

@@ -182,7 +182,7 @@ export async function resolvePolymarketAccount({ signer, path = "new", accountWa
     needsDeploy: path === "new" && !accountWallet,
     syncReady: Boolean(accountWallet),
     message: accountWallet
-      ? `Linked ${walletTypeName}: ${accountWallet}`
+      ? "Connected to your Polymarket account."
       : "Account wallet not resolved yet.",
   };
 }

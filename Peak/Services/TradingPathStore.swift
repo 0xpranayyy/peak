@@ -34,6 +34,8 @@ final class TradingPathStore: ObservableObject {
         var accountWallet: String?
         var walletTypeName: WalletTypeName
         var syncReady: Bool
+        /// Seed/key was imported into Privy for server-side signing.
+        var imported: Bool
         var needsDeploy: Bool
         var builderConfigured: Bool
         var relayerConfigured: Bool
@@ -46,6 +48,7 @@ final class TradingPathStore: ObservableObject {
             accountWallet: nil,
             walletTypeName: .unknown,
             syncReady: false,
+            imported: false,
             needsDeploy: false,
             builderConfigured: false,
             relayerConfigured: false,
@@ -58,7 +61,15 @@ final class TradingPathStore: ObservableObject {
     @Published var needsPathChoice = false
 
     private let pathKeyPrefix = "peak.trading.path."
+    private let importedKeyPrefix = "peak.trading.imported."
     private var userKey: String?
+
+    /// Offer Import key/seed only when not already imported for this signed-in user.
+    var shouldOfferImport: Bool {
+        guard !snapshot.imported else { return false }
+        if snapshot.needsImport { return true }
+        return snapshot.path == .existing
+    }
 
     func bind(userID: String?) {
         userKey = userID
@@ -69,7 +80,13 @@ final class TradingPathStore: ObservableObject {
         }
         let raw = UserDefaults.standard.string(forKey: pathKeyPrefix + userID)
         let path = raw.flatMap(Path.init(rawValue:))
-        snapshot.path = path
+        var next = Snapshot.empty
+        next.path = path
+        next.imported = UserDefaults.standard.bool(forKey: importedKeyPrefix + userID)
+        if next.imported {
+            next.needsImport = false
+        }
+        snapshot = next
         needsPathChoice = path == nil
     }
 
@@ -80,9 +97,27 @@ final class TradingPathStore: ObservableObject {
         needsPathChoice = false
     }
 
+    /// Mark seed/key import complete and persist until logout / clear.
+    func markImported(syncReady: Bool? = nil, message: String? = nil) {
+        guard let userID = userKey ?? PrivyAuthService.shared.userID else { return }
+        UserDefaults.standard.set(true, forKey: importedKeyPrefix + userID)
+        var next = snapshot
+        next.imported = true
+        next.needsImport = false
+        next.path = next.path ?? .existing
+        if let syncReady { next.syncReady = syncReady }
+        next.message = message ?? PeakUserCopy.connectedPolymarketAccount
+        if let userID = userKey {
+            UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
+        }
+        needsPathChoice = false
+        snapshot = next
+    }
+
     func clear() {
         if let userID = userKey {
             UserDefaults.standard.removeObject(forKey: pathKeyPrefix + userID)
+            UserDefaults.standard.removeObject(forKey: importedKeyPrefix + userID)
         }
         snapshot = .empty
         needsPathChoice = userKey != nil
@@ -113,18 +148,31 @@ final class TradingPathStore: ObservableObject {
         next.needsDeploy = (server["needsDeploy"] as? Bool) ?? next.needsDeploy
         next.builderConfigured = (server["builderConfigured"] as? Bool) ?? next.builderConfigured
         next.relayerConfigured = (server["relayerConfigured"] as? Bool) ?? next.relayerConfigured
+
+        if let imported = server["imported"] as? Bool, imported {
+            next.imported = true
+            next.needsImport = false
+            if let userID = userKey {
+                UserDefaults.standard.set(true, forKey: importedKeyPrefix + userID)
+            }
+        }
+
         if let needsImport = server["needsImport"] as? Bool {
-            next.needsImport = needsImport
+            // Never re-offer import after a successful local/server import for this user.
+            next.needsImport = next.imported ? false : needsImport
         } else if let code = (server["code"] as? String ?? server["cashErrorCode"] as? String)?.lowercased(),
                   code == "import_wallet_required"
         {
-            next.needsImport = true
+            next.needsImport = !next.imported
         } else if let message = server["message"] as? String ?? server["error"] as? String,
                   PeakUserCopy.isImportWalletMessage(message)
         {
-            next.needsImport = true
+            next.needsImport = !next.imported
         }
-        next.message = server["message"] as? String ?? next.message
+
+        if let rawMessage = server["message"] as? String {
+            next.message = PeakUserCopy.accountStatus(rawMessage)
+        }
         snapshot = next
     }
 }

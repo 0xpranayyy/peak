@@ -35,11 +35,36 @@ final class PeakUserCopyTests: XCTestCase {
     }
 
     func testAccountStatusReady() {
-        XCTAssertEqual(PeakUserCopy.accountStatus("wallet is ready"), "You’re set up to trade.")
-        XCTAssertEqual(PeakUserCopy.accountStatus("account synced"), "You’re set up to trade.")
+        XCTAssertEqual(PeakUserCopy.accountStatus("wallet is ready"), PeakUserCopy.readyToTrade)
+        XCTAssertEqual(PeakUserCopy.accountStatus("account synced"), PeakUserCopy.readyToTrade)
     }
 
     func testAccountStatusStillDeploying() {
         XCTAssertEqual(PeakUserCopy.accountStatus("deposit wallet deploy pending"), "Setup still finishing. Try again in a moment.")
+    }
+
+    func testAccountStatusLinkedProxyJargon() {
+        XCTAssertEqual(
+            PeakUserCopy.accountStatus("Imported. Linked to POLY_PROXY."),
+            PeakUserCopy.connectedPolymarketAccount
+        )
+        XCTAssertEqual(
+            PeakUserCopy.accountStatus("Linked POLY_PROXY: 0xabc"),
+            PeakUserCopy.connectedPolymarketAccount
+        )
+        XCTAssertEqual(
+            PeakUserCopy.accountStatus("Connected to your Polymarket account. Ready to trade."),
+            PeakUserCopy.connectedPolymarketAccount
+        )
+    }
+
+    func testWalletAuthFailureCopy() {
+        XCTAssertEqual(
+            PeakUserCopy.sanitizeOrderOrServerCopy(
+                #"401 {"error":"No valid authorization keys or user signing keys available"}"#,
+                fallback: "fallback"
+            ),
+            PeakUserCopy.walletAuthFailed
+        )
     }
 }
