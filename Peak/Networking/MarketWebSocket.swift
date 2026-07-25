@@ -2,6 +2,8 @@ import Foundation
 
 /// Live prices via Polymarket's public CLOB Market WebSocket channel.
 /// Subscribes with `assets_ids` and sends `PING` every 10 seconds.
+///
+/// JSON is parsed off the main actor; only typed callbacks hop to MainActor.
 @MainActor
 final class MarketWebSocket {
     static let url = URL(string: "wss://ws-subscriptions-clob.polymarket.com/ws/market")!
@@ -14,12 +16,19 @@ final class MarketWebSocket {
         case quote
     }
 
+    private enum ParsedEvent: Sendable {
+        case lastTrade(asset: String, price: Double)
+        case quote(asset: String, bid: Double?, ask: Double?)
+        case book(asset: String, book: OrderBook, bestBid: Double?, bestAsk: Double?)
+    }
+
     private var task: URLSessionWebSocketTask?
     private var assetIDs: [String] = []
     private var pingTimer: Timer?
     private var reconnectAttempts = 0
     private var wantsConnection = false
     private var reconnectTask: Task<Void, Never>?
+    private var receiveGeneration = 0
     private(set) var isConnected = false
 
     var onPrice: ((String, Double, PriceKind) -> Void)?
@@ -36,6 +45,7 @@ final class MarketWebSocket {
 
     func disconnect() {
         wantsConnection = false
+        receiveGeneration += 1
         reconnectTask?.cancel()
         reconnectTask = nil
         pingTimer?.invalidate()
@@ -47,12 +57,14 @@ final class MarketWebSocket {
 
     private func open() {
         guard wantsConnection, !assetIDs.isEmpty else { return }
+        receiveGeneration += 1
+        let generation = receiveGeneration
         task?.cancel(with: .normalClosure, reason: nil)
         let t = URLSession.shared.webSocketTask(with: Self.url)
         task = t
         t.resume()
         subscribe()
-        receiveLoop()
+        receiveLoop(generation: generation)
         startPing()
     }
 
@@ -78,26 +90,37 @@ final class MarketWebSocket {
         }
     }
 
-    private func receiveLoop() {
+    private func receiveLoop(generation: Int) {
+        guard wantsConnection, generation == receiveGeneration else { return }
         task?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .success(let message):
-                    switch message {
-                    case .string(let text):
-                        self.handle(text)
-                    case .data(let data):
-                        if let text = String(data: data, encoding: .utf8) {
-                            self.handle(text)
+            switch result {
+            case .success(let message):
+                let text: String?
+                switch message {
+                case .string(let value):
+                    text = value
+                case .data(let data):
+                    text = String(data: data, encoding: .utf8)
+                @unknown default:
+                    text = nil
+                }
+
+                Task { @MainActor [weak self] in
+                    guard let self, generation == self.receiveGeneration, self.wantsConnection else { return }
+                    if let text, text != "PONG" {
+                        Task.detached(priority: .utility) { [weak self] in
+                            let events = MarketWebSocket.parse(text)
+                            guard !events.isEmpty else { return }
+                            await MainActor.run { [weak self] in
+                                self?.dispatch(events, generation: generation)
+                            }
                         }
-                    @unknown default:
-                        break
                     }
-                    if self.wantsConnection {
-                        self.receiveLoop()
-                    }
-                case .failure:
+                    self.receiveLoop(generation: generation)
+                }
+            case .failure:
+                Task { @MainActor [weak self] in
+                    guard let self, generation == self.receiveGeneration else { return }
                     self.setConnected(false)
                     self.scheduleReconnect()
                 }
@@ -105,8 +128,33 @@ final class MarketWebSocket {
         }
     }
 
-    private func handle(_ text: String) {
-        guard text != "PONG", let data = text.data(using: .utf8) else { return }
+    private func dispatch(_ events: [ParsedEvent], generation: Int) {
+        guard wantsConnection, generation == receiveGeneration else { return }
+        for event in events {
+            switch event {
+            case let .lastTrade(asset, price):
+                onPrice?(asset, price, .lastTrade)
+            case let .quote(asset, bid, ask):
+                if bid != nil || ask != nil {
+                    onTopOfBook?(asset, bid, ask)
+                }
+                if let bid, let ask, bid > 0, ask > 0 {
+                    onPrice?(asset, (bid + ask) / 2, .quote)
+                }
+            case let .book(asset, book, bestBid, bestAsk):
+                onBook?(asset, book)
+                if bestBid != nil || bestAsk != nil {
+                    onTopOfBook?(asset, bestBid, bestAsk)
+                }
+                if let bestBid, let bestAsk, bestBid > 0, bestAsk > 0 {
+                    onPrice?(asset, (bestBid + bestAsk) / 2, .quote)
+                }
+            }
+        }
+    }
+
+    private nonisolated static func parse(_ text: String) -> [ParsedEvent] {
+        guard let data = text.data(using: .utf8) else { return [] }
         let root = try? JSONSerialization.jsonObject(with: data)
         let events: [[String: Any]]
         if let arr = root as? [[String: Any]] {
@@ -114,81 +162,78 @@ final class MarketWebSocket {
         } else if let obj = root as? [String: Any] {
             events = [obj]
         } else {
-            return
+            return []
         }
-        for event in events {
-            process(event)
-        }
-    }
 
-    private func process(_ event: [String: Any]) {
-        let type = (event["event_type"] as? String ?? event["type"] as? String ?? "").lowercased()
-        switch type {
-        case "price_change":
-            // `price` on each change is the *level affected*, not the market mid.
-            // Prefer best_bid / best_ask for display quotes.
-            if let nested = event["price_changes"] as? [[String: Any]] {
-                for change in nested { emitQuote(change) }
-            } else if event["asset_id"] != nil {
-                emitQuote(event)
-            }
-        case "last_trade_price":
-            emitLastTrade(event)
-        case "best_bid_ask":
-            emitQuote(event)
-        case "book":
-            if let asset = event["asset_id"] as? String {
-                let bids = parseLevels(event["bids"], side: .bid)
-                    .sorted { $0.price > $1.price }
-                let asks = parseLevels(event["asks"], side: .ask)
-                    .sorted { $0.price < $1.price }
-                if !bids.isEmpty || !asks.isEmpty {
-                    onBook?(asset, OrderBook(
+        var parsed: [ParsedEvent] = []
+        parsed.reserveCapacity(events.count)
+        for event in events {
+            let type = (event["event_type"] as? String ?? event["type"] as? String ?? "").lowercased()
+            switch type {
+            case "price_change":
+                // `price` on each change is the *level affected*, not the market mid.
+                if let nested = event["price_changes"] as? [[String: Any]] {
+                    for change in nested {
+                        if let quote = parseQuote(change) {
+                            parsed.append(quote)
+                        }
+                    }
+                } else if let quote = parseQuote(event) {
+                    parsed.append(quote)
+                }
+            case "last_trade_price":
+                if let asset = event["asset_id"] as? String,
+                   let p = double(event["price"]),
+                   p >= 0, p <= 1 {
+                    parsed.append(.lastTrade(asset: asset, price: p))
+                }
+            case "best_bid_ask":
+                if let quote = parseQuote(event) {
+                    parsed.append(quote)
+                }
+            case "book":
+                if let asset = event["asset_id"] as? String {
+                    let bids = parseLevels(event["bids"], side: .bid)
+                        .sorted { $0.price > $1.price }
+                    let asks = parseLevels(event["asks"], side: .ask)
+                        .sorted { $0.price < $1.price }
+                    let trimmed = OrderBook(
                         bids: Array(bids.prefix(12)),
                         asks: Array(asks.prefix(12))
-                    ))
+                    )
+                    let bestBid = bids.map(\.price).max()
+                    let bestAsk = asks.map(\.price).min()
+                    if !trimmed.bids.isEmpty || !trimmed.asks.isEmpty || bestBid != nil || bestAsk != nil {
+                        parsed.append(.book(asset: asset, book: trimmed, bestBid: bestBid, bestAsk: bestAsk))
+                    }
                 }
-                if let bestBid = bids.map(\.price).max(),
-                   let bestAsk = asks.map(\.price).min() {
-                    onTopOfBook?(asset, bestBid, bestAsk)
-                    onPrice?(asset, (bestBid + bestAsk) / 2, .quote)
-                }
+            default:
+                break
             }
-        default:
-            break
         }
+        return parsed
     }
 
-    private func emitLastTrade(_ dict: [String: Any]) {
-        guard let asset = dict["asset_id"] as? String,
-              let p = Self.double(dict["price"]),
-              p >= 0, p <= 1 else { return }
-        onPrice?(asset, p, .lastTrade)
+    private nonisolated static func parseQuote(_ dict: [String: Any]) -> ParsedEvent? {
+        guard let asset = dict["asset_id"] as? String else { return nil }
+        let bid = double(dict["best_bid"])
+        let ask = double(dict["best_ask"])
+        guard bid != nil || ask != nil else { return nil }
+        return .quote(asset: asset, bid: bid, ask: ask)
     }
 
-    private func emitQuote(_ dict: [String: Any]) {
-        guard let asset = dict["asset_id"] as? String else { return }
-        let bid = Self.double(dict["best_bid"])
-        let ask = Self.double(dict["best_ask"])
-        if bid != nil || ask != nil {
-            onTopOfBook?(asset, bid, ask)
-        }
-        if let bid, let ask, bid > 0, ask > 0 {
-            onPrice?(asset, (bid + ask) / 2, .quote)
-        }
-        // Do not fall back to `price` — on price_change that field is the book level touched.
-    }
-
-    private func parseLevels(_ raw: Any?, side: OrderBookLevel.Side) -> [OrderBookLevel] {
+    private nonisolated static func parseLevels(_ raw: Any?, side: OrderBookLevel.Side) -> [OrderBookLevel] {
         guard let rows = raw as? [[String: Any]] else { return [] }
-        return rows.compactMap { row in
-            guard let price = Self.double(row["price"]),
-                  let size = Self.double(row["size"]) else { return nil }
+        // Cap before sorting — full CLOB books can be huge and must stay off MainActor.
+        let limited = rows.prefix(64)
+        return limited.compactMap { row in
+            guard let price = double(row["price"]),
+                  let size = double(row["size"]) else { return nil }
             return OrderBookLevel(price: price, size: size, side: side)
         }
     }
 
-    private static func double(_ value: Any?) -> Double? {
+    private nonisolated static func double(_ value: Any?) -> Double? {
         if let d = value as? Double { return d }
         if let i = value as? Int { return Double(i) }
         if let s = value as? String { return Double(s) }
@@ -220,7 +265,7 @@ final class MarketWebSocket {
 
     private func setConnected(_ connected: Bool) {
         guard connected != isConnected else { return }
-        isConnected = connected
+        self.isConnected = connected
         onStatusChange?(connected)
     }
 }

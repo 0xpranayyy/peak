@@ -56,6 +56,7 @@ final class EventDetailViewModel: ObservableObject {
     private var loadGeneration = 0
     /// Coalesce quote-driven UI publishes (~150ms) so @Published doesn't thrash every tick.
     private var oddsFlushTask: Task<Void, Never>?
+    private var oddsFlushGeneration = 0
     private var pendingOddsSync = false
     private var pendingChartPin = false
     private var lastPublishedOdds: Double?
@@ -119,6 +120,7 @@ final class EventDetailViewModel: ObservableObject {
     }
 
     func onDisappear() {
+        oddsFlushGeneration += 1
         oddsFlushTask?.cancel()
         oddsFlushTask = nil
         socket.disconnect()
@@ -132,7 +134,9 @@ final class EventDetailViewModel: ObservableObject {
     func setInterval(_ interval: HistoryInterval) {
         historyInterval = interval
         Task {
-            await loadHistory()
+            let generation = loadGeneration
+            await loadHistory(generation: generation)
+            guard generation == loadGeneration else { return }
             pinChartTip()
         }
     }
@@ -159,8 +163,13 @@ final class EventDetailViewModel: ObservableObject {
         loadGeneration += 1
         let generation = loadGeneration
         clearQuoteState()
-        async let historyLoad: Void = loadHistory()
-        async let quotesLoad: Void = loadBookAndQuotes()
+        // Seed odds/chart from Gamma immediately so UI isn't blank while CLOB/WS catch up.
+        seedDisplayFromSelectedMarket()
+        // Live path must not wait on CLOB REST (book/history can stall for seconds).
+        reconnectSocket()
+
+        async let historyLoad: Void = loadHistory(generation: generation)
+        async let quotesLoad: Void = loadBookAndQuotes(generation: generation)
         _ = await (historyLoad, quotesLoad)
         guard generation == loadGeneration else { return }
         // Prefer CLOB history tip, then Gamma outcome price — never midpoint.
@@ -172,11 +181,11 @@ final class EventDetailViewModel: ObservableObject {
             }
         }
         pinChartTip()
-        reconnectSocket()
     }
 
     /// Drop prior-market quotes so wide-spread / mid logic cannot leak across selections.
     private func clearQuoteState() {
+        oddsFlushGeneration += 1
         oddsFlushTask?.cancel()
         oddsFlushTask = nil
         pendingOddsSync = false
@@ -198,51 +207,113 @@ final class EventDetailViewModel: ObservableObject {
         history = []
     }
 
-    private func loadHistory() async {
+    private func seedDisplayFromSelectedMarket() {
+        guard let seed = selectedMarket?.yesPrice, seed >= 0, seed <= 1 else { return }
+        lastTrade = seed
+        lastPublishedOdds = seed
+        pinChartTip()
+    }
+
+    private func loadHistory(generation: Int) async {
         guard let token = selectedMarket?.yesTokenID else {
             history = []
             return
         }
-        isChartLoading = history.isEmpty
+        isChartLoading = history.count <= 1
         defer { isChartLoading = false }
-        do {
-            let points = try await CLOBAPI.fetchPriceHistory(
+        let interval = historyInterval.rawValue
+        let fidelity = historyInterval.fidelity
+        let points = await fetchWithTimeout(seconds: 8, {
+            try await CLOBAPI.fetchPriceHistory(
                 tokenID: token,
-                interval: historyInterval.rawValue,
-                fidelity: historyInterval.fidelity
+                interval: interval,
+                fidelity: fidelity
             )
-            history = points
-        } catch {
-            // Keep prior chart on transient failures (cleared already on market switch).
-        }
+        })
+        guard generation == loadGeneration, let points, !points.isEmpty else { return }
+        history = points
     }
 
-    private func loadBookAndQuotes() async {
+    private func loadBookAndQuotes(generation: Int) async {
         guard let token = selectedMarket?.yesTokenID else { return }
-        async let bookTask = CLOBAPI.fetchBook(tokenID: token)
-        async let midTask = CLOBAPI.fetchMidpoint(tokenID: token)
-        async let spreadTask = CLOBAPI.fetchSpread(tokenID: token)
-        async let buyTask = CLOBAPI.fetchPrice(tokenID: token, side: "buy")
-        async let sellTask = CLOBAPI.fetchPrice(tokenID: token, side: "sell")
 
-        if let b = try? await bookTask {
-            applyBook(b, forYesToken: true)
+        // Book alone usually supplies bid/ask/mid/spread. Avoid 5 parallel CLOB calls
+        // that compete with Markets enrich and can stall on a congested host.
+        if let book = await fetchWithTimeout(seconds: 6, {
+            try await CLOBAPI.fetchBook(tokenID: token)
+        }) {
+            guard generation == loadGeneration else { return }
+            applyBook(book, forYesToken: true)
         }
 
-        let mid = try? await midTask
-        let spr = try? await spreadTask
-        let buy = try? await buyTask
-        let sell = try? await sellTask
+        guard generation == loadGeneration else { return }
+        let needPrices = bestBid == nil || bestAsk == nil
+        let needMid = midpoint == nil
+        let needSpread = spread == nil
+        guard needPrices || needMid || needSpread else {
+            syncMarketOddsFromQuotes()
+            lastPublishedOdds = displayedYesOdds
+            return
+        }
 
-        if let mid { midpoint = mid }
-        if let spr { spread = spr }
+        let gap = await withTaskGroup(of: QuoteBatch.self) { group in
+            group.addTask {
+                async let midTask: Double? = needMid ? (try? await CLOBAPI.fetchMidpoint(tokenID: token)) : nil
+                async let spreadTask: Double? = needSpread ? (try? await CLOBAPI.fetchSpread(tokenID: token)) : nil
+                async let buyTask: Double? = needPrices ? (try? await CLOBAPI.fetchPrice(tokenID: token, side: "buy")) : nil
+                async let sellTask: Double? = needPrices ? (try? await CLOBAPI.fetchPrice(tokenID: token, side: "sell")) : nil
+                return QuoteBatch(
+                    book: nil,
+                    mid: await midTask,
+                    spread: await spreadTask,
+                    buy: await buyTask,
+                    sell: await sellTask
+                )
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                return QuoteBatch(book: nil, mid: nil, spread: nil, buy: nil, sell: nil)
+            }
+            let first = await group.next()!
+            group.cancelAll()
+            return first
+        }
+
+        guard generation == loadGeneration else { return }
+
+        // Prefer REST values when present; don't clobber fresher WS top-of-book with nils.
+        if let mid = gap.mid { midpoint = mid }
+        if let spr = gap.spread { spread = spr }
         // CLOB /price?side=buy ≈ best ask (what you pay); side=sell ≈ best bid.
-        if let buy { bestAsk = buy }
-        if let sell { bestBid = sell }
-        // Never seed lastTrade from midpoint — that defeats the wide-spread rule.
+        if let buy = gap.buy { bestAsk = buy }
+        if let sell = gap.sell { bestBid = sell }
 
         syncMarketOddsFromQuotes()
         lastPublishedOdds = displayedYesOdds
+    }
+
+    private func fetchWithTimeout<T: Sendable>(
+        seconds: Double,
+        _ work: @escaping @Sendable () async throws -> T
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { try? await work() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next()!
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private struct QuoteBatch: Sendable {
+        let book: OrderBook?
+        let mid: Double?
+        let spread: Double?
+        let buy: Double?
+        let sell: Double?
     }
 
     /// Pin live display odds onto the chart tip so the line matches the odds chip.
@@ -319,18 +390,20 @@ final class EventDetailViewModel: ObservableObject {
         if syncEvent { pendingOddsSync = true }
         if pinChart { pendingChartPin = true }
         guard oddsFlushTask == nil else { return }
+        let generation = oddsFlushGeneration
         oddsFlushTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
-            guard !Task.isCancelled else {
-                oddsFlushTask = nil
-                return
+            defer {
+                if oddsFlushGeneration == generation {
+                    oddsFlushTask = nil
+                }
             }
+            guard !Task.isCancelled, oddsFlushGeneration == generation else { return }
             flushStagedQuotes()
             let shouldSync = pendingOddsSync
             let shouldPin = pendingChartPin
             pendingOddsSync = false
             pendingChartPin = false
-            oddsFlushTask = nil
             if shouldSync { syncMarketOddsFromQuotes() }
             if shouldPin { pinChartTip() }
         }
