@@ -46,6 +46,8 @@ struct PeakApp: App {
                 await privyAuth.start()
             }
             .task {
+                // Let Markets tab own the first Gamma fetch; warming is best-effort backup.
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 await MarketsCache.shared.warmTrending()
             }
             .task {

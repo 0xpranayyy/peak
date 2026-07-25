@@ -19,16 +19,20 @@ final class MarketsViewModel: ObservableObject {
     private var prefetchTask: Task<Void, Never>?
     private var oddsTask: Task<Void, Never>?
     private var didWarmRelated = false
+    /// True only after a bootstrap attempt finishes (success, empty page, or hard error).
     private var didBootstrap = false
+    /// Bumped on every load so cancelled tasks cannot clear a newer load's flags.
+    private var loadGeneration = 0
 
     private var cacheKey: String {
         MarketsCache.key(sort: sort, categorySlug: selectedCategory?.slug)
     }
 
-    func onAppear() {
+    func bootstrapIfNeeded() async {
+        // Single-flight: `.task` awaits this before digest so Gamma isn't stampeded.
         guard !didBootstrap else { return }
         didBootstrap = true
-        Task { await bootstrap() }
+        await bootstrap()
     }
 
     func selectCategory(_ category: MarketCategory?) {
@@ -51,7 +55,10 @@ final class MarketsViewModel: ObservableObject {
             isLoading = true
         }
         await refresh(reset: true, userInitiated: false)
-        warmRelatedCategories()
+        // Only warm related after the primary feed has a chance to paint.
+        if !events.isEmpty || errorMessage == nil {
+            warmRelatedCategories()
+        }
     }
 
     private func switchFeed() async {
@@ -79,7 +86,15 @@ final class MarketsViewModel: ObservableObject {
     }
 
     func refresh(reset: Bool, userInitiated: Bool) async {
+        // Guard load-more BEFORE cancelling — otherwise a row `.task` can abort the
+        // in-flight bootstrap/reset and leave the list empty with no replacement fetch.
+        if !reset {
+            guard canLoadMore, !isLoadingMore, !isLoading, !isRefreshing else { return }
+        }
+
         loadTask?.cancel()
+        loadGeneration += 1
+        let generation = loadGeneration
 
         if reset {
             offset = 0
@@ -94,7 +109,6 @@ final class MarketsViewModel: ObservableObject {
                 isRefreshing = true
             }
         } else {
-            guard canLoadMore, !isLoadingMore, !isLoading else { return }
             isLoadingMore = true
         }
 
@@ -105,6 +119,7 @@ final class MarketsViewModel: ObservableObject {
         let forceFresh = userInitiated && reset
 
         loadTask = Task {
+            var didApplyPage = false
             do {
                 let page: (events: [PeakEvent], canLoadMore: Bool)
                 if let category {
@@ -124,7 +139,7 @@ final class MarketsViewModel: ObservableObject {
                         forceFresh: forceFresh
                     )
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, generation == loadGeneration else { return }
 
                 if reset {
                     events = page.events
@@ -132,6 +147,7 @@ final class MarketsViewModel: ObservableObject {
                     // Prefer server page fullness so dropping a few stale rows doesn't stall pagination.
                     canLoadMore = page.canLoadMore
                     await MarketsCache.shared.store(page.events, canLoadMore: canLoadMore, for: key)
+                    guard generation == loadGeneration else { return }
                     prefetchNextPageIfNeeded()
                     enrichDisplayOdds(for: page.events, replace: true)
                 } else {
@@ -142,17 +158,24 @@ final class MarketsViewModel: ObservableObject {
                     canLoadMore = page.canLoadMore
                     enrichDisplayOdds(for: fresh, replace: false)
                 }
+                didApplyPage = true
                 errorMessage = nil
             } catch is CancellationError {
-                // ignore
+                // ignore — a newer generation owns loading flags
             } catch {
+                guard generation == loadGeneration else { return }
                 if reset && events.isEmpty {
                     errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t load markets. Try again.")
                 }
             }
+            guard generation == loadGeneration else { return }
             isLoading = false
             isRefreshing = false
             isLoadingMore = false
+            // Cancelled first paint with nothing shown — allow a later `.task` / retry.
+            if reset, !didApplyPage, events.isEmpty, errorMessage == nil {
+                didBootstrap = false
+            }
         }
         await loadTask?.value
     }
@@ -278,20 +301,27 @@ final class MarketsViewModel: ObservableObject {
             displayOdds = merged
         }
 
-        // Always cancel prior enrich — digest/rail + list can otherwise stack unbounded CLOB work.
-        oddsTask?.cancel()
-        let keepIDs = Set(page.map(\.id))
-        let replaceSnapshot = replace
-        oddsTask = Task(priority: .utility) {
-            let updates = await Self.computeEnrichedOdds(targets: targets)
-            guard !Task.isCancelled else { return }
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard !Task.isCancelled else { return }
-            if replaceSnapshot {
+        // List refresh (replace) single-flights CLOB enrich. Digest/rail merges must NOT
+        // cancel an in-flight list enrich — stacking both after dce99e6 could cancel the
+        // only useful enrich and pile onto the same CLOB host as Markets bootstrap.
+        if replace {
+            oddsTask?.cancel()
+            let keepIDs = Set(page.map(\.id))
+            oddsTask = Task(priority: .utility) {
+                let updates = await Self.computeEnrichedOdds(targets: targets)
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled else { return }
                 var next = displayOdds.filter { keepIDs.contains($0.key) }
                 next.merge(updates) { _, new in new }
                 displayOdds = next
-            } else {
+            }
+        } else {
+            Task(priority: .utility) {
+                let updates = await Self.computeEnrichedOdds(targets: targets)
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled else { return }
                 displayOdds.merge(updates) { _, new in new }
             }
         }
@@ -417,10 +447,12 @@ struct MarketsView: View {
             .refreshable {
                 await model.refresh(reset: true, userInitiated: true)
                 await digest.refreshMovers(interests: categoryPrefs.interestedCategories)
+                model.ensureDisplayOdds(for: digest.movers)
                 PeakHaptics.refresh()
             }
-            .onAppear { model.onAppear() }
+            // Primary Gamma bootstrap first; digest waits so it cannot starve the list fetch.
             .task {
+                await model.bootstrapIfNeeded()
                 await digest.refreshMovers(interests: categoryPrefs.interestedCategories)
                 model.ensureDisplayOdds(for: digest.movers)
             }

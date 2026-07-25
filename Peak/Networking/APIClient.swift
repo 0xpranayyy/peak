@@ -34,7 +34,7 @@ actor APIClient {
             config.timeoutIntervalForRequest = 12
             config.timeoutIntervalForResource = 20
             config.waitsForConnectivity = false
-            config.httpMaximumConnectionsPerHost = 8
+            config.httpMaximumConnectionsPerHost = 12
             config.requestCachePolicy = .useProtocolCachePolicy
             config.urlCache = URLCache(
                 memoryCapacity: 25 * 1024 * 1024,

@@ -59,7 +59,8 @@ final class MarketWebSocket {
     private(set) var isConnected = false
 
     /// Coalesce off MainActor; only the flush hops back.
-    private let pending = OSAllocatedUnfairLock(initialState: PendingBuffer())
+    /// nonisolated(unsafe): lock is thread-safe; background parse tasks must not hop MainActor.
+    nonisolated(unsafe) private let pending = OSAllocatedUnfairLock(initialState: PendingBuffer())
 
     var onPrice: ((String, Double, PriceKind) -> Void)?
     var onBook: ((String, OrderBook) -> Void)?

@@ -37,16 +37,18 @@ final class DailyDigestStore: ObservableObject {
         defer { isLoading = false }
 
         var collected: [PeakEvent] = []
-        let categories = interests.isEmpty ? Array(MarketCategory.allCases.prefix(4)) : interests
+        // Cap categories AND avoid alternate-slug storms — Markets list owns the host budget.
+        let categories = Array((interests.isEmpty ? Array(MarketCategory.allCases.prefix(3)) : interests).prefix(3))
 
         await withTaskGroup(of: [PeakEvent].self) { group in
-            for category in categories.prefix(4) {
+            for category in categories {
                 group.addTask {
+                    // Primary slug only — alternate retries are for explicit category taps.
                     (try? await GammaAPI.fetchEvents(
-                        category: category,
                         limit: 8,
                         offset: 0,
-                        sort: .trending
+                        sort: .trending,
+                        tagSlug: category.slug
                     )) ?? []
                 }
             }
