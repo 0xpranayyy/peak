@@ -21,6 +21,10 @@ final class WalletStore: ObservableObject {
             clear()
             return
         }
+        // Setup/import saves the same address repeatedly — skip Keychain + @Published churn.
+        if address?.lowercased() == trimmed.lowercased() {
+            return
+        }
         Self.save(trimmed, service: service, account: account)
         address = trimmed
     }

@@ -83,6 +83,7 @@ final class PeakProfileStore: ObservableObject {
     private let cacheKey = "peak.profile.cache.v1"
     private var lastFetchKey: String?
     private var inFlight: Task<Void, Never>?
+    private var inFlightKey: String?
 
     init() {
         if let data = UserDefaults.standard.data(forKey: cacheKey),
@@ -108,6 +109,7 @@ final class PeakProfileStore: ObservableObject {
     func clear() {
         inFlight?.cancel()
         inFlight = nil
+        inFlightKey = nil
         lastFetchKey = nil
         profile = nil
         UserDefaults.standard.removeObject(forKey: cacheKey)
@@ -137,24 +139,37 @@ final class PeakProfileStore: ObservableObject {
 
         let fetchKey = candidates.map { $0.lowercased() }.joined(separator: "|")
         if !force, fetchKey == lastFetchKey, profile != nil { return }
+        // Same key already loading — don't cancel/restart (sign-in + portfolio both refresh).
+        if inFlight != nil, inFlightKey == fetchKey, !force { return }
 
         inFlight?.cancel()
+        inFlightKey = fetchKey
         inFlight = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if self.inFlightKey == fetchKey {
+                    self.inFlight = nil
+                    self.inFlightKey = nil
+                }
+            }
             await self.load(candidates: candidates, fetchKey: fetchKey)
         }
     }
 
     private func load(candidates: [String], fetchKey: String) async {
-        isLoading = true
-        defer { isLoading = false }
+        // Only flash loading when we have nothing to show (avoids app-wide envObject thrash).
+        let showLoading = profile == nil
+        if showLoading { isLoading = true }
+        defer { if showLoading { isLoading = false } }
 
         for address in candidates {
             if Task.isCancelled { return }
             do {
                 if let next = try await GammaAPI.fetchPublicProfile(address: address), next.hasIdentity {
-                    profile = next
-                    persist(next)
+                    if profile != next {
+                        profile = next
+                        persist(next)
+                    }
                     lastFetchKey = fetchKey
                     return
                 }

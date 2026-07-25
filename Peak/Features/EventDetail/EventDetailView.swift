@@ -379,8 +379,8 @@ final class EventDetailViewModel: ObservableObject {
         case .lastTrade:
             stagedLastTrade = yesImplied
             hasStagedQuotes = true
-            appendLiveChartPoint(yesImplied)
-            scheduleOddsUIUpdate(syncEvent: true, pinChart: false)
+            // Chart tip is flushed with quotes (~150ms) — avoid history @Published every tick.
+            scheduleOddsUIUpdate(syncEvent: true, pinChart: true)
         case .quote:
             stagedMidpoint = yesImplied
             hasStagedQuotes = true
@@ -389,17 +389,6 @@ final class EventDetailViewModel: ObservableObject {
 
         PriceAlertMonitor.shared.handleLivePrice(tokenID: asset, price: price)
         PeakHaptics.oddsMove(tokenID: asset, price: price)
-    }
-
-    private func appendLiveChartPoint(_ price: Double) {
-        let now = Int(Date().timeIntervalSince1970)
-        if let last = history.last, now - last.timestamp < 2 {
-            var copy = history
-            copy[copy.count - 1] = PricePoint(timestamp: now, price: price)
-            history = copy
-        } else {
-            history.append(PricePoint(timestamp: now, price: price))
-        }
     }
 
     func buyPrice(isYes: Bool) -> Double {

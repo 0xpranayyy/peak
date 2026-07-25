@@ -19,12 +19,15 @@ final class MarketsViewModel: ObservableObject {
     private var prefetchTask: Task<Void, Never>?
     private var oddsTask: Task<Void, Never>?
     private var didWarmRelated = false
+    private var didBootstrap = false
 
     private var cacheKey: String {
         MarketsCache.key(sort: sort, categorySlug: selectedCategory?.slug)
     }
 
     func onAppear() {
+        guard !didBootstrap else { return }
+        didBootstrap = true
         Task { await bootstrap() }
     }
 
@@ -267,7 +270,10 @@ final class MarketsViewModel: ObservableObject {
         let work = Task(priority: .utility) {
             var updates: [String: Double] = [:]
             await withTaskGroup(of: (String, Double).self) { group in
-                for target in targets {
+                var iterator = targets.makeIterator()
+                let maxConcurrent = 6
+                for _ in 0..<min(maxConcurrent, targets.count) {
+                    guard let target = iterator.next() else { break }
                     group.addTask {
                         let m = try? await CLOBAPI.fetchMidpoint(tokenID: target.tokenID)
                         let s = try? await CLOBAPI.fetchSpread(tokenID: target.tokenID)
@@ -282,6 +288,19 @@ final class MarketsViewModel: ObservableObject {
                 }
                 for await item in group {
                     updates[item.0] = item.1
+                    if let target = iterator.next() {
+                        group.addTask {
+                            let m = try? await CLOBAPI.fetchMidpoint(tokenID: target.tokenID)
+                            let s = try? await CLOBAPI.fetchSpread(tokenID: target.tokenID)
+                            let value = PeakTradeStyle.displayedOdds(
+                                mid: m,
+                                spread: s,
+                                lastTrade: target.fallback,
+                                fallback: target.fallback
+                            )
+                            return (target.eventID, value)
+                        }
+                    }
                 }
             }
             guard !Task.isCancelled else { return }

@@ -15,6 +15,8 @@ final class PortfolioViewModel: ObservableObject {
     @Published var statusBanner: String?
     @Published var needsImportWallet = false
 
+    private var loadGeneration = 0
+
     var totalValue: Double {
         reportedValue ?? positions.reduce(0) { $0 + $1.currentValue }
     }
@@ -41,15 +43,32 @@ final class PortfolioViewModel: ObservableObject {
         }
     }
 
-    func load(env: AppEnvironment) async {
-        isLoading = true
-        defer { isLoading = false }
+    /// Sign-in / import flips auth + wallet several times — coalesce into one fetch.
+    func load(env: AppEnvironment, debounceNanoseconds: UInt64 = 0) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        if debounceNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: debounceNanoseconds)
+        }
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        await performLoad(env: env, generation: generation)
+    }
+
+    private func performLoad(env: AppEnvironment, generation: Int) async {
+        let showSpinner = isEmpty && cash == nil
+        if showSpinner { isLoading = true }
+        defer {
+            if generation == loadGeneration, showSpinner {
+                isLoading = false
+            }
+        }
         statusBanner = nil
         needsImportWallet = false
 
         if env.tradingConfig.isConfigured || (PrivyAuthService.shared.isAuthenticated && env.tradingConfig.hasBackendURL) {
             do {
                 let snap = try await env.trading.fetchTradingPortfolio()
+                guard generation == loadGeneration else { return }
                 usingTradingProxy = true
                 positions = snap.positions
                 activity = snap.activity
@@ -85,6 +104,7 @@ final class PortfolioViewModel: ObservableObject {
                 }
                 return
             } catch {
+                guard generation == loadGeneration else { return }
                 // Fall through to public wallet lookup if proxy fails.
                 statusBanner = "Couldn’t load live portfolio. Showing public data."
                 usingTradingProxy = false
@@ -98,6 +118,7 @@ final class PortfolioViewModel: ObservableObject {
         }
 
         guard env.wallet.isValid, let address = env.wallet.address else {
+            guard generation == loadGeneration else { return }
             positions = []
             activity = []
             openOrders = []
@@ -108,10 +129,14 @@ final class PortfolioViewModel: ObservableObject {
         do {
             async let positionsTask = DataAPI.fetchPositions(wallet: address)
             async let activityTask = DataAPI.fetchActivity(wallet: address, limit: 20)
-            positions = try await positionsTask
-            activity = (try? await activityTask) ?? []
+            let nextPositions = try await positionsTask
+            let nextActivity = (try? await activityTask) ?? []
+            guard generation == loadGeneration else { return }
+            positions = nextPositions
+            activity = nextActivity
             errorMessage = nil
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t load portfolio. Try again.")
         }
     }
@@ -285,10 +310,11 @@ struct PortfolioView: View {
                     primary: auth.walletAddress ?? env.wallet.address,
                     secondary: tradingPath.snapshot.accountWallet ?? model.funder
                 )
-                await model.load(env: env)
+                // Auth/import flips this id several times — coalesce into one portfolio fetch.
+                await model.load(env: env, debounceNanoseconds: 280_000_000)
             }
             .onReceive(NotificationCenter.default.publisher(for: .peakTradingPortfolioShouldRefresh)) { _ in
-                Task { await model.load(env: env) }
+                Task { await model.load(env: env, debounceNanoseconds: 120_000_000) }
             }
             .refreshable {
                 await model.load(env: env)

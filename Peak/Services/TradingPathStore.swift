@@ -209,7 +209,10 @@ final class TradingPathStore: ObservableObject {
         if let rawMessage = server["message"] as? String {
             next.message = PeakUserCopy.accountStatus(rawMessage)
         }
-        snapshot = next
+        // Avoid objectWillChange storms during multi-step sync/import.
+        if next != snapshot {
+            snapshot = next
+        }
         if next.imported || next.path != nil {
             needsPathChoice = false
         }
