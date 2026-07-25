@@ -76,6 +76,8 @@ enum GammaAPI {
         let image: String?
         let icon: String?
         let events: [GammaEventLiteDTO]?
+        let bestBid: FlexibleDouble?
+        let bestAsk: FlexibleDouble?
 
         func asMarket(eventId: String? = nil, eventTitle: String? = nil) -> Market? {
             guard let id, let question else { return nil }
@@ -84,6 +86,14 @@ enum GammaAPI {
             let outcomes = self.outcomes?.values ?? ["Yes", "No"]
             let lite = events?.first
             let isArchived = archived == true
+            let bid: Double? = {
+                guard let v = bestBid?.value, v >= 0, v <= 1 else { return nil }
+                return v
+            }()
+            let ask: Double? = {
+                guard let v = bestAsk?.value, v >= 0, v <= 1 else { return nil }
+                return v
+            }()
             return Market(
                 id: id,
                 question: question,
@@ -101,7 +111,9 @@ enum GammaAPI {
                 closed: isArchived ? true : (closed ?? false),
                 eventId: eventId ?? lite?.id,
                 eventTitle: eventTitle ?? lite?.title,
-                imageURL: (image ?? icon).flatMap(URL.init(string:))
+                imageURL: (image ?? icon).flatMap(URL.init(string:)),
+                gammaBestBid: bid,
+                gammaBestAsk: ask
             )
         }
 

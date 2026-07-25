@@ -54,6 +54,9 @@ struct Market: Identifiable, Hashable, Codable, Sendable {
     let eventId: String?
     let eventTitle: String?
     let imageURL: URL?
+    /// Gamma top-of-book hints (optional) — used when CLOB/WS are unavailable.
+    var gammaBestBid: Double? = nil
+    var gammaBestAsk: Double? = nil
 
     /// Open for showcase / trading feeds (detail may still load closed markets).
     var isShowcaseEligible: Bool { MarketShowcase.isLive(self) }

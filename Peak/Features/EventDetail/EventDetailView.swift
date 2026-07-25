@@ -208,10 +208,51 @@ final class EventDetailViewModel: ObservableObject {
     }
 
     private func seedDisplayFromSelectedMarket() {
-        guard let seed = selectedMarket?.yesPrice, seed >= 0, seed <= 1 else { return }
+        guard let market = selectedMarket else { return }
+        let seed = market.yesPrice
+        guard seed >= 0, seed <= 1 else { return }
         lastTrade = seed
         lastPublishedOdds = seed
+        midpoint = midpoint ?? seed
+        applyGammaQuoteFallback(from: market, force: true)
         pinChartTip()
+    }
+
+    /// When CLOB/WS leave Bid/Ask empty, surface Gamma top-of-book or mid so UI isn't stuck on "—".
+    private func applyGammaQuoteFallback(from market: Market? = nil, force: Bool = false) {
+        let market = market ?? selectedMarket
+        guard let market else { return }
+        let mid = market.yesPrice
+        guard mid >= 0, mid <= 1 else { return }
+
+        let gammaBid = market.gammaBestBid
+        let gammaAsk = market.gammaBestAsk
+
+        if force || bestBid == nil {
+            if let gammaBid {
+                bestBid = gammaBid
+            } else if let gammaAsk {
+                // One-sided Gamma quote — mirror a 1¢ touch around mid when possible.
+                bestBid = min(mid, max(0.01, gammaAsk - 0.01))
+            } else {
+                bestBid = mid
+            }
+        }
+        if force || bestAsk == nil {
+            if let gammaAsk {
+                bestAsk = gammaAsk
+            } else if let gammaBid {
+                bestAsk = max(mid, min(0.99, gammaBid + 0.01))
+            } else {
+                bestAsk = mid
+            }
+        }
+        if force || spread == nil, let bid = bestBid, let ask = bestAsk {
+            spread = max(0, ask - bid)
+        }
+        if force || midpoint == nil {
+            midpoint = mid
+        }
     }
 
     private func loadHistory(generation: Int) async {
@@ -287,6 +328,9 @@ final class EventDetailViewModel: ObservableObject {
         // CLOB /price?side=buy ≈ best ask (what you pay); side=sell ≈ best bid.
         if let buy = gap.buy { bestAsk = buy }
         if let sell = gap.sell { bestBid = sell }
+
+        // CLOB/WS may still be empty — never leave Bid/Ask as "—" when Gamma mid exists.
+        applyGammaQuoteFallback(force: false)
 
         syncMarketOddsFromQuotes()
         lastPublishedOdds = displayedYesOdds
@@ -696,7 +740,7 @@ struct EventDetailView: View {
                 .textCase(.uppercase)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                LazyHStack(spacing: 8) {
                     ForEach(markets) { market in
                         let selected = market.id == model.selectedMarket?.id
                         Button {
@@ -750,7 +794,7 @@ struct EventDetailView: View {
             }
         }
         .peakContentCard()
-        .animation(PeakMotion.soft, value: model.displayedYesOdds)
+        .animation(reduceMotion ? nil : PeakMotion.soft, value: model.displayedYesOdds)
     }
 
     private var metricDivider: some View {

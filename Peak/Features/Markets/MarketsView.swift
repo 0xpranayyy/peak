@@ -262,64 +262,104 @@ final class MarketsViewModel: ObservableObject {
         }
         guard !targets.isEmpty else { return }
 
+        // Show Gamma mid immediately so the list never waits on CLOB for first paint.
+        if replace {
+            var seeded: [String: Double] = [:]
+            seeded.reserveCapacity(targets.count)
+            for target in targets {
+                seeded[target.eventID] = target.fallback
+            }
+            displayOdds = seeded
+        } else {
+            var merged = displayOdds
+            for target in targets where merged[target.eventID] == nil {
+                merged[target.eventID] = target.fallback
+            }
+            displayOdds = merged
+        }
+
         // Digest/rail merges must not cancel an in-flight list enrich.
         if replace {
             oddsTask?.cancel()
         }
 
+        // Network work runs in a nonisolated helper so the @MainActor view model
+        // only resumes once for the final merge (not after every CLOB response).
         let work = Task(priority: .utility) {
-            var updates: [String: Double] = [:]
-            await withTaskGroup(of: (String, Double).self) { group in
-                var iterator = targets.makeIterator()
-                let maxConcurrent = 6
-                for _ in 0..<min(maxConcurrent, targets.count) {
-                    guard let target = iterator.next() else { break }
-                    group.addTask {
-                        let m = try? await CLOBAPI.fetchMidpoint(tokenID: target.tokenID)
-                        let s = try? await CLOBAPI.fetchSpread(tokenID: target.tokenID)
-                        let value = PeakTradeStyle.displayedOdds(
-                            mid: m,
-                            spread: s,
-                            lastTrade: target.fallback,
-                            fallback: target.fallback
-                        )
-                        return (target.eventID, value)
-                    }
-                }
-                for await item in group {
-                    updates[item.0] = item.1
-                    if let target = iterator.next() {
-                        group.addTask {
-                            let m = try? await CLOBAPI.fetchMidpoint(tokenID: target.tokenID)
-                            let s = try? await CLOBAPI.fetchSpread(tokenID: target.tokenID)
-                            let value = PeakTradeStyle.displayedOdds(
-                                mid: m,
-                                spread: s,
-                                lastTrade: target.fallback,
-                                fallback: target.fallback
-                            )
-                            return (target.eventID, value)
-                        }
-                    }
-                }
-            }
+            let updates = await Self.computeEnrichedOdds(targets: targets)
             guard !Task.isCancelled else { return }
-            // Coalesce UI publish onto MainActor in one merge pass.
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
             let keepIDs = Set(page.map(\.id))
-            await MainActor.run {
-                if replace {
-                    var next = displayOdds.filter { keepIDs.contains($0.key) }
-                    next.merge(updates) { _, new in new }
-                    displayOdds = next
-                } else {
-                    displayOdds.merge(updates) { _, new in new }
-                }
+            if replace {
+                var next = displayOdds.filter { keepIDs.contains($0.key) }
+                next.merge(updates) { _, new in new }
+                displayOdds = next
+            } else {
+                displayOdds.merge(updates) { _, new in new }
             }
         }
         if replace {
             oddsTask = work
+        }
+    }
+
+    private nonisolated static func computeEnrichedOdds(
+        targets: [(eventID: String, tokenID: String, fallback: Double)]
+    ) async -> [String: Double] {
+        var updates: [String: Double] = [:]
+        updates.reserveCapacity(targets.count)
+        await withTaskGroup(of: (String, Double).self) { group in
+            var iterator = targets.makeIterator()
+            let maxConcurrent = 4
+            for _ in 0..<min(maxConcurrent, targets.count) {
+                guard let target = iterator.next() else { break }
+                group.addTask { await fetchEnrichedOdds(target) }
+            }
+            for await item in group {
+                updates[item.0] = item.1
+                if let target = iterator.next() {
+                    group.addTask { await fetchEnrichedOdds(target) }
+                }
+            }
+        }
+        return updates
+    }
+
+    private nonisolated static func fetchEnrichedOdds(
+        _ target: (eventID: String, tokenID: String, fallback: Double)
+    ) async -> (String, Double) {
+        async let mid = cappedClobDouble {
+            try await CLOBAPI.fetchMidpoint(tokenID: target.tokenID)
+        }
+        async let spread = cappedClobDouble {
+            try await CLOBAPI.fetchSpread(tokenID: target.tokenID)
+        }
+        let value = PeakTradeStyle.displayedOdds(
+            mid: await mid,
+            spread: await spread,
+            lastTrade: target.fallback,
+            fallback: target.fallback
+        )
+        return (target.eventID, value)
+    }
+
+    private nonisolated static func cappedClobDouble(
+        seconds: Double = 4,
+        _ work: @escaping @Sendable () async throws -> Double?
+    ) async -> Double? {
+        await withTaskGroup(of: Double?.self) { group in
+            group.addTask {
+                do { return try await work() }
+                catch { return nil }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next()!
+            group.cancelAll()
+            return first
         }
     }
 }
