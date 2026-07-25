@@ -1,6 +1,14 @@
 import Foundation
 import os
 
+/// Caps shared by MainActor and background parse/coalesce (must stay nonisolated).
+private enum MarketWebSocketLimits {
+    static let uiFlushIntervalNanoseconds: UInt64 = 80_000_000
+    static let maxReconnectDelaySeconds: Double = 20
+    static let maxBookDepth = 8
+    static let maxBookParseLevels = 48
+}
+
 /// Live prices via Polymarket's public CLOB Market WebSocket channel.
 /// Subscribes with `assets_ids` and sends `PING` every 10 seconds.
 ///
@@ -41,12 +49,6 @@ final class MarketWebSocket {
         var flushScheduled = false
     }
 
-    /// UI publish hard-cap (~12 Hz). Busy books emit far faster than SwiftUI can absorb.
-    private static let uiFlushIntervalNanoseconds: UInt64 = 80_000_000
-    private static let maxReconnectDelaySeconds: Double = 20
-    private static let maxBookDepth = 8
-    private static let maxBookParseLevels = 48
-
     private var task: URLSessionWebSocketTask?
     private var assetIDs: [String] = []
     private var pingTimer: Timer?
@@ -57,7 +59,7 @@ final class MarketWebSocket {
     private(set) var isConnected = false
 
     /// Coalesce off MainActor; only the flush hops back.
-    nonisolated(unsafe) private let pending = OSAllocatedUnfairLock(initialState: PendingBuffer())
+    private let pending = OSAllocatedUnfairLock(initialState: PendingBuffer())
 
     var onPrice: ((String, Double, PriceKind) -> Void)?
     var onBook: ((String, OrderBook) -> Void)?
@@ -171,8 +173,7 @@ final class MarketWebSocket {
 
     /// Merge into the lock-backed buffer on the caller’s thread (utility), then arm one MainActor flush.
     nonisolated private func enqueueOffMain(_ events: [ParsedEvent], generation: Int) {
-        var shouldSchedule = false
-        pending.withLock { buffer in
+        let shouldSchedule = pending.withLock { buffer -> Bool in
             for event in events {
                 switch event {
                 case let .lastTrade(asset, price):
@@ -202,15 +203,14 @@ final class MarketWebSocket {
                     buffer.assets[asset] = row
                 }
             }
-            if !buffer.flushScheduled {
-                buffer.flushScheduled = true
-                shouldSchedule = true
-            }
+            guard !buffer.flushScheduled else { return false }
+            buffer.flushScheduled = true
+            return true
         }
 
         guard shouldSchedule else { return }
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.uiFlushIntervalNanoseconds)
+            try? await Task.sleep(nanoseconds: MarketWebSocketLimits.uiFlushIntervalNanoseconds)
             self?.flushPending(generation: generation)
         }
     }
@@ -285,8 +285,8 @@ final class MarketWebSocket {
                     let asks = parseLevels(event["asks"], side: .ask)
                         .sorted { $0.price < $1.price }
                     let trimmed = OrderBook(
-                        bids: Array(bids.prefix(Self.maxBookDepth)),
-                        asks: Array(asks.prefix(Self.maxBookDepth))
+                        bids: Array(bids.prefix(MarketWebSocketLimits.maxBookDepth)),
+                        asks: Array(asks.prefix(MarketWebSocketLimits.maxBookDepth))
                     )
                     let bestBid = trimmed.bestBid
                     let bestAsk = trimmed.bestAsk
@@ -312,7 +312,7 @@ final class MarketWebSocket {
     private nonisolated static func parseLevels(_ raw: Any?, side: OrderBookLevel.Side) -> [OrderBookLevel] {
         guard let rows = raw as? [[String: Any]] else { return [] }
         // Cap before sorting — full CLOB books can be huge and must stay off MainActor.
-        let limited = rows.prefix(Self.maxBookParseLevels)
+        let limited = rows.prefix(MarketWebSocketLimits.maxBookParseLevels)
         return limited.compactMap { row in
             guard let price = double(row["price"]),
                   let size = double(row["size"]) else { return nil }
@@ -344,7 +344,7 @@ final class MarketWebSocket {
         reconnectAttempts += 1
         // Cap backoff so a flapping socket cannot stack reconnect Tasks forever.
         let cappedAttempt = min(reconnectAttempts, 6)
-        let delay = min(Self.maxReconnectDelaySeconds, pow(2.0, Double(cappedAttempt)))
+        let delay = min(MarketWebSocketLimits.maxReconnectDelaySeconds, pow(2.0, Double(cappedAttempt)))
         let generation = receiveGeneration
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
