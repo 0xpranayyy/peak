@@ -102,7 +102,9 @@ export async function createRelayClient(walletClient, cfg) {
 
 /** @param {string} privateKeyHex @param {string|undefined} rpcUrl */
 export function walletFromPrivateKey(privateKeyHex, rpcUrl) {
-  const account = privateKeyToAccount(privateKeyHex);
+  const raw = String(privateKeyHex || "").trim();
+  const normalized = raw.startsWith("0x") ? raw : `0x${raw}`;
+  const account = privateKeyToAccount(/** @type {`0x${string}`} */ (normalized));
   return createWalletClient({
     account,
     chain: polygon,

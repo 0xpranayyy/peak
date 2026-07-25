@@ -67,10 +67,16 @@ final class PortfolioViewModel: ObservableObject {
                     primary: PrivyAuthService.shared.walletAddress ?? snap.funder ?? env.wallet.address,
                     secondary: TradingPathStore.shared.snapshot.accountWallet ?? snap.funder
                 )
-                needsImportWallet = !TradingPathStore.shared.snapshot.imported
-                    && (snap.needsImport
-                        || TradingPathStore.shared.snapshot.needsImport
-                        || PeakUserCopy.isImportWalletMessage(snap.cashError ?? ""))
+                needsImportWallet = snap.needsImport
+                    || TradingPathStore.shared.snapshot.needsImport
+                    || PeakUserCopy.isImportWalletMessage(snap.cashError ?? "")
+                    || ((snap.cashErrorCode ?? "").lowercased() == "import_wallet_required")
+                if needsImportWallet {
+                    TradingPathStore.shared.apply(server: [
+                        "needsImport": true,
+                        "cashErrorCode": snap.cashErrorCode ?? "import_wallet_required",
+                    ])
+                }
                 if snap.cash == nil, let cashError = snap.cashError, !cashError.isEmpty {
                     statusBanner = PeakUserCopy.sanitizeOrderOrServerCopy(
                         cashError,

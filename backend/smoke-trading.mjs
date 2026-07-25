@@ -58,12 +58,20 @@ assert(!authFail.error.includes("401"), "no status code in copy");
 assert(!authFail.error.includes("{"), "no raw JSON in auth copy");
 assert(authFail.error.toLowerCase().includes("authorize"), "auth copy mentions authorize");
 
+const invalidJwt = mapOrderError('400 {"error":"Invalid JWT token provided","code":"invalid_data"}');
+assert(invalidJwt.code === "wallet_auth_failed", "Invalid JWT → wallet_auth_failed");
+assert(!invalidJwt.error.toLowerCase().includes("jwt"), "no jwt jargon in copy");
+assert(!invalidJwt.error.includes("{"), "no raw JSON for Invalid JWT");
+
 const cashAuth = mapCashError({
   code: "wallet_auth_failed",
   message: "No valid authorization keys or user signing keys available",
 });
 assert(cashAuth.cashErrorCode === "wallet_auth_failed", "cash wallet_auth_failed");
 assert(!cashAuth.cashError.includes("{"), "cash auth copy not JSON");
+
+const cashJwt = mapCashError({ message: '400 {"error":"Invalid JWT token provided","code":"invalid_data"}' });
+assert(cashJwt.cashErrorCode === "wallet_auth_failed", "cash Invalid JWT");
 
 const ctxBoth = buildAuthorizationContext({ authorizationKey: "k", userJwt: "jwt" });
 assert(ctxBoth.user_jwts?.[0] === "jwt", "auto prefers jwt alone");

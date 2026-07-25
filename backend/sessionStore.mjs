@@ -47,6 +47,9 @@ const PERSIST_KEYS = [
   "needsDeploy",
   "imported",
   "walletId",
+  // AES-GCM blob of the imported ethereum key (server already received it at import).
+  // Used for local viem signing — Privy user_jwts exchange rejects SIWE access tokens.
+  "encSigningKey",
 ];
 
 function toPersistable(session) {

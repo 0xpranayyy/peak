@@ -488,10 +488,10 @@ struct TradeStubSheet: View {
     }
 
     private var shouldOfferImport: Bool {
-        guard tradingPath.shouldOfferImport else { return false }
-        if tradingPath.snapshot.needsImport { return true }
+        if tradingPath.snapshot.needsImport || tradingPath.shouldOfferImport { return true }
         guard let message else { return false }
         return PeakUserCopy.isImportWalletMessage(message)
+            || PeakUserCopy.isWalletAuthFailure(message)
     }
 
     private func submit() async {
@@ -584,9 +584,17 @@ struct TradeStubSheet: View {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             dismiss()
         } catch {
+            let facing = Self.userFacingTradeError(error)
+            if PeakUserCopy.isImportWalletMessage(facing) || PeakUserCopy.isWalletAuthFailure(facing) {
+                TradingPathStore.shared.apply(server: [
+                    "needsImport": true,
+                    "imported": false,
+                    "code": "import_wallet_required",
+                ])
+            }
             withAnimation(PeakMotion.soft) {
                 didSucceed = false
-                message = Self.userFacingTradeError(error)
+                message = facing
             }
             PeakHaptics.error()
         }

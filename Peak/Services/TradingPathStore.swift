@@ -64,10 +64,10 @@ final class TradingPathStore: ObservableObject {
     private let importedKeyPrefix = "peak.trading.imported."
     private var userKey: String?
 
-    /// Offer Import key/seed only when not already imported for this signed-in user.
+    /// Offer Import key/seed when signing still needs a key (including re-import after a failed Privy JWT path).
     var shouldOfferImport: Bool {
-        guard !snapshot.imported else { return false }
         if snapshot.needsImport { return true }
+        guard !snapshot.imported else { return false }
         return snapshot.path == .existing
     }
 
@@ -173,7 +173,27 @@ final class TradingPathStore: ObservableObject {
         next.builderConfigured = (server["builderConfigured"] as? Bool) ?? next.builderConfigured
         next.relayerConfigured = (server["relayerConfigured"] as? Bool) ?? next.relayerConfigured
 
-        if let imported = server["imported"] as? Bool, imported {
+        let serverNeedsImport: Bool = {
+            if let needsImport = server["needsImport"] as? Bool { return needsImport }
+            let code = (server["code"] as? String ?? server["cashErrorCode"] as? String)?.lowercased()
+            if code == "import_wallet_required" { return true }
+            if let message = server["message"] as? String ?? server["error"] as? String,
+               PeakUserCopy.isImportWalletMessage(message)
+            {
+                return true
+            }
+            return false
+        }()
+
+        // Server needsImport wins over a stale local "imported" flag (e.g. SIWE import
+        // that never got a working signer).
+        if serverNeedsImport {
+            next.needsImport = true
+            next.imported = false
+            if let userID = userKey ?? PrivyAuthService.shared.userID {
+                UserDefaults.standard.set(false, forKey: importedKeyPrefix + userID)
+            }
+        } else if let imported = server["imported"] as? Bool, imported {
             next.imported = true
             next.needsImport = false
             next.path = next.path ?? .existing
@@ -182,21 +202,8 @@ final class TradingPathStore: ObservableObject {
                 UserDefaults.standard.set(Path.existing.rawValue, forKey: pathKeyPrefix + userID)
             }
             needsPathChoice = false
-        }
-
-        // Never clear a locally persisted import from a stale server flag.
-        if next.imported {
+        } else if next.imported {
             next.needsImport = false
-        } else if let needsImport = server["needsImport"] as? Bool {
-            next.needsImport = needsImport
-        } else if let code = (server["code"] as? String ?? server["cashErrorCode"] as? String)?.lowercased(),
-                  code == "import_wallet_required"
-        {
-            next.needsImport = true
-        } else if let message = server["message"] as? String ?? server["error"] as? String,
-                  PeakUserCopy.isImportWalletMessage(message)
-        {
-            next.needsImport = true
         }
 
         if let rawMessage = server["message"] as? String {

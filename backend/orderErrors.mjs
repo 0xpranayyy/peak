@@ -27,13 +27,16 @@ export function mapOrderError(raw, { balanceUSD = null, code: hintCode = null } 
   }
 
   // Privy wallet RPC: user-owned / imported wallets need a valid user JWT (or matching auth key).
+  // "Invalid JWT token provided" is returned when SIWE access tokens are passed to
+  // /v1/wallets/authenticate (user_jwts) — treat as auth failure, not a generic sign glitch.
   if (
     hint === "wallet_auth_failed" ||
     lower.includes("no valid authorization") ||
     lower.includes("user signing keys") ||
     lower.includes("authorization keys") ||
     lower.includes("no_valid_user_session_keys") ||
-    lower.includes("zero_correct_authorization_signatures")
+    lower.includes("zero_correct_authorization_signatures") ||
+    lower.includes("invalid jwt token")
   ) {
     return {
       error:
@@ -48,7 +51,7 @@ export function mapOrderError(raw, { balanceUSD = null, code: hintCode = null } 
     (lower.includes("params") && (lower.includes("required") || lower.includes("typed_data"))) ||
     lower.includes("typed_data") ||
     lower.includes("unrecognized_keys") ||
-    lower.includes("invalid_data") ||
+    (lower.includes("invalid_data") && !lower.includes("invalid jwt")) ||
     (lower.includes("privy") && (lower.includes("sign") || lower.includes("400")))
   ) {
     return {
@@ -156,6 +159,7 @@ export function mapCashError(err) {
     msg.includes("no valid authorization") ||
     msg.includes("user signing keys") ||
     msg.includes("authorization keys") ||
+    msg.includes("invalid jwt token") ||
     err?.code === "wallet_auth_failed"
   ) {
     return {
