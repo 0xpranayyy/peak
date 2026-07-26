@@ -292,6 +292,20 @@ async function handleBackend(request, url) {
   // Let fetch set Host from the target; a stale Host makes Railway 404.
   headers.delete("host");
 
+  // Tell the backend the user's real country. It cannot work this out itself —
+  // it only ever sees this Worker's IP — and a client-side check alone is
+  // cosmetic. Delete first: these are attacker-controlled until we overwrite
+  // them, and the whole point is that the client cannot choose its own region.
+  headers.delete("x-peak-country");
+  headers.delete("x-peak-region-status");
+  const country = request.cf?.country ?? null;
+  if (country) {
+    const blocked = REGION_BLOCKED.has(country);
+    const closeOnly = REGION_CLOSE_ONLY.has(country);
+    headers.set("x-peak-country", country);
+    headers.set("x-peak-region-status", blocked ? "blocked" : closeOnly ? "close_only" : "allowed");
+  }
+
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(), BACKEND_TIMEOUT_MS);

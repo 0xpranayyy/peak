@@ -933,6 +933,51 @@ app.post("/auth/sign-siwe", wrap(async (req, res) => {
   res.json({ address: account.address, signature });
 }));
 
+/**
+ * Region gate for order placement.
+ *
+ * Polymarket restricts trading in some jurisdictions and rejects those orders.
+ * The app checks up front for a decent error, but a client-side check is only
+ * cosmetic — anyone can call this API directly — so opening a position is
+ * refused here too.
+ *
+ * The country comes from `x-peak-country`, set by the Cloudflare Worker from
+ * the connection it terminates. This process cannot determine it itself: it
+ * only ever sees the Worker's IP. The Worker strips any client-supplied value
+ * before setting its own, so it cannot be spoofed through that path.
+ *
+ * KNOWN GAP: the Railway origin is publicly reachable, so a caller who skips
+ * the Worker arrives with no country header. That is treated as unknown and
+ * allowed, because legitimate direct calls (health checks, local dev) must keep
+ * working. Close it by requiring a shared secret from the Worker, or by
+ * restricting the origin to Cloudflare — see docs/PRODUCTION.md.
+ */
+function regionStatus(req) {
+  const raw = String(req.headers["x-peak-region-status"] || "").toLowerCase();
+  if (raw === "blocked" || raw === "close_only" || raw === "allowed") return raw;
+  return "unknown";
+}
+
+function rejectIfRegionBlocked(req, res, { opening }) {
+  const status = regionStatus(req);
+  const country = String(req.headers["x-peak-country"] || "").toUpperCase() || null;
+  // Blocked regions may not open or close; close-only may exit but not open.
+  if (status === "blocked" || (opening && status === "close_only")) {
+    console.log(`region gate: refused ${opening ? "open" : "close"} from ${country ?? "?"} (${status})`);
+    res.status(403).json({
+      error:
+        status === "close_only"
+          ? "New positions aren’t available in your region. You can still close positions you already hold."
+          : "Trading isn’t available in your region.",
+      code: "region_restricted",
+      country,
+      regionStatus: status,
+    });
+    return true;
+  }
+  return false;
+}
+
 // Public enough for health + legal + import SIWE bootstrap; everything else needs auth.
 app.use(authenticate);
 
@@ -1561,6 +1606,11 @@ app.get("/orders", wrap(async (req, res) => {
 app.post("/orders", wrap(async (req, res) => {
   const body = req.body || {};
   const { tokenID, price, size, amount, side, orderType = "FOK", tickSize, negRisk } = body;
+
+  // A BUY opens exposure; a SELL closes it. Close-only regions may do the latter.
+  if (rejectIfRegionBlocked(req, res, { opening: String(side).toUpperCase() === "BUY" })) {
+    return;
+  }
 
   if (!tokenID || price == null || size == null || !side) {
     return res.status(400).json({
