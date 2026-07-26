@@ -979,6 +979,41 @@ function rejectIfRegionBlocked(req, res, { opening }) {
 }
 
 // Public enough for health + legal + import SIWE bootstrap; everything else needs auth.
+/**
+ * What does Polymarket think of THIS server's location?
+ *
+ * Orders are placed from here, so CLOB judges the geoblock against this
+ * host's IP and never the user's. If this reports blocked, every order fails
+ * for every user no matter where they are — which is the difference between
+ * "restricted users can't trade" and "nobody can trade". Diagnostic only:
+ * reveals nothing about any user, and takes no input.
+ */
+app.get("/diag/geoblock", wrap(async (_req, res) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const r = await fetch("https://polymarket.com/api/geoblock", {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    const text = await r.text();
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = { raw: text.slice(0, 300) };
+    }
+    res.json({ upstreamStatus: r.status, polymarket: body });
+  } catch (e) {
+    res.status(502).json({
+      error: e?.name === "AbortError" ? "geoblock check timed out" : "geoblock check failed",
+      detail: String(e?.message ?? e).slice(0, 200),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}));
+
 app.use(authenticate);
 
 app.post("/auth/session", wrap(async (req, res) => {
