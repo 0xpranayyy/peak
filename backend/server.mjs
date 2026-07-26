@@ -62,6 +62,7 @@ const {
   TRUST_PROXY = "",
   RATE_LIMIT_WINDOW_MS = "60000",
   RATE_LIMIT_MAX = "120",
+  PEAK_EDGE_SECRET,
 } = process.env;
 
 const HOST = "https://clob.polymarket.com";
@@ -1043,6 +1044,36 @@ app.post("/auth/sign-siwe", wrap(async (req, res) => {
  * working. Close it by requiring a shared secret from the Worker, or by
  * restricting the origin to Cloudflare — see docs/PRODUCTION.md.
  */
+/**
+ * Did this request come through our Cloudflare Worker?
+ *
+ * The region gate trusts x-peak-country, which only the Worker sets. Without
+ * this check the Railway origin is publicly reachable, so anyone can call the
+ * API directly, send no country header, and be treated as "unknown" —
+ * bypassing the gate entirely.
+ *
+ * Enforcement is opt-in: with PEAK_EDGE_SECRET unset nothing changes, so
+ * setting it on only one side cannot lock users out. Set it on the Worker
+ * first, then here.
+ */
+const edgeSecretConfigured = Boolean(PEAK_EDGE_SECRET);
+
+function isFromEdge(req) {
+  if (!edgeSecretConfigured) return true;
+  return timingSafeEqualStrings(req.headers["x-peak-edge-secret"] || "", PEAK_EDGE_SECRET);
+}
+
+/** Refuse order traffic that skipped the Worker, once a secret is configured. */
+function rejectIfNotFromEdge(req, res) {
+  if (isFromEdge(req)) return false;
+  console.warn(`blocked direct origin call to ${req.path}`);
+  res.status(403).json({
+    error: "Trading isn’t available on this connection.",
+    code: "edge_required",
+  });
+  return true;
+}
+
 function regionStatus(req) {
   const raw = String(req.headers["x-peak-region-status"] || "").toLowerCase();
   if (raw === "blocked" || raw === "close_only" || raw === "allowed") return raw;
@@ -1079,7 +1110,10 @@ function rejectIfRegionBlocked(req, res, { opening }) {
  * "restricted users can't trade" and "nobody can trade". Diagnostic only:
  * reveals nothing about any user, and takes no input.
  */
-app.get("/diag/geoblock", wrap(async (_req, res) => {
+app.get("/diag/geoblock", wrap(async (req, res) => {
+  // Operational detail about our own host; no reason to expose it publicly
+  // once there is a secret to gate it with.
+  if (rejectIfNotFromEdge(req, res)) return;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
@@ -1739,6 +1773,7 @@ app.get("/orders", wrap(async (req, res) => {
  * POST /orders stays as-is so nothing breaks while clients migrate.
  */
 app.post("/orders/prepare", wrap(async (req, res) => {
+  if (rejectIfNotFromEdge(req, res)) return;
   const body = req.body || {};
   const { tokenID, price, size, side } = body;
 
@@ -1820,6 +1855,7 @@ app.post("/orders/prepare", wrap(async (req, res) => {
 }));
 
 app.post("/orders", wrap(async (req, res) => {
+  if (rejectIfNotFromEdge(req, res)) return;
   const body = req.body || {};
   const { tokenID, price, size, amount, side, orderType = "FOK", tickSize, negRisk } = body;
 

@@ -285,7 +285,7 @@ async function handleWebSocket(request) {
  * control, so it is not an open proxy, and the backend still enforces its own
  * Privy/APP_TOKEN auth. Auth headers pass straight through.
  */
-async function handleBackend(request, url) {
+async function handleBackend(request, url, env) {
   const target = new URL(url.pathname + url.search, BACKEND_ORIGIN);
 
   const headers = new Headers(request.headers);
@@ -298,6 +298,14 @@ async function handleBackend(request, url) {
   // them, and the whole point is that the client cannot choose its own region.
   headers.delete("x-peak-country");
   headers.delete("x-peak-region-status");
+  headers.delete("x-peak-edge-secret");
+
+  // Proves the request came through here, so the backend can refuse direct
+  // origin calls that would otherwise skip the region gate. Deleted first: a
+  // client must never be able to supply its own.
+  if (env?.PEAK_EDGE_SECRET) {
+    headers.set("x-peak-edge-secret", env.PEAK_EDGE_SECRET);
+  }
   const country = request.cf?.country ?? null;
   if (country) {
     const blocked = REGION_BLOCKED.has(country);
@@ -336,12 +344,12 @@ async function handleBackend(request, url) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     // api.<domain> fronts the Peak backend; edge.<domain> fronts Polymarket.
     if (url.hostname.startsWith("api.")) {
-      return handleBackend(request, url);
+      return handleBackend(request, url, env);
     }
 
     if (url.pathname === "/health") {

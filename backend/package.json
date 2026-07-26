@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check sessionStore.mjs && node --check tradingSetup.mjs && node --check polymarketAccount.mjs && node --check privyViemAccount.mjs && node --check legalPages.mjs && node --check orderErrors.mjs && node --check smoke-trading.mjs && node --check check-align.mjs && node check-align.mjs && node smoke-trading.mjs"
+    "check": "node --check server.mjs && node --check sessionStore.mjs && node --check tradingSetup.mjs && node --check polymarketAccount.mjs && node --check privyViemAccount.mjs && node --check legalPages.mjs && node --check orderErrors.mjs && node --check smoke-trading.mjs && node --check check-align.mjs && node check-align.mjs && node smoke-trading.mjs",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "@polymarket/builder-relayer-client": "^0.0.10",
