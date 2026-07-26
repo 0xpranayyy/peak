@@ -36,6 +36,12 @@ import {
   ensureEmbeddedWallet,
 } from "./privyViemAccount.mjs";
 import { mapOrderError, isImportWalletError, mapCashError } from "./orderErrors.mjs";
+import {
+  timingSafeEqualStrings,
+  isFromEdge as isFromEdgeHeaders,
+  regionStatus as regionStatusFromHeaders,
+  shouldRefuseForRegion,
+} from "./regionGate.mjs";
 import { mountLegalPages } from "./legalPages.mjs";
 
 const {
@@ -202,18 +208,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-
-function timingSafeEqualStrings(a, b) {
-  const bufA = Buffer.from(String(a ?? ""));
-  const bufB = Buffer.from(String(b ?? ""));
-  if (bufA.length !== bufB.length) {
-    // Still run a compare of equal-length buffers so failure timing doesn't
-    // depend on the length mismatch itself.
-    crypto.timingSafeEqual(bufA, bufA);
-    return false;
-  }
-  return crypto.timingSafeEqual(bufA, bufB);
-}
 
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
@@ -1059,8 +1053,7 @@ app.post("/auth/sign-siwe", wrap(async (req, res) => {
 const edgeSecretConfigured = Boolean(PEAK_EDGE_SECRET);
 
 function isFromEdge(req) {
-  if (!edgeSecretConfigured) return true;
-  return timingSafeEqualStrings(req.headers["x-peak-edge-secret"] || "", PEAK_EDGE_SECRET);
+  return isFromEdgeHeaders(req.headers, PEAK_EDGE_SECRET);
 }
 
 /** Refuse order traffic that skipped the Worker, once a secret is configured. */
@@ -1075,16 +1068,13 @@ function rejectIfNotFromEdge(req, res) {
 }
 
 function regionStatus(req) {
-  const raw = String(req.headers["x-peak-region-status"] || "").toLowerCase();
-  if (raw === "blocked" || raw === "close_only" || raw === "allowed") return raw;
-  return "unknown";
+  return regionStatusFromHeaders(req.headers);
 }
 
 function rejectIfRegionBlocked(req, res, { opening }) {
   const status = regionStatus(req);
   const country = String(req.headers["x-peak-country"] || "").toUpperCase() || null;
-  // Blocked regions may not open or close; close-only may exit but not open.
-  if (status === "blocked" || (opening && status === "close_only")) {
+  if (shouldRefuseForRegion(req.headers, { opening })) {
     console.log(`region gate: refused ${opening ? "open" : "close"} from ${country ?? "?"} (${status})`);
     res.status(403).json({
       error:
