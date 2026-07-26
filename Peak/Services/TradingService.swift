@@ -192,11 +192,20 @@ enum TradingError: LocalizedError, Sendable {
                 )
             )
         }
-        if codeLower == "no_fill" || lower.contains("no fill") || lower.contains("liquidity too thin") {
+        // The device now posts orders straight to CLOB, so these arrive as raw
+        // exchange text rather than pre-mapped by the backend. Mirror
+        // `orderErrors.mjs` here, and never pass the raw wording through —
+        // "FOK orders are fully filled or killed" tells a user nothing about
+        // what to do next.
+        if codeLower == "no_fill"
+            || lower.contains("no fill")
+            || lower.contains("liquidity too thin")
+            || lower.contains("fully filled")
+            || lower.contains("no match")
+            || lower.contains("fok")
+        {
             return .server(
-                text.isEmpty
-                    ? "No fill at this price. Try a limit order or a smaller size."
-                    : Self.sanitizeServerCopy(text, fallback: "No fill at this price. Try a limit order or a smaller size.")
+                "Not enough liquidity to fill that in one go. Try a smaller amount, or use a limit order to wait for a better price."
             )
         }
         if codeLower == "setup_required"

@@ -46,7 +46,10 @@ final class TradingErrorMappingTests: XCTestCase {
         guard case .server(let message) = TradingError.fromServerMessage("", code: "no_fill") else {
             return XCTFail("expected .server")
         }
-        XCTAssertTrue(message.lowercased().contains("no fill"))
+        // Copy now names the cause (liquidity) and an action, rather than the
+        // exchange's "no fill" jargon.
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertTrue(message.lowercased().contains("liquidity"))
     }
 
     func testMarketClosed() {
@@ -198,5 +201,32 @@ final class TradingPathFlagsTests: XCTestCase {
         let flags = TradingPathFlags.fromPortfolioRoot(root)
         XCTAssertEqual(flags.accountWallet, "0xfeeddead")
         XCTAssertEqual(flags.syncReady, true)
+    }
+}
+
+/// Orders now post from the device straight to CLOB, so raw exchange wording
+/// reaches the client instead of the backend's mapped copy. These pin the
+/// phrasings CLOB actually returns.
+final class ClobRawErrorMappingTests: XCTestCase {
+    private func message(_ raw: String, code: String? = nil) -> String? {
+        guard case .server(let m) = TradingError.fromServerMessage(raw, code: code) else { return nil }
+        return m
+    }
+
+    func testFokKillLeaksNoJargon() {
+        let m = message("order couldn't be fully filled. FOK orders are fully filled or killed.")
+        XCTAssertNotNil(m)
+        XCTAssertFalse(m!.lowercased().contains("fok"))
+        XCTAssertTrue(m!.lowercased().contains("liquidity"))
+    }
+
+    func testNoMatchMapsToSameGuidance() {
+        XCTAssertNotNil(message("no match found for order"))
+    }
+
+    func testInsufficientStillWins() {
+        guard case .insufficientFunds = TradingError.fromServerMessage("not enough balance", code: nil) else {
+            return XCTFail("insufficient funds should take precedence")
+        }
     }
 }
