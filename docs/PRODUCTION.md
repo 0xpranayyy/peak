@@ -58,10 +58,10 @@ Optional host env `PEAK_SUPPORT_EMAIL` fills the Support mailto; otherwise the p
 
 | Info.plist key | Current value |
 | --- | --- |
-| `PEAK_BACKEND_URL` | `https://peak-api-production-60b6.up.railway.app` |
-| `PEAK_PRIVACY_URL` | `https://peak-api-production-60b6.up.railway.app/legal/privacy` |
-| `PEAK_TERMS_URL` | `https://peak-api-production-60b6.up.railway.app/legal/terms` |
-| `PEAK_SUPPORT_URL` | `https://peak-api-production-60b6.up.railway.app/legal/support` |
+| `PEAK_BACKEND_URL` | `https://api.peakapp.site` |
+| `PEAK_PRIVACY_URL` | `https://api.peakapp.site/legal/privacy` |
+| `PEAK_TERMS_URL` | `https://api.peakapp.site/legal/terms` |
+| `PEAK_SUPPORT_URL` | `https://api.peakapp.site/legal/support` |
 
 Settings hides legal links only if a key is blank.
 

@@ -8,7 +8,7 @@ Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C).
 
 | Item | Status |
 | --- | --- |
-| `Peak/Info.plist` `PEAK_BACKEND_URL` | Set → `https://peak-api-production-60b6.up.railway.app` |
+| `Peak/Info.plist` `PEAK_BACKEND_URL` | Set → `https://api.peakapp.site` |
 | `PEAK_PRIVACY_URL` / `PEAK_TERMS_URL` / `PEAK_SUPPORT_URL` | Set → same host `/legal/privacy`, `/legal/terms`, `/legal/support` |
 | `PrivacyInfo.xcprivacy` | Present (see Nutrition Labels below) |
 | `ITSAppUsesNonExemptEncryption` | `false` in Info.plist (+ Xcode `INFOPLIST_KEY_*`) — confirm with counsel |
@@ -72,7 +72,7 @@ Prepare in Connect (assets live outside this repo):
 - [ ] **Review notes** (suggested outline for the reviewer):
   - Peak is a native client for Polymarket **prediction markets**.
   - Auth: Privy (email / social) and **WalletConnect SIWE** (MetaMask, Rainbow, etc.).
-  - Trading goes through Peak’s hosted HTTPS API (`peak-api-production-60b6.up.railway.app`); no localhost in Release.
+  - Trading goes through Peak’s hosted HTTPS API (`api.peakapp.site`); no localhost in Release.
   - Demo account / test wallet instructions if you provide them for review.
   - Privacy / Terms / Support URLs are the `/legal/*` pages on that API host (draft until counsel).
 
@@ -80,7 +80,7 @@ Do **not** invent a fake submission ID or “already submitted” status in docs
 
 ## TestFlight smoke (hosted API)
 
-Use a device build against `https://peak-api-production-60b6.up.railway.app` (or the URL in Info.plist). Full detail: [PRODUCTION.md E2E](PRODUCTION.md#e2e-paths-run-when-secrets--https-backend-are-live).
+Use a device build against `https://api.peakapp.site` (or the URL in Info.plist). Full detail: [PRODUCTION.md E2E](PRODUCTION.md#e2e-paths-run-when-secrets--https-backend-are-live).
 
 ### Smoke A — Social path
 
