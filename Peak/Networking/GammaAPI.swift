@@ -245,13 +245,13 @@ enum GammaAPI {
     }
 
     static func fetchTags(limit: Int = 40) async throws -> [MarketTag] {
-        let url = PeakAPIBase.gamma.appendingPathComponent("tags")
-        let raw: [GammaTagDTO] = try await APIClient.shared.get(
-            url,
-            query: [
-                .init(name: "limit", value: String(limit)),
-                .init(name: "offset", value: "0"),
-            ]
+        let query: [URLQueryItem] = [
+            .init(name: "limit", value: String(limit)),
+            .init(name: "offset", value: "0"),
+        ]
+        let raw: [GammaTagDTO] = try await getGamma(
+            pathComponents: ["tags"],
+            query: query
         )
         var seen = Set<String>()
         return raw.compactMap(\.asTag).filter { seen.insert($0.id).inserted }
@@ -273,19 +273,138 @@ enum GammaAPI {
         if let tagSlug, !tagSlug.isEmpty {
             query.append(.init(name: "tag_slug", value: tagSlug))
         }
-        let url = PeakAPIBase.gamma.appendingPathComponent("events")
-        let raw: [GammaEventDTO]
-        if forceFresh {
-            raw = try await APIClient.shared.getFresh(url, query: query)
-        } else {
-            raw = try await APIClient.shared.get(url, query: query)
-        }
+        // First paint: retry + Peak backend Gamma proxy when direct host times out / is blocked.
+        let raw: [GammaEventDTO] = try await getGamma(
+            pathComponents: ["events"],
+            query: query,
+            forceFresh: forceFresh,
+            attempts: offset == 0 ? 3 : 2,
+            timeout: offset == 0 ? 45 : 40
+        )
         let mapped = raw
             .filter(\.isListEligible)
             .compactMap { $0.asEvent() }
             .filter { !$0.markets.isEmpty }
         let events = MarketShowcase.filter(mapped)
         return (events, raw.count >= limit)
+    }
+
+    /// GET Gamma path with direct → retry → backend `/gamma` proxy fallback.
+    private static func getGamma<T: Decodable>(
+        pathComponents: [String],
+        query: [URLQueryItem],
+        forceFresh: Bool = false,
+        attempts: Int = 3,
+        timeout: TimeInterval = 40
+    ) async throws -> T {
+        // Edge-routed: the direct host is unreachable for these users by
+        // definition, so a "try direct first" probe only adds a guaranteed
+        // DPI timeout to every cold start. Go straight to the edge.
+        if PeakAPIBase.isEdgeRouted {
+            return try await APIClient.shared.getRetrying(
+                Self.url(PeakAPIBase.gamma, pathComponents),
+                query: query,
+                timeout: timeout,
+                attempts: attempts,
+                forceFresh: forceFresh
+            )
+        }
+
+        let direct = Self.url(PeakAPIBase.gammaDirect, pathComponents)
+        let proxyRoot = PeakAPIBase.gammaProxyRoot
+        // When a Peak backend proxy exists, fail over quickly after one slow direct try
+        // (ISP blackholes burn the full timeout — don't stack three of them).
+        let directAttempts = proxyRoot == nil ? max(2, attempts) : 1
+        do {
+            return try await APIClient.shared.getRetrying(
+                direct,
+                query: query,
+                timeout: timeout,
+                attempts: directAttempts,
+                forceFresh: forceFresh
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            guard APIClient.isTransientTransport(error),
+                  let proxyRoot else {
+                // No proxy — one more direct burst with backoff.
+                if APIClient.isTransientTransport(error), directAttempts == 1 {
+                    return try await APIClient.shared.getRetrying(
+                        direct,
+                        query: query,
+                        timeout: timeout,
+                        attempts: max(2, attempts - 1),
+                        forceFresh: forceFresh
+                    )
+                }
+                throw error
+            }
+            let proxy = Self.url(proxyRoot, pathComponents)
+            return try await APIClient.shared.getRetrying(
+                proxy,
+                query: query,
+                timeout: max(timeout, 45),
+                attempts: 2,
+                forceFresh: forceFresh
+            )
+        }
+    }
+
+    private static func getGammaData(
+        pathComponents: [String],
+        query: [URLQueryItem],
+        attempts: Int = 3,
+        timeout: TimeInterval = 40
+    ) async throws -> Data {
+        if PeakAPIBase.isEdgeRouted {
+            return try await APIClient.shared.getDataRetrying(
+                Self.url(PeakAPIBase.gamma, pathComponents),
+                query: query,
+                timeout: timeout,
+                attempts: attempts
+            )
+        }
+
+        let direct = Self.url(PeakAPIBase.gammaDirect, pathComponents)
+        let proxyRoot = PeakAPIBase.gammaProxyRoot
+        let directAttempts = proxyRoot == nil ? max(2, attempts) : 1
+        do {
+            return try await APIClient.shared.getDataRetrying(
+                direct,
+                query: query,
+                timeout: timeout,
+                attempts: directAttempts
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            guard APIClient.isTransientTransport(error),
+                  let proxyRoot else {
+                if APIClient.isTransientTransport(error), directAttempts == 1 {
+                    return try await APIClient.shared.getDataRetrying(
+                        direct,
+                        query: query,
+                        timeout: timeout,
+                        attempts: max(2, attempts - 1)
+                    )
+                }
+                throw error
+            }
+            let proxy = Self.url(proxyRoot, pathComponents)
+            return try await APIClient.shared.getDataRetrying(
+                proxy,
+                query: query,
+                timeout: max(timeout, 45),
+                attempts: 2
+            )
+        }
+    }
+
+    private static func url(_ base: URL, _ pathComponents: [String]) -> URL {
+        pathComponents.reduce(base) { partial, component in
+            partial.appendingPathComponent(component)
+        }
     }
 
     static func fetchEvents(
@@ -358,8 +477,12 @@ enum GammaAPI {
 
     /// Single event by id — includes closed/resolved markets for deep links / positions.
     static func fetchEvent(id: String) async throws -> PeakEvent {
-        let url = PeakAPIBase.gamma.appendingPathComponent("events").appendingPathComponent(id)
-        let raw: GammaEventDTO = try await APIClient.shared.get(url)
+        let raw: GammaEventDTO = try await getGamma(
+            pathComponents: ["events", id],
+            query: [],
+            attempts: 2,
+            timeout: 40
+        )
         guard let event = raw.asEvent() else { throw APIError.emptyResponse }
         return event
     }
@@ -369,12 +492,15 @@ enum GammaAPI {
         offset: Int = 0,
         sort: MarketSort = .trending
     ) async throws -> [Market] {
-        let url = PeakAPIBase.gamma.appendingPathComponent("markets")
         let query: [URLQueryItem] = [
             .init(name: "limit", value: String(limit)),
             .init(name: "offset", value: String(offset)),
         ] + showcaseQueryItems + sort.queryItems
-        let raw: [GammaMarketDTO] = try await APIClient.shared.get(url, query: query)
+        let raw: [GammaMarketDTO] = try await getGamma(
+            pathComponents: ["markets"],
+            query: query,
+            attempts: 2
+        )
         return MarketShowcase.filter(raw.compactMap { $0.asMarket() })
     }
 
@@ -387,14 +513,15 @@ enum GammaAPI {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return SearchResult(events: [], markets: []) }
 
-        let url = PeakAPIBase.gamma.appendingPathComponent("public-search")
-        let data = try await APIClient.shared.getData(
-            url,
+        let data = try await getGammaData(
+            pathComponents: ["public-search"],
             query: [
                 .init(name: "q", value: trimmed),
                 .init(name: "limit_per_type", value: String(limitPerType)),
                 .init(name: "events_status", value: "active"),
-            ]
+            ],
+            attempts: 3,
+            timeout: 40
         )
 
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -448,11 +575,11 @@ enum GammaAPI {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isEthereumAddress(trimmed) else { return nil }
 
-        let url = PeakAPIBase.gamma.appendingPathComponent("public-profile")
         do {
-            let dto: PublicProfileDTO = try await APIClient.shared.get(
-                url,
-                query: [.init(name: "address", value: trimmed)]
+            let dto: PublicProfileDTO = try await getGamma(
+                pathComponents: ["public-profile"],
+                query: [.init(name: "address", value: trimmed)],
+                attempts: 2
             )
             return PeakUserProfile(
                 address: trimmed,

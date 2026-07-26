@@ -1,0 +1,18 @@
+name = "peak-edge"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Custom domain is required — do NOT ship pointing at *.workers.dev.
+# Shared third-party domains are blocked wholesale by the same ISPs this
+# Worker exists to route around (peak-api-*.up.railway.app already fails
+# to resolve on Indian ISP resolvers).
+#
+# Zone: peakapp.site (add to Cloudflare, then):
+#   cd worker && npx wrangler deploy
+#
+[[routes]]
+pattern = "edge.peakapp.site"
+custom_domain = true
+
+[observability]
+enabled = true

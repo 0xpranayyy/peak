@@ -16,7 +16,9 @@ private enum MarketWebSocketLimits {
 /// to MainActor callbacks at a hard cap (~12 Hz) so busy markets cannot stall touch.
 @MainActor
 final class MarketWebSocket {
-    static let url = URL(string: "wss://ws-subscriptions-clob.polymarket.com/ws/market")!
+    /// Routed through the Peak edge relay when `PEAK_EDGE_URL` is set — the
+    /// direct host is SNI-blocked on ISPs that filter Polymarket.
+    static var url: URL { PeakAPIBase.marketWebSocket }
 
     /// Distinguishes executed trades from quote/mid updates.
     enum PriceKind: Sendable {
