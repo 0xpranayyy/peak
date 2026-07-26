@@ -22,7 +22,12 @@ const UPSTREAMS = {
   data: "https://data-api.polymarket.com",
 };
 
-const WS_UPSTREAM = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
+/**
+ * NOTE: https://, not wss://. Workers' fetch() rejects the wss: scheme — an
+ * outbound WebSocket is an ordinary https request carrying `Upgrade`, and the
+ * runtime hands back `response.webSocket` on the 101.
+ */
+const WS_UPSTREAM = "https://ws-subscriptions-clob.polymarket.com/ws/market";
 
 /**
  * Allowlist per upstream. Without this the Worker is an open proxy that anyone
@@ -154,28 +159,23 @@ async function handleRest(request, url) {
  * assets_ids, PING every 10s) — this just moves frames across.
  */
 async function handleWebSocket(request) {
-  if (request.headers.get("Upgrade") !== "websocket") {
+  // Clients send "websocket", but casing is not guaranteed by the spec and
+  // some stacks send "WebSocket" — compare case-insensitively.
+  const upgrade = request.headers.get("Upgrade") || "";
+  if (upgrade.toLowerCase() !== "websocket") {
     return json({ error: "Expected websocket upgrade", code: "bad_request" }, 426);
   }
 
+  // No AbortSignal here: this fetch is an upgrade handshake, not a normal
+  // request/response, and attaching one prevents the 101 from being returned
+  // with a usable `webSocket`. Idle handling is the relay's job below.
   let upstreamResponse;
-  const abort = new AbortController();
-  const deadline = setTimeout(() => abort.abort(), UPSTREAM_TIMEOUT_MS);
   try {
     upstreamResponse = await fetch(WS_UPSTREAM, {
       headers: { Upgrade: "websocket" },
-      signal: abort.signal,
     });
   } catch (err) {
-    const timedOut = err?.name === "AbortError";
-    return json(
-      timedOut
-        ? { error: "Upstream timed out", code: "upstream_timeout" }
-        : { error: "Upstream unavailable", code: "upstream_unavailable" },
-      timedOut ? 504 : 502
-    );
-  } finally {
-    clearTimeout(deadline);
+    return json({ error: "Upstream unavailable", code: "upstream_unavailable" }, 502);
   }
 
   const upstream = upstreamResponse.webSocket;
