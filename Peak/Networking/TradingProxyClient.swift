@@ -156,10 +156,12 @@ enum TradingProxyClient {
     }
 
     /// A signed order plus everything needed to submit it.
-    struct PreparedOrder: @unchecked Sendable {
+    struct PreparedOrder: Sendable {
         let url: URL
         let headers: [String: String]
-        let payload: [String: Any]
+        /// The exact body string the backend signed. Sent verbatim — the L2
+        /// header is an HMAC over these bytes, so re-encoding breaks it.
+        let body: String
     }
 
     /// Ask the backend to build and sign an order without submitting it.
@@ -168,10 +170,10 @@ enum TradingProxyClient {
         guard let urlString = root["url"] as? String,
               let url = URL(string: urlString),
               let headers = root["headers"] as? [String: String],
-              let payload = root["payload"] as? [String: Any] else {
+              let body = root["body"] as? String else {
             throw TradingError.server("Couldn’t prepare this order. Try again.")
         }
-        return PreparedOrder(url: url, headers: headers, payload: payload)
+        return PreparedOrder(url: url, headers: headers, body: body)
     }
 
     /// Dedicated session for talking to Polymarket directly.
@@ -198,7 +200,8 @@ enum TradingProxyClient {
         for (key, value) in prepared.headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        request.httpBody = try JSONSerialization.data(withJSONObject: prepared.payload)
+        // Verbatim: re-serialising would change key order and invalidate the HMAC.
+        request.httpBody = Data(prepared.body.utf8)
         request.timeoutInterval = 30
 
         let data: Data

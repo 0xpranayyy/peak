@@ -815,13 +815,19 @@ async function prepareClobOrder(client, body) {
     ? orderToJsonV2(signed, client.creds?.key || "", resolvedType, false, false)
     : orderToJsonV1(signed, client.creds?.key || "", resolvedType, false, false);
 
+  // Sign over the EXACT bytes the device will send, and hand that same string
+  // back. The L2 header is an HMAC of the body, so re-serialising it on the
+  // client (different key order, spacing) produces a different digest and CLOB
+  // rejects it as "Unauthorized/Invalid api key".
+  const bodyString = JSON.stringify(payload);
+
   const headers = await createL2Headers(client.signer, client.creds, {
     method: "POST",
     requestPath: endpoint,
-    body: JSON.stringify(payload),
+    body: bodyString,
   });
 
-  return { url: `${HOST}${endpoint}`, headers, payload };
+  return { url: `${HOST}${endpoint}`, headers, body: bodyString };
 }
 
 const getJSON = async (url, opts) => {
