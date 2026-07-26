@@ -14,6 +14,7 @@ import { loadSessions, getSession, setSession, sessions, sessionStorePath } from
 import {
   deployOrLinkDepositWallet,
   createUserClobClient,
+  deriveClobCreds,
   signatureTypeFromWalletName,
   setupDepositWalletTradingApprovals,
   walletFromPrivateKey,
@@ -509,13 +510,16 @@ function normalizeShareBalance(raw) {
   return n > 1_000_000 ? n / 1_000_000 : n;
 }
 
-async function fetchCollateralBalance(client, signatureType = null) {
+async function fetchCollateralBalance(client) {
   try {
+    // No signature_type here: clob-client-v2 always overwrites it with the
+    // client's construction-time value, so passing one is misleading.
     const params = { asset_type: AssetType.COLLATERAL };
-    if (signatureType != null && Number.isFinite(Number(signatureType))) {
-      params.signature_type = Number(signatureType);
-    }
-    await client.updateBalanceAllowance?.(params).catch(() => {});
+    // Syncs CLOB's cached balance. Log failures — swallowing them silently is
+    // how a stale cache reads $0.00 on a funded wallet with no explanation.
+    await client.updateBalanceAllowance?.(params)?.catch?.((e) => {
+      console.warn("updateBalanceAllowance(COLLATERAL) failed:", e?.message ?? e);
+    });
     const bal = await client.getBalanceAllowance(params);
     return {
       raw: bal,
@@ -538,79 +542,116 @@ async function fetchCollateralBalance(client, signatureType = null) {
  */
 const SIGNATURE_TYPE_PROBE_ORDER = [3, 1, 2, 0];
 
-async function resolveCollateral(client, session) {
-  const inferred = Number(
-    session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
-  );
-  const order = [inferred, ...SIGNATURE_TYPE_PROBE_ORDER.filter((t) => t !== inferred)];
-
-  let firstResult = null;
-  for (const sigType of order) {
-    const result = await fetchCollateralBalance(client, sigType);
-    if (firstResult === null) firstResult = result;
-    if (result.usd != null && result.usd > 0) {
-      if (sigType !== inferred) {
-        console.log(
-          `Collateral signature type corrected: ${inferred} -> ${sigType} (user ${session.userId})`
-        );
-        setSession(session.userId, { ...session, walletType: sigType });
-        session.walletType = sigType;
-        // Orders bake signatureType into the CLOB client at construction, so the
-        // cached one would keep signing with the wrong type. Drop it directly —
-        // setSession preserves clobClient by design and cannot clear it.
-        const stored = getSession(session.userId);
-        if (stored) delete stored.clobClient;
-        delete session.clobClient;
-      }
-      return { ...result, signatureType: sigType };
-    }
-  }
-  // Genuinely empty (or every type failed) — return the inferred type's answer.
-  return { ...(firstResult ?? { raw: null, usd: null }), signatureType: inferred };
-}
-
 /**
- * Same signature-type problem as collateral, on the sell side: a wrong type
- * reports zero shares and the sell is refused with "Not enough shares to sell".
+ * Probe by REBUILDING the client per signature type.
  *
- * This needs its own probe rather than reusing the collateral one — a wallet
- * holding positions but no cash is completely normal, and in that case the
- * collateral probe finds nothing positive and never corrects the type.
+ * Passing signature_type in BalanceAllowanceParams does nothing: clob-client-v2
+ * builds its query as `{...params, signature_type: this.orderBuilder.signatureType}`,
+ * so the client's construction-time value always wins and the caller's is
+ * discarded. Probing via params therefore queried the same type four times.
+ *
+ * Creds are derived once and shared — otherwise each candidate costs a wallet
+ * signature plus a round trip, which on a remote Privy signer is very slow.
  */
-async function resolveConditional(client, session, tokenID) {
+/**
+ * @param {(client: any) => Promise<{ value: number|null, result: object }>} evaluate
+ */
+async function probeSignatureType(session, opts, evaluate, label) {
   const inferred = Number(
     session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
   );
   const order = [inferred, ...SIGNATURE_TYPE_PROBE_ORDER.filter((t) => t !== inferred)];
+  const funder = session.accountWallet || session.eoa;
 
-  let firstResult = null;
+  const walletClient = await walletClientForSession(session, opts);
+  const creds = await deriveClobCreds(walletClient);
+
+  let fallback = null;
   for (const sigType of order) {
-    const result = await fetchConditionalBalance(client, tokenID, sigType);
-    if (firstResult === null) firstResult = result;
-    if (result.shares != null && result.shares > 0) {
+    let candidate;
+    try {
+      candidate = await createUserClobClient({
+        walletClient,
+        funderAddress: funder,
+        signatureType: sigType,
+        creds,
+      });
+    } catch (e) {
+      console.warn(`probe ${label} sigType=${sigType} client build failed:`, e?.message ?? e);
+      continue;
+    }
+    const { value, result } = await evaluate(candidate);
+    console.log(`probe ${label} sigType=${sigType} funder=${funder} value=${value}`);
+    if (fallback === null) fallback = { result, client: candidate, sigType };
+    if (value != null && value > 0) {
       if (sigType !== inferred) {
-        console.log(
-          `Conditional signature type corrected: ${inferred} -> ${sigType} (user ${session.userId})`
-        );
-        setSession(session.userId, { ...session, walletType: sigType });
-        session.walletType = sigType;
-        const stored = getSession(session.userId);
-        if (stored) delete stored.clobClient;
-        delete session.clobClient;
+        console.log(`Signature type corrected: ${inferred} -> ${sigType} (user ${session.userId})`);
       }
-      return { ...result, signatureType: sigType };
+      setSession(session.userId, { ...session, walletType: sigType, clobClient: candidate });
+      session.walletType = sigType;
+      session.clobClient = candidate;
+      return { ...result, signatureType: sigType, client: candidate };
     }
   }
-  return { ...(firstResult ?? { raw: null, shares: null }), signatureType: inferred };
+
+  return {
+    ...(fallback?.result ?? {}),
+    signatureType: fallback?.sigType ?? inferred,
+    client: fallback?.client ?? null,
+  };
 }
 
-async function fetchConditionalBalance(client, tokenID, signatureType = null) {
+async function resolveCollateral(client, session, opts = {}) {
+  const inferred = Number(
+    session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
+  );
+  const direct = await fetchCollateralBalance(client);
+  console.log(
+    `collateral direct sigType=${inferred} funder=${session.accountWallet || session.eoa} raw=${direct.raw?.balance ?? "null"} usd=${direct.usd}`
+  );
+  if (direct.usd != null && direct.usd > 0) {
+    return { ...direct, signatureType: inferred, client };
+  }
+  // Zero on the configured type — the inference may simply be wrong, so retry
+  // with properly constructed clients before declaring the wallet empty.
+  return probeSignatureType(
+    session,
+    opts,
+    async (c) => {
+      const r = await fetchCollateralBalance(c);
+      return { value: r.usd, result: r };
+    },
+    "collateral"
+  );
+}
+
+async function resolveConditional(client, session, tokenID, opts = {}) {
+  const inferred = Number(
+    session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
+  );
+  const direct = await fetchConditionalBalance(client, tokenID);
+  if (direct.shares != null && direct.shares > 0) {
+    return { ...direct, signatureType: inferred, client };
+  }
+  // Needs its own probe: holding positions with no cash is normal, so the
+  // collateral probe would never find a positive value to correct on.
+  return probeSignatureType(
+    session,
+    opts,
+    async (c) => {
+      const r = await fetchConditionalBalance(c, tokenID);
+      return { value: r.shares, result: r };
+    },
+    "conditional"
+  );
+}
+
+async function fetchConditionalBalance(client, tokenID) {
   try {
     const params = { asset_type: AssetType.CONDITIONAL, token_id: tokenID };
-    if (signatureType != null && Number.isFinite(Number(signatureType))) {
-      params.signature_type = Number(signatureType);
-    }
-    await client.updateBalanceAllowance?.(params).catch(() => {});
+    await client.updateBalanceAllowance?.(params)?.catch?.((e) => {
+      console.warn("updateBalanceAllowance(CONDITIONAL) failed:", e?.message ?? e);
+    });
     const bal = await client.getBalanceAllowance(params);
     return {
       raw: bal,
@@ -1432,7 +1473,7 @@ app.get("/portfolio", wrap(async (req, res) => {
       const client = await ensureUserClob(session, privySignOpts(req));
       // Probes signature types rather than trusting the inferred one, and
       // persists whichever actually reports collateral.
-      const collateral = await resolveCollateral(client, session);
+      const collateral = await resolveCollateral(client, session, privySignOpts(req));
       balance = collateral.raw;
       cashUSD = collateral.usd;
       if (cashUSD == null) {
@@ -1561,7 +1602,6 @@ app.post("/orders", wrap(async (req, res) => {
     let cashUSD = null;
     try {
       let client = await ensureUserClob(session, privySignOpts(req));
-      const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
       const sideUpper = String(side).toUpperCase();
       const orderCostUSD =
         amount != null && Number(amount) > 0 && sideUpper === "BUY"
@@ -1569,13 +1609,11 @@ app.post("/orders", wrap(async (req, res) => {
           : sizeN * priceN;
 
       if (sideUpper === "BUY") {
-        const collateral = await resolveCollateral(client, session);
+        const collateral = await resolveCollateral(client, session, privySignOpts(req));
         cashUSD = collateral.usd;
-        // A corrected signature type invalidates this client: signatureType is
-        // baked in at construction, so signing here would still use the old one.
-        if (Number(collateral.signatureType) !== Number(sigType)) {
-          client = await ensureUserClob(session, privySignOpts(req));
-        }
+        // The probe builds the client for the winning signature type; adopt it
+        // so the order signs with the same type the balance was read under.
+        if (collateral.client) client = collateral.client;
         if (cashUSD != null && cashUSD + 1e-9 < orderCostUSD) {
           return res.status(400).json({
             error: `Insufficient funds. You have $${cashUSD.toFixed(2)} available but this buy needs about $${orderCostUSD.toFixed(2)}. Deposit to your trading wallet, then try again.`,
@@ -1585,12 +1623,8 @@ app.post("/orders", wrap(async (req, res) => {
           });
         }
       } else {
-        const conditional = await resolveConditional(client, session, tokenID);
-        // Same rebuild rule as the buy path — a corrected type invalidates the
-        // client, which would otherwise sign the sell with the old one.
-        if (Number(conditional.signatureType) !== Number(sigType)) {
-          client = await ensureUserClob(session, privySignOpts(req));
-        }
+        const conditional = await resolveConditional(client, session, tokenID, privySignOpts(req));
+        if (conditional.client) client = conditional.client;
         if (conditional.shares != null && conditional.shares + 1e-9 < sizeN) {
           return res.status(400).json({
             error: `Not enough shares to sell. You hold about ${conditional.shares.toFixed(2)} but tried to sell ${sizeN.toFixed(2)}.`,

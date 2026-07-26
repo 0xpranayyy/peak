@@ -156,10 +156,19 @@ export async function deployOrLinkDepositWallet({ walletClient, cfg, alreadyDepl
  * Create a per-user CLOB client (EOA signer + funder = account wallet).
  * @param {{ walletClient: any, funderAddress: string, signatureType: number, rpcUrl?: string }} opts
  */
-export async function createUserClobClient({ walletClient, funderAddress, signatureType }) {
+/**
+ * Derive (or fetch) CLOB API creds for a signer. Split out because probing
+ * signature types needs several clients for the same wallet, and deriving keys
+ * once per client is a signature + round trip each time.
+ */
+export async function deriveClobCreds(walletClient) {
+  const temp = new ClobClient({ host: HOST, chain: CHAIN_ID, signer: walletClient });
+  return temp.createOrDeriveApiKey();
+}
+
+export async function createUserClobClient({ walletClient, funderAddress, signatureType, creds: presetCreds }) {
   const signer = walletClient;
-  const temp = new ClobClient({ host: HOST, chain: CHAIN_ID, signer });
-  const creds = await temp.createOrDeriveApiKey();
+  const creds = presetCreds ?? (await deriveClobCreds(walletClient));
 
   let sigType = SignatureTypeV2.EOA;
   if (signatureType === 1) sigType = SignatureTypeV2.POLY_PROXY;
