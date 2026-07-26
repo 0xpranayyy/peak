@@ -12,16 +12,16 @@
 	<key>PEAK_EDGE_URL</key>
 	<string>https://edge.peakapp.site</string>
 	<key>PEAK_BACKEND_URL</key>
-	<string>https://peak-api-production-60b6.up.railway.app</string>
+	<string>https://api.peakapp.site</string>
 	<!-- After deploy, set to https://YOUR_HOST/legal/privacy (same origin as API). Leave empty for local Debug. -->
 	<key>PEAK_PRIVACY_URL</key>
-	<string>https://peak-api-production-60b6.up.railway.app/legal/privacy</string>
+	<string>https://api.peakapp.site/legal/privacy</string>
 	<!-- After deploy, set to https://YOUR_HOST/legal/terms -->
 	<key>PEAK_TERMS_URL</key>
-	<string>https://peak-api-production-60b6.up.railway.app/legal/terms</string>
+	<string>https://api.peakapp.site/legal/terms</string>
 	<!-- After deploy, set to https://YOUR_HOST/legal/support -->
 	<key>PEAK_SUPPORT_URL</key>
-	<string>https://peak-api-production-60b6.up.railway.app/legal/support</string>
+	<string>https://api.peakapp.site/legal/support</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

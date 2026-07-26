@@ -61,6 +61,22 @@ const ROUTES = {
   },
 };
 
+/**
+ * Peak's own trading backend (Railway). Reached via the `api.` hostname.
+ *
+ * Railway's *.up.railway.app does not resolve on Indian ISP resolvers, so the
+ * app cannot talk to it directly — trading failed with "Couldn't connect" even
+ * though the server was healthy. A DNS-only CNAME does not help: resolving it
+ * still requires the client to resolve up.railway.app. The record must be
+ * Cloudflare-proxied so the client only ever resolves peakapp.site, and this
+ * Worker reaches Railway from Cloudflare's network.
+ */
+const BACKEND_ORIGIN = "https://peak-api-production-60b6.up.railway.app";
+
+/** Order placement and wallet deploys are genuinely slow; the backend's own
+ *  upstream ceiling is 55s, so stay above it and let it produce the error. */
+const BACKEND_TIMEOUT_MS = 60_000;
+
 const MAX_QUERY_BYTES = 4096;
 
 /**
@@ -224,9 +240,56 @@ async function handleWebSocket(request) {
   return new Response(null, { status: 101, webSocket: clientSide });
 }
 
+/**
+ * Reverse proxy for Peak's own backend. Unlike the Polymarket routes this
+ * forwards every path and method verbatim — it fronts a single origin we
+ * control, so it is not an open proxy, and the backend still enforces its own
+ * Privy/APP_TOKEN auth. Auth headers pass straight through.
+ */
+async function handleBackend(request, url) {
+  const target = new URL(url.pathname + url.search, BACKEND_ORIGIN);
+
+  const headers = new Headers(request.headers);
+  // Let fetch set Host from the target; a stale Host makes Railway 404.
+  headers.delete("host");
+
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const abort = new AbortController();
+  const deadline = setTimeout(() => abort.abort(), BACKEND_TIMEOUT_MS);
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: request.method,
+      headers,
+      body: hasBody ? await request.arrayBuffer() : undefined,
+      signal: abort.signal,
+      redirect: "manual",
+    });
+
+    const out = new Headers(upstream.headers);
+    // Never let an authenticated trading response sit in a shared cache.
+    out.set("cache-control", "no-store");
+    return new Response(upstream.body, { status: upstream.status, headers: out });
+  } catch (err) {
+    const timedOut = err?.name === "AbortError";
+    return json(
+      timedOut
+        ? { error: "Upstream timed out", code: "upstream_timeout" }
+        : { error: "Upstream unavailable", code: "upstream_unavailable" },
+      timedOut ? 504 : 502
+    );
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+
+    // api.<domain> fronts the Peak backend; edge.<domain> fronts Polymarket.
+    if (url.hostname.startsWith("api.")) {
+      return handleBackend(request, url);
+    }
 
     if (url.pathname === "/health") {
       return json({ ok: true, service: "peak-edge" });

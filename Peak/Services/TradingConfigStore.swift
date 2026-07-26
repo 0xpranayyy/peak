@@ -102,6 +102,13 @@ final class TradingConfigStore: ObservableObject {
             return bundled
         }
 
+        // A previously saved backend host that we've since moved off. Without this
+        // an existing install keeps the old URL forever, because it is a perfectly
+        // valid non-local HTTPS string and passes every check below.
+        if isSupersededBackendHost(trimmed), let bundled {
+            return bundled
+        }
+
         #if !DEBUG
         if !isReleaseAllowedBackendURL(trimmed) {
             return bundled ?? ""
@@ -123,6 +130,17 @@ final class TradingConfigStore: ObservableObject {
             return lower.contains("127.0.0.1") || lower.contains("localhost")
         }
         return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    /// Backend hosts we've migrated away from and must not keep using.
+    ///
+    /// `*.up.railway.app` does not resolve on Indian ISP resolvers, so a saved
+    /// value pointing there makes every trading call fail with "Couldn't
+    /// connect" while the server itself is healthy. Traffic now goes through
+    /// the Cloudflare-fronted `api.` host instead.
+    nonisolated static func isSupersededBackendHost(_ url: String) -> Bool {
+        guard let host = URL(string: url)?.host?.lowercased() else { return false }
+        return host.hasSuffix(".up.railway.app")
     }
 
     /// Release accepts only non-local HTTPS backends.

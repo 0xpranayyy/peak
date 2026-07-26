@@ -14,5 +14,11 @@ compatibility_date = "2026-07-01"
 pattern = "edge.peakapp.site"
 custom_domain = true
 
+# Fronts the Peak trading backend on Railway, whose *.up.railway.app host
+# does not resolve on Indian ISP resolvers.
+[[routes]]
+pattern = "api.peakapp.site"
+custom_domain = true
+
 [observability]
 enabled = true
