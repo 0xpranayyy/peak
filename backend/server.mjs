@@ -526,6 +526,49 @@ async function fetchCollateralBalance(client, signatureType = null) {
   }
 }
 
+/**
+ * CLOB reports collateral per signature type, and `inferWalletType()` only
+ * guesses one from whether a Gamma profile exists. A wrong guess reads $0.00
+ * on a funded account — positions still render because the Data API keys off
+ * the address, which is type-independent.
+ *
+ * CLOB V2 (28 Apr 2026, pUSD) documents signature_type=3 / POLY_1271 for the
+ * balance-allowance sync, so probe that first, then the older vintages.
+ * @see https://docs.polymarket.com/v2-migration
+ */
+const SIGNATURE_TYPE_PROBE_ORDER = [3, 1, 2, 0];
+
+async function resolveCollateral(client, session) {
+  const inferred = Number(
+    session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
+  );
+  const order = [inferred, ...SIGNATURE_TYPE_PROBE_ORDER.filter((t) => t !== inferred)];
+
+  let firstResult = null;
+  for (const sigType of order) {
+    const result = await fetchCollateralBalance(client, sigType);
+    if (firstResult === null) firstResult = result;
+    if (result.usd != null && result.usd > 0) {
+      if (sigType !== inferred) {
+        console.log(
+          `Collateral signature type corrected: ${inferred} -> ${sigType} (user ${session.userId})`
+        );
+        setSession(session.userId, { ...session, walletType: sigType });
+        session.walletType = sigType;
+        // Orders bake signatureType into the CLOB client at construction, so the
+        // cached one would keep signing with the wrong type. Drop it directly —
+        // setSession preserves clobClient by design and cannot clear it.
+        const stored = getSession(session.userId);
+        if (stored) delete stored.clobClient;
+        delete session.clobClient;
+      }
+      return { ...result, signatureType: sigType };
+    }
+  }
+  // Genuinely empty (or every type failed) — return the inferred type's answer.
+  return { ...(firstResult ?? { raw: null, usd: null }), signatureType: inferred };
+}
+
 async function fetchConditionalBalance(client, tokenID, signatureType = null) {
   try {
     const params = { asset_type: AssetType.CONDITIONAL, token_id: tokenID };
@@ -681,6 +724,93 @@ app.get("/health/live", (_req, res) => {
 
 // Public legal / support pages (App Store URLs → same HTTPS API host after deploy).
 mountLegalPages(app);
+
+/**
+ * Public Gamma read proxy — helps clients on networks that blackhole / DPI
+ * `gamma-api.polymarket.com` (common on some ISPs). No auth; read-only allowlist.
+ */
+const GAMMA_HOST = "https://gamma-api.polymarket.com";
+const GAMMA_PROXY_ALLOW = new Set([
+  "events",
+  "markets",
+  "tags",
+  "public-search",
+  "public-profile",
+]);
+
+app.get("/gamma/:resource", wrap(async (req, res) => {
+  const resource = String(req.params.resource || "");
+  if (!GAMMA_PROXY_ALLOW.has(resource)) {
+    return res.status(404).json({ error: "Not found", code: "not_found" });
+  }
+  const upstream = new URL(`${GAMMA_HOST}/${resource}`);
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (value == null) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) upstream.searchParams.append(key, String(v));
+    } else {
+      upstream.searchParams.set(key, String(value));
+    }
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 55_000);
+  try {
+    const r = await fetch(upstream, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    const body = Buffer.from(await r.arrayBuffer());
+    res.status(r.status);
+    const ct = r.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+    else res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=30");
+    res.send(body);
+  } catch (e) {
+    const aborted = e?.name === "AbortError";
+    const err = new Error(aborted ? "Upstream timed out" : "Upstream unavailable");
+    err.httpStatus = aborted ? 504 : 502;
+    err.code = aborted ? "upstream_timeout" : "upstream_unavailable";
+    err.safeMessage = "Couldn’t reach markets. Try again.";
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}));
+
+app.get("/gamma/events/:id", wrap(async (req, res) => {
+  const id = encodeURIComponent(String(req.params.id || "").trim());
+  if (!id) {
+    return res.status(400).json({ error: "Missing event id", code: "bad_request" });
+  }
+  const upstream = `${GAMMA_HOST}/events/${id}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 55_000);
+  try {
+    const r = await fetch(upstream, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    const body = Buffer.from(await r.arrayBuffer());
+    res.status(r.status);
+    const ct = r.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+    else res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=30");
+    res.send(body);
+  } catch (e) {
+    const aborted = e?.name === "AbortError";
+    const err = new Error(aborted ? "Upstream timed out" : "Upstream unavailable");
+    err.httpStatus = aborted ? 504 : 502;
+    err.code = aborted ? "upstream_timeout" : "upstream_unavailable";
+    err.safeMessage = "Couldn’t reach markets. Try again.";
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}));
 
 /**
  * Derive address from a private key / seed without requiring a Peak login.
@@ -1265,9 +1395,9 @@ app.get("/portfolio", wrap(async (req, res) => {
   if (builderConfigured && session?.eoa) {
     try {
       const client = await ensureUserClob(session, privySignOpts(req));
-      // signature_type is also injected by ClobClient from construction; pass explicitly for clarity.
-      const sigType = Number(session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3));
-      const collateral = await fetchCollateralBalance(client, sigType);
+      // Probes signature types rather than trusting the inferred one, and
+      // persists whichever actually reports collateral.
+      const collateral = await resolveCollateral(client, session);
       balance = collateral.raw;
       cashUSD = collateral.usd;
       if (cashUSD == null) {
@@ -1395,7 +1525,7 @@ app.post("/orders", wrap(async (req, res) => {
 
     let cashUSD = null;
     try {
-      const client = await ensureUserClob(session, privySignOpts(req));
+      let client = await ensureUserClob(session, privySignOpts(req));
       const sigType = session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3);
       const sideUpper = String(side).toUpperCase();
       const orderCostUSD =
@@ -1404,8 +1534,13 @@ app.post("/orders", wrap(async (req, res) => {
           : sizeN * priceN;
 
       if (sideUpper === "BUY") {
-        const collateral = await fetchCollateralBalance(client, sigType);
+        const collateral = await resolveCollateral(client, session);
         cashUSD = collateral.usd;
+        // A corrected signature type invalidates this client: signatureType is
+        // baked in at construction, so signing here would still use the old one.
+        if (Number(collateral.signatureType) !== Number(sigType)) {
+          client = await ensureUserClob(session, privySignOpts(req));
+        }
         if (cashUSD != null && cashUSD + 1e-9 < orderCostUSD) {
           return res.status(400).json({
             error: `Insufficient funds. You have $${cashUSD.toFixed(2)} available but this buy needs about $${orderCostUSD.toFixed(2)}. Deposit to your trading wallet, then try again.`,
