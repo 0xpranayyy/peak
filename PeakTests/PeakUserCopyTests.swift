@@ -12,6 +12,11 @@ final class PeakUserCopyTests: XCTestCase {
         XCTAssertEqual(PeakUserCopy.networkMessage(for: URLError(.timedOut)), PeakUserCopy.timedOut)
     }
 
+    func testMarketsUnreachableCopy() {
+        XCTAssertFalse(PeakUserCopy.marketsUnreachable.isEmpty)
+        XCTAssertTrue(PeakUserCopy.marketsUnreachable.lowercased().contains("polymarket"))
+    }
+
     func testNetworkMessageCannotConnect() {
         XCTAssertEqual(PeakUserCopy.networkMessage(for: URLError(.cannotFindHost)), PeakUserCopy.couldNotConnect)
         XCTAssertEqual(PeakUserCopy.networkMessage(for: URLError(.cannotConnectToHost)), PeakUserCopy.couldNotConnect)

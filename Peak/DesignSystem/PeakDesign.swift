@@ -35,6 +35,9 @@ enum PeakUserCopy {
     static let offline = "You’re offline. Check your connection and try again."
     static let timedOut = "That took too long. Try again."
     static let couldNotConnect = "Couldn’t connect. Try again."
+    /// After retries exhausted — clearer than a naked timeout when Gamma/host is unreachable.
+    static let marketsUnreachable =
+        "Couldn’t reach Polymarket markets. Check your connection and try again."
     static let importWalletRequired =
         "Import the private key or seed for this Polymarket wallet to enable trading."
     static let signFailed = "Couldn’t sign this order. Try again."

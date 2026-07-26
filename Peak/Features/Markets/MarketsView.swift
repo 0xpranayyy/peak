@@ -14,12 +14,15 @@ final class MarketsViewModel: ObservableObject {
     @Published var displayOdds: [String: Double] = [:]
 
     private let pageSize = 24
+    /// Smaller first page — less Gamma payload so bootstrap finishes before URLSession gives up.
+    private let bootstrapPageSize = 12
     private var offset = 0
     private var loadTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
     private var oddsTask: Task<Void, Never>?
     private var didWarmRelated = false
-    /// True only after a bootstrap attempt finishes (success, empty page, or hard error).
+    /// True after a successful first paint (or a finished empty page). Stays false on hard errors
+    /// so `.task` / remount can retry; Try again always calls `refresh` directly.
     private var didBootstrap = false
     /// Bumped on every load so cancelled tasks cannot clear a newer load's flags.
     private var loadGeneration = 0
@@ -31,8 +34,11 @@ final class MarketsViewModel: ObservableObject {
     func bootstrapIfNeeded() async {
         // Single-flight: `.task` awaits this before digest so Gamma isn't stampeded.
         guard !didBootstrap else { return }
-        didBootstrap = true
         await bootstrap()
+        // Only lock out re-entry after we painted something or got a clean empty page.
+        if !events.isEmpty || errorMessage == nil {
+            didBootstrap = true
+        }
     }
 
     func selectCategory(_ category: MarketCategory?) {
@@ -55,8 +61,8 @@ final class MarketsViewModel: ObservableObject {
             isLoading = true
         }
         await refresh(reset: true, userInitiated: false)
-        // Only warm related after the primary feed has a chance to paint.
-        if !events.isEmpty || errorMessage == nil {
+        // Only warm related after the primary feed has events — never compete on failure.
+        if !events.isEmpty {
             warmRelatedCategories()
         }
     }
@@ -117,6 +123,8 @@ final class MarketsViewModel: ObservableObject {
         let category = selectedCategory
         let key = cacheKey
         let forceFresh = userInitiated && reset
+        // First paint uses a smaller page so Gamma responds before transport timeouts.
+        let limit = (reset && currentOffset == 0 && events.isEmpty) ? bootstrapPageSize : pageSize
 
         loadTask = Task {
             var didApplyPage = false
@@ -125,14 +133,14 @@ final class MarketsViewModel: ObservableObject {
                 if let category {
                     page = try await GammaAPI.fetchEventsPage(
                         category: category,
-                        limit: pageSize,
+                        limit: limit,
                         offset: currentOffset,
                         sort: sort,
                         forceFresh: forceFresh
                     )
                 } else {
                     page = try await GammaAPI.fetchEventsPage(
-                        limit: pageSize,
+                        limit: limit,
                         offset: currentOffset,
                         sort: sort,
                         tagSlug: nil,
@@ -143,7 +151,7 @@ final class MarketsViewModel: ObservableObject {
 
                 if reset {
                     events = page.events
-                    offset = currentOffset + pageSize
+                    offset = currentOffset + limit
                     // Prefer server page fullness so dropping a few stale rows doesn't stall pagination.
                     canLoadMore = page.canLoadMore
                     await MarketsCache.shared.store(page.events, canLoadMore: canLoadMore, for: key)
@@ -160,12 +168,24 @@ final class MarketsViewModel: ObservableObject {
                 }
                 didApplyPage = true
                 errorMessage = nil
+                if reset, !page.events.isEmpty {
+                    didBootstrap = true
+                }
             } catch is CancellationError {
                 // ignore — a newer generation owns loading flags
             } catch {
                 guard generation == loadGeneration else { return }
                 if reset && events.isEmpty {
-                    errorMessage = PeakUserCopy.fromError(error, fallback: "Couldn’t load markets. Try again.")
+                    if PeakUserCopy.networkMessage(for: error) != nil {
+                        errorMessage = PeakUserCopy.marketsUnreachable
+                    } else {
+                        errorMessage = PeakUserCopy.fromError(
+                            error,
+                            fallback: "Couldn’t load markets. Try again."
+                        )
+                    }
+                    // Keep didBootstrap false so a remounted `.task` can retry.
+                    didBootstrap = false
                 }
             }
             guard generation == loadGeneration else { return }
@@ -450,9 +470,11 @@ struct MarketsView: View {
                 model.ensureDisplayOdds(for: digest.movers)
                 PeakHaptics.refresh()
             }
-            // Primary Gamma bootstrap first; digest waits so it cannot starve the list fetch.
+            // Primary Gamma bootstrap first; digest waits until Markets has events
+            // so it cannot starve / stampede the list fetch.
             .task {
                 await model.bootstrapIfNeeded()
+                guard !model.events.isEmpty else { return }
                 await digest.refreshMovers(interests: categoryPrefs.interestedCategories)
                 model.ensureDisplayOdds(for: digest.movers)
             }

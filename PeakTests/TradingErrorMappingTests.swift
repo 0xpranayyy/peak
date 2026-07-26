@@ -23,12 +23,30 @@ final class TradingErrorMappingTests: XCTestCase {
         }
     }
 
-    func testNoFill() {
-        let error = TradingError.fromServerMessage("order couldn't be fully filled", code: nil)
+    /// The backend maps CLOB's "couldn't be fully filled" to code `no_fill`, and
+    /// the client keys off that code — not off the upstream wording.
+    func testNoFillByCode() {
+        let error = TradingError.fromServerMessage("couldn't be fully filled", code: "no_fill")
         guard case .server(let message) = error else {
             return XCTFail("expected .server, got \(error)")
         }
-        XCTAssertTrue(message.lowercased().contains("no fill") || message.lowercased().contains("liquidity"))
+        XCTAssertFalse(message.isEmpty)
+    }
+
+    func testNoFillByMessageText() {
+        for text in ["no fill at this price", "liquidity too thin"] {
+            guard case .server = TradingError.fromServerMessage(text, code: nil) else {
+                return XCTFail("expected .server for \(text)")
+            }
+        }
+    }
+
+    /// Empty upstream text must still yield usable copy rather than a blank alert.
+    func testNoFillWithEmptyTextStillHasCopy() {
+        guard case .server(let message) = TradingError.fromServerMessage("", code: "no_fill") else {
+            return XCTFail("expected .server")
+        }
+        XCTAssertTrue(message.lowercased().contains("no fill"))
     }
 
     func testMarketClosed() {

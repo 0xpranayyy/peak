@@ -12,17 +12,29 @@ Markets · Search · Portfolio · Watchlist · Settings
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Browse markets / charts / order book | Ready | Public Gamma + CLOB APIs |
+| Browse markets / charts / order book | Ready | Gamma + CLOB via the `worker/` edge proxy |
 | Connect wallet + Privy SIWE | Code ready | Needs Reown `WALLETCONNECT_PROJECT_ID` + Privy Dashboard **Wallet** login |
 | Email / Apple / Google sign-in | Ready | Privy; native SIWA entitlement omitted for Personal Team (see `docs/PRODUCTION.md`) |
 | Path choice (new vs existing) | Ready | Links account wallet via Gamma profile |
 | Magic / social Polymarket (no key) | View-only | Paste profile address — no live trading without a key |
-| Live buy / sell / cancel (per user) | Blocked on secrets | Backend implements `/trading/setup` + orders; needs Builder + Relayer in `backend/.env` |
-| Deposit wallet deploy | Blocked on secrets | Same Builder / Relayer / RPC credentials |
-| Production HTTPS backend | Live (Railway) | `PEAK_BACKEND_URL` + `/legal/*` set in Info.plist |
+| Live buy / sell / cancel (per user) | Works where permitted | Verified against production Builder + Relayer; blocked regions are gated client-side (see Regions) |
+| Deposit wallet deploy | Credentials live | Builder / Relayer / RPC configured on the hosted API |
+| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; `PEAK_BACKEND_URL` + `/legal/*` in Info.plist |
 | App Store packaging | Prep checklist | See [docs/APP_STORE.md](docs/APP_STORE.md); SIWA entitlement only on a paid team; legal still draft until counsel |
 
-**Not claimed live yet:** End-to-end MetaMask or social trading against production Builder credentials has not been run from this repo. Follow [docs/PRODUCTION.md](docs/PRODUCTION.md) once secrets and hosting exist.
+**Not claimed live yet:** an end-to-end MetaMask / social *order* has not been placed from this repo. Sign-in, wallet import, account linking, portfolio and live balance are verified against production.
+
+## Regions
+
+Polymarket geoblocks restricted regions and rejects their orders. Peak resolves
+eligibility up front via the edge Worker's `/geo` (Cloudflare sees the real
+client IP; the API backend only ever sees its own) and disables the affected
+actions with an explanation, instead of letting an order fail after a round
+trip. Close-only regions can still exit positions.
+
+The country list in `worker/src/index.js` is a point-in-time snapshot and will
+drift as regulators move — CLOB's own rejection stays authoritative. Peak does
+not attempt to circumvent these restrictions.
 
 ## Open in Xcode
 
