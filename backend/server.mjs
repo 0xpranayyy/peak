@@ -6,7 +6,17 @@ import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { PrivyClient } from "@privy-io/node";
-import { ClobClient, Side, OrderType, SignatureTypeV2, AssetType } from "@polymarket/clob-client-v2";
+import {
+  ClobClient,
+  Side,
+  OrderType,
+  SignatureTypeV2,
+  AssetType,
+  createL2Headers,
+  isV2Order,
+  orderToJsonV1,
+  orderToJsonV2,
+} from "@polymarket/clob-client-v2";
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolvePolymarketAccount } from "./polymarketAccount.mjs";
@@ -737,6 +747,81 @@ async function placeClobOrder(client, body) {
   }
 
   return result;
+}
+
+/**
+ * Build and sign an order WITHOUT submitting it, and produce the CLOB auth
+ * headers for that exact request, so the caller's device can post it itself.
+ *
+ * CLOB evaluates its geoblock against the IP the order arrives from. Posting
+ * from here means every order is judged by this server's location — measured
+ * as US/California and blocked — so a trader in a permitted country is refused
+ * because of where we host. Letting the device send it puts each user's own
+ * location in front of the geoblock, which is what it is meant to assess.
+ *
+ * Signing keys never leave the server. The headers are per-request HMACs over
+ * this payload, not the API secret itself, and are useless for anything else.
+ */
+async function prepareClobOrder(client, body) {
+  const { tokenID, price, size, amount, side, orderType = "FOK", tickSize, negRisk } = body;
+
+  const sideEnum = String(side).toUpperCase() === "SELL" ? Side.SELL : Side.BUY;
+  const typeKey = String(orderType || "FOK").toUpperCase();
+  const isMarket = typeKey === "FOK" || typeKey === "FAK";
+  const resolvedType = OrderType[typeKey] ?? (isMarket ? OrderType.FOK : OrderType.GTC);
+
+  const [resolvedTick, resolvedNegRisk] = await Promise.all([
+    tickSize ?? client.getTickSize(tokenID),
+    negRisk ?? client.getNegRisk(tokenID),
+  ]);
+  const opts = { tickSize: String(resolvedTick), negRisk: Boolean(resolvedNegRisk) };
+  const builder = POLY_BUILDER_CODE ? { builderCode: POLY_BUILDER_CODE } : {};
+
+  let signed;
+  if (isMarket) {
+    const marketAmount =
+      amount != null && Number(amount) > 0
+        ? Number(amount)
+        : sideEnum === Side.BUY
+          ? Number(size) * Number(price)
+          : Number(size);
+    if (!(marketAmount > 0)) {
+      const err = new Error("Invalid order amount");
+      err.code = "invalid_order";
+      throw err;
+    }
+    signed = await client.createMarketOrder(
+      {
+        tokenID,
+        amount: marketAmount,
+        side: sideEnum,
+        price: price != null ? Number(price) : undefined,
+        orderType: resolvedType,
+        ...builder,
+      },
+      opts
+    );
+  } else {
+    signed = await client.createOrder(
+      { tokenID, price: Number(price), size: Number(size), side: sideEnum, ...builder },
+      opts
+    );
+  }
+
+  // Mirror exactly what ClobClient.postOrder would have sent, so the device is
+  // a transport and nothing more.
+  const endpoint = "/order";
+  const payload = isV2Order(signed)
+    ? orderToJsonV2(signed, client.creds?.key || "", resolvedType, false, false)
+    : orderToJsonV1(signed, client.creds?.key || "", resolvedType, false, false);
+
+  const headers = await createL2Headers(client.signer, client.creds, {
+    method: "POST",
+    requestPath: endpoint,
+    body: JSON.stringify(payload),
+  });
+
+  return { url: `${HOST}${endpoint}`, headers, payload };
 }
 
 const getJSON = async (url, opts) => {
@@ -1634,6 +1719,96 @@ app.get("/orders", wrap(async (req, res) => {
       error: e?.safeMessage || mapped.error,
       code: e?.code || mapped.code,
       builderConfigured: true,
+    });
+  }
+}));
+
+/**
+ * Prepare a signed order for the device to submit itself.
+ *
+ * Same guards as POST /orders — region, builder credentials, session, balance —
+ * because this hands out a signed, submittable order and must not be a way
+ * around any of them. The only difference is who sends the final request.
+ *
+ * POST /orders stays as-is so nothing breaks while clients migrate.
+ */
+app.post("/orders/prepare", wrap(async (req, res) => {
+  const body = req.body || {};
+  const { tokenID, price, size, side } = body;
+
+  if (!tokenID || price == null || size == null || !side) {
+    return res.status(400).json({ error: "tokenID, price, size, side required", code: "invalid_order" });
+  }
+  const priceN = Number(price);
+  const sizeN = Number(size);
+  if (!(priceN > 0 && priceN < 1) || !(sizeN > 0)) {
+    return res.status(400).json({
+      error: "Enter a valid USD amount and price between 0 and 1.",
+      code: "invalid_order",
+    });
+  }
+  const sideUpper = String(side).toUpperCase();
+  if (rejectIfRegionBlocked(req, res, { opening: sideUpper === "BUY" })) return;
+
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Privy session required", code: "not_signed_in" });
+  }
+  if (!builderConfigured) {
+    return res.status(503).json({
+      error: "Live trading needs Polymarket Builder credentials on the Peak backend.",
+      code: "builder_not_ready",
+    });
+  }
+  const session = getSession(req.auth.userId);
+  if (!session?.eoa) {
+    return res.status(400).json({ error: "Call POST /auth/session with eoa first", code: "not_signed_in" });
+  }
+  if (session.needsDeploy && !session.accountWallet) {
+    return res.status(400).json({
+      error: "Finish trading setup first, then place an order.",
+      code: "setup_required",
+      needsDeploy: true,
+    });
+  }
+
+  try {
+    let client = await ensureUserClob(session, privySignOpts(req));
+    const orderCostUSD =
+      body.amount != null && Number(body.amount) > 0 && sideUpper === "BUY"
+        ? Number(body.amount)
+        : sizeN * priceN;
+
+    if (sideUpper === "BUY") {
+      const collateral = await resolveCollateral(client, session, privySignOpts(req));
+      if (collateral.client) client = collateral.client;
+      const cashUSD = collateral.usd;
+      if (cashUSD != null && cashUSD + 1e-9 < orderCostUSD) {
+        return res.status(400).json({
+          error: `Insufficient funds. You have $${cashUSD.toFixed(2)} available but this buy needs about $${orderCostUSD.toFixed(2)}.`,
+          code: "insufficient_funds",
+          balanceUSD: cashUSD,
+          requiredUSD: orderCostUSD,
+        });
+      }
+    } else {
+      const conditional = await resolveConditional(client, session, tokenID, privySignOpts(req));
+      if (conditional.client) client = conditional.client;
+      if (conditional.shares != null && conditional.shares + 1e-9 < sizeN) {
+        return res.status(400).json({
+          error: `Not enough shares to sell. You hold about ${conditional.shares.toFixed(2)}.`,
+          code: "insufficient_shares",
+        });
+      }
+    }
+
+    const prepared = await prepareClobOrder(client, body);
+    return res.json(prepared);
+  } catch (e) {
+    const mapped = mapOrderError(e.safeMessage || extractClobError(e), { code: e.code });
+    return res.status(e.httpStatus || mapped.status || 400).json({
+      error: mapped.error,
+      code: e.code || mapped.code,
+      success: false,
     });
   }
 }));
