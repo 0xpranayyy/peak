@@ -569,6 +569,41 @@ async function resolveCollateral(client, session) {
   return { ...(firstResult ?? { raw: null, usd: null }), signatureType: inferred };
 }
 
+/**
+ * Same signature-type problem as collateral, on the sell side: a wrong type
+ * reports zero shares and the sell is refused with "Not enough shares to sell".
+ *
+ * This needs its own probe rather than reusing the collateral one — a wallet
+ * holding positions but no cash is completely normal, and in that case the
+ * collateral probe finds nothing positive and never corrects the type.
+ */
+async function resolveConditional(client, session, tokenID) {
+  const inferred = Number(
+    session.walletType ?? signatureTypeFromWalletName(session.walletTypeName, 3)
+  );
+  const order = [inferred, ...SIGNATURE_TYPE_PROBE_ORDER.filter((t) => t !== inferred)];
+
+  let firstResult = null;
+  for (const sigType of order) {
+    const result = await fetchConditionalBalance(client, tokenID, sigType);
+    if (firstResult === null) firstResult = result;
+    if (result.shares != null && result.shares > 0) {
+      if (sigType !== inferred) {
+        console.log(
+          `Conditional signature type corrected: ${inferred} -> ${sigType} (user ${session.userId})`
+        );
+        setSession(session.userId, { ...session, walletType: sigType });
+        session.walletType = sigType;
+        const stored = getSession(session.userId);
+        if (stored) delete stored.clobClient;
+        delete session.clobClient;
+      }
+      return { ...result, signatureType: sigType };
+    }
+  }
+  return { ...(firstResult ?? { raw: null, shares: null }), signatureType: inferred };
+}
+
 async function fetchConditionalBalance(client, tokenID, signatureType = null) {
   try {
     const params = { asset_type: AssetType.CONDITIONAL, token_id: tokenID };
@@ -1550,7 +1585,12 @@ app.post("/orders", wrap(async (req, res) => {
           });
         }
       } else {
-        const conditional = await fetchConditionalBalance(client, tokenID, sigType);
+        const conditional = await resolveConditional(client, session, tokenID);
+        // Same rebuild rule as the buy path — a corrected type invalidates the
+        // client, which would otherwise sign the sell with the old one.
+        if (Number(conditional.signatureType) !== Number(sigType)) {
+          client = await ensureUserClob(session, privySignOpts(req));
+        }
         if (conditional.shares != null && conditional.shares + 1e-9 < sizeN) {
           return res.status(400).json({
             error: `Not enough shares to sell. You hold about ${conditional.shares.toFixed(2)} but tried to sell ${sizeN.toFixed(2)}.`,
