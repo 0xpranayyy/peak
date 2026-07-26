@@ -777,7 +777,8 @@ struct EventDetailView: View {
                                 Text(PeakFormat.cents(market.yesPrice))
                                     .font(.subheadline.monospacedDigit().weight(.bold))
                                     .foregroundStyle(selected ? PeakBrand.mid : .secondary)
-                                    .peakNumeric(value: market.yesPrice)
+                                    // No peakNumeric: this is inside a ForEach and every
+                                    // row re-animates on each quote tick. See `metric`.
                             }
                             .padding(12)
                             .background(
@@ -825,6 +826,18 @@ struct EventDetailView: View {
             .padding(.horizontal, 6)
     }
 
+    /// Deliberately NOT `peakNumeric`.
+    ///
+    /// These four update on every quote tick. `peakNumeric` attaches
+    /// `.contentTransition(.numericText())` plus `.animation(_:value:)`, and an
+    /// animation set on the child is not cleared by the parent's
+    /// `.transaction { $0.animation = nil }` — so the strip kept running four
+    /// digit transitions per tick despite that line asking for none. On device
+    /// this wedged the main thread inside body: opening a market froze the app
+    /// until force-quit, with the paused stack sitting in metric → peakNumeric.
+    ///
+    /// Live numbers here should just change. Keep `peakNumeric` for values that
+    /// move occasionally, not for a live quote strip.
     private func metric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -832,7 +845,6 @@ struct EventDetailView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.subheadline.monospacedDigit().weight(.semibold))
-                .peakNumeric(value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -846,7 +858,7 @@ struct EventDetailView: View {
                 Text(PeakFormat.cents(model.displayedYesOdds))
                     .font(.title3.monospacedDigit().weight(.bold))
                     .foregroundStyle(PeakBrand.mid)
-                    .peakNumeric(value: model.displayedYesOdds)
+                    // No peakNumeric: displayedYesOdds moves on every tick. See `metric`.
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
