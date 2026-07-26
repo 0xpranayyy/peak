@@ -487,6 +487,23 @@ enum GammaAPI {
         return event
     }
 
+    /// Resolve an event from a slug — portfolio positions carry `eventSlug`,
+    /// not an id.
+    ///
+    /// Worth fetching the real event rather than assembling a `Market` from the
+    /// position: `negRisk` and the token ids feed order placement, and guessing
+    /// them would silently misprice or reject a trade.
+    static func fetchEvent(slug: String) async throws -> PeakEvent {
+        let raw: [GammaEventDTO] = try await getGamma(
+            pathComponents: ["events"],
+            query: [.init(name: "slug", value: slug), .init(name: "limit", value: "1")],
+            attempts: 2,
+            timeout: 40
+        )
+        guard let event = raw.first?.asEvent() else { throw APIError.emptyResponse }
+        return event
+    }
+
     static func fetchMarkets(
         limit: Int = 40,
         offset: Int = 0,

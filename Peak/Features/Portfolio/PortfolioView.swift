@@ -164,6 +164,21 @@ struct PortfolioView: View {
     @State private var showDeposit = false
     @State private var showImportKey = false
     @State private var sharePosition: PortfolioPosition?
+    /// Resolved market for a tapped position, presented as a sell sheet.
+    @State private var sellTarget: SellTarget?
+    @State private var loadingSellFor: String?
+    @State private var sellLoadError: String?
+
+    /// Carries the REAL market, resolved from Gamma. Assembling one from the
+    /// position would mean guessing negRisk and the token ids, which feed order
+    /// placement — a wrong guess silently misprices or rejects the trade.
+    struct SellTarget: Identifiable {
+        let id: String
+        let market: Market
+        let isYes: Bool
+        let quotePrice: Double
+        let shares: Double
+    }
     @AppStorage("peak.portfolio.linkBanner.dismissed") private var linkBannerDismissed = false
 
     private var canTradeLive: Bool {
@@ -300,6 +315,28 @@ struct PortfolioView: View {
                     .environmentObject(tradingConfig)
                     .environmentObject(env.wallet)
                     .environmentObject(tradingPath)
+            }
+            .sheet(item: $sellTarget) { target in
+                TradeStubSheet(
+                    market: target.market,
+                    isYes: target.isYes,
+                    action: .sell,
+                    quotePrice: target.quotePrice,
+                    maxShares: target.shares
+                )
+                .environmentObject(env)
+                .environmentObject(env.tradingConfig)
+                .environmentObject(auth)
+                .environmentObject(tradingPath)
+                .environmentObject(TradingRegionStore.shared)
+            }
+            .alert("Couldn’t open this position", isPresented: Binding(
+                get: { sellLoadError != nil },
+                set: { if !$0 { sellLoadError = nil } }
+            )) {
+                Button("OK", role: .cancel) { sellLoadError = nil }
+            } message: {
+                Text(sellLoadError ?? "")
             }
             .sheet(item: $sharePosition) { position in
                 SharePositionSheet(position: position)
@@ -750,13 +787,73 @@ struct PortfolioView: View {
         }
         .padding(.vertical, PeakLayout.rowPadding - 2)
         .listRowBackground(PeakCanvas.elevated)
+        .overlay(alignment: .trailing) {
+            if loadingSellFor == position.id {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await openSell(position) } }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens sell for this position")
         .contextMenu {
+            Button {
+                Task { await openSell(position) }
+            } label: {
+                Label("Sell", systemImage: "arrow.down.circle")
+            }
             Button {
                 sharePosition = position
             } label: {
                 Label("Share card", systemImage: "square.and.arrow.up")
             }
+        }
+    }
+
+    /// Resolve a position back to its live market before offering to sell.
+    ///
+    /// Positions carry eventSlug, not an event id, and no negRisk or token ids
+    /// beyond the held asset — all of which order placement depends on. Fetching
+    /// the real event keeps the sell on the same data path as a market-initiated
+    /// trade instead of a reconstruction that could be subtly wrong.
+    @MainActor
+    private func openSell(_ position: PortfolioPosition) async {
+        guard loadingSellFor == nil else { return }
+        guard let slug = position.eventSlug, !slug.isEmpty else {
+            sellLoadError = "This position isn’t linked to a market yet."
+            return
+        }
+        loadingSellFor = position.id
+        defer { loadingSellFor = nil }
+
+        do {
+            let event = try await GammaAPI.fetchEvent(slug: slug)
+            // Match on the token actually held — an event can hold many markets,
+            // and selling the wrong one would be silent and expensive.
+            let held = position.asset
+            let match = event.markets.first {
+                $0.yesTokenID == held || $0.noTokenID == held
+            } ?? event.markets.first { $0.conditionId == position.conditionId }
+
+            guard let market = match else {
+                sellLoadError = "Couldn’t match this position to a market."
+                return
+            }
+            let isYes = market.yesTokenID == held
+                ? true
+                : (market.noTokenID == held ? false : position.outcome.caseInsensitiveCompare("Yes") == .orderedSame)
+
+            sellTarget = SellTarget(
+                id: position.id,
+                market: market,
+                isYes: isYes,
+                quotePrice: isYes ? market.yesPrice : market.noPrice,
+                shares: position.size
+            )
+            PeakHaptics.selection()
+        } catch {
+            sellLoadError = PeakUserCopy.fromError(error, fallback: "Couldn’t load this market. Try again.")
         }
     }
 
