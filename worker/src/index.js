@@ -77,6 +77,45 @@ const BACKEND_ORIGIN = "https://peak-api-production-60b6.up.railway.app";
  *  upstream ceiling is 55s, so stay above it and let it produce the error. */
 const BACKEND_TIMEOUT_MS = 60_000;
 
+/**
+ * Trading eligibility by region.
+ *
+ * Polymarket geoblocks restricted regions and rejects their orders outright
+ * ("Trading restricted in your region"). Their guidance is for clients to check
+ * up front rather than letting a user compose an order that cannot succeed.
+ *
+ * We resolve the country here, not on the API backend, because the backend only
+ * ever sees its own datacenter IP — never the user's. Cloudflare terminates the
+ * user's connection, so `request.cf.country` is the real client country.
+ *
+ * The lists below are a point-in-time snapshot (July 2026) and WILL drift as
+ * regulators move; treat CLOB's own rejection as the authority and this as an
+ * early, friendlier signal. Unknown country => treated as allowed, because the
+ * order is still checked server-side and we would rather not block real users
+ * on a missing header.
+ */
+const REGION_BLOCKED = new Set([
+  "US", // CFTC settlement
+  "IN", // Online Gaming Rules 2026 — prediction markets prohibited
+  "FR",
+  "BE",
+  "PT",
+  "AR",
+  "BR",
+  "ID",
+  "ES",
+  // OFAC-sanctioned
+  "CU",
+  "IR",
+  "KP",
+  "SY",
+  "RU",
+  "BY",
+]);
+
+/** Existing positions may be closed, but no new ones opened. */
+const REGION_CLOSE_ONLY = new Set(["SG", "PL", "TH", "TW"]);
+
 const MAX_QUERY_BYTES = 4096;
 
 /**
@@ -293,6 +332,27 @@ export default {
 
     if (url.pathname === "/health") {
       return json({ ok: true, service: "peak-edge" });
+    }
+
+    if (url.pathname === "/geo") {
+      const country = request.cf?.country ?? null;
+      const blocked = country != null && REGION_BLOCKED.has(country);
+      const closeOnly = country != null && REGION_CLOSE_ONLY.has(country);
+      return new Response(
+        JSON.stringify({
+          country,
+          canTrade: !blocked && !closeOnly,
+          canClose: !blocked,
+          status: blocked ? "blocked" : closeOnly ? "close_only" : "allowed",
+        }),
+        {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            // Per-user answer — must never be shared between viewers.
+            "cache-control": "no-store",
+          },
+        }
+      );
     }
     if (url.pathname === "/ws/market") {
       return handleWebSocket(request);

@@ -7,6 +7,7 @@ struct TradeStubSheet: View {
     @EnvironmentObject private var tradingConfig: TradingConfigStore
     @EnvironmentObject private var auth: PrivyAuthService
     @EnvironmentObject private var tradingPath: TradingPathStore
+    @EnvironmentObject private var region: TradingRegionStore
 
     let market: Market
     let isYes: Bool
@@ -139,8 +140,15 @@ struct TradeStubSheet: View {
         }
     }
 
+    /// Polymarket rejects orders from restricted regions, so block them here
+    /// rather than after a round trip. Close-only regions may still sell.
+    private var regionBlocked: Bool {
+        action == .buy ? !region.canTrade : !region.canClose
+    }
+
     private var submitDisabled: Bool {
         isSubmitting
+            || regionBlocked
             || didSucceed
             || shareSize <= 0
             || usdAmount <= 0
@@ -331,6 +339,19 @@ struct TradeStubSheet: View {
                             : "Waits at your price until filled or you cancel.")
                     }
                     .animation(PeakMotion.soft, value: orderType)
+
+                    if regionBlocked, let restriction = region.restrictionMessage {
+                        Section {
+                            Label {
+                                Text(restriction)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } icon: {
+                                Image(systemName: "globe")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
 
                     Section {
                         Button {

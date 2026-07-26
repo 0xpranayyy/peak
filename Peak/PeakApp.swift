@@ -14,6 +14,7 @@ struct PeakApp: App {
     @StateObject private var tradingPath = TradingPathStore.shared
     @StateObject private var appearance = AppearanceStore.shared
     @StateObject private var peakProfile = PeakProfileStore.shared
+    @StateObject private var tradingRegion = TradingRegionStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -36,6 +37,7 @@ struct PeakApp: App {
             .environmentObject(tradingPath)
             .environmentObject(appearance)
             .environmentObject(peakProfile)
+            .environmentObject(tradingRegion)
             .preferredColorScheme(appearance.preference.preferredColorScheme)
             .animation(.easeInOut(duration: 0.45), value: categoryPrefs.hasCompletedOnboarding)
             .onOpenURL { url in
@@ -52,6 +54,11 @@ struct PeakApp: App {
             // /events calls at launch were a major cause of bootstrap timeouts.
             .task {
                 PriceAlertMonitor.shared.start()
+            }
+            .task {
+                // Resolve trading eligibility before the user can compose an
+                // order that Polymarket would reject.
+                await tradingRegion.refreshIfNeeded()
             }
             .sheet(isPresented: Binding(
                 get: { privyAuth.showTradingPathSheet && tradingPath.shouldShowSetupSheet },

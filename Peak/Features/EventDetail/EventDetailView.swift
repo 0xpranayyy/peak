@@ -630,6 +630,7 @@ struct EventDetailView: View {
             .environmentObject(env.tradingConfig)
             .environmentObject(PrivyAuthService.shared)
             .environmentObject(TradingPathStore.shared)
+            .environmentObject(TradingRegionStore.shared)
         }
         .sheet(isPresented: $showShareCard) {
             if let event = model.event {
