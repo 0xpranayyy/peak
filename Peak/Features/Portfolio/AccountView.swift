@@ -628,7 +628,7 @@ struct ImportTradingWalletSheet: View {
             Button {
                 finishSuccess()
             } label: {
-                PeakPrimaryCTA(title: "Start trading", systemImage: "checkmark", color: PeakBrand.mid)
+                PeakPrimaryCTA(title: "Start trading", systemImage: "checkmark")
             }
             .peakPressable()
             .padding(.horizontal, 24)
@@ -659,7 +659,7 @@ struct ImportTradingWalletSheet: View {
                 failureMessage = nil
                 phase = .form
             } label: {
-                PeakPrimaryCTA(title: "Try again", systemImage: "arrow.clockwise", color: PeakBrand.mid)
+                PeakPrimaryCTA(title: "Try again", systemImage: "arrow.clockwise")
             }
             .peakPressable()
             .padding(.horizontal, 24)
@@ -778,7 +778,7 @@ struct AccountView: View {
                         Button {
                             showSignIn = true
                         } label: {
-                            PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill", color: PeakBrand.mid)
+                            PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill")
                         }
                         .peakPressable()
                     }
@@ -929,8 +929,7 @@ struct AccountView: View {
                     } label: {
                         PeakPrimaryCTA(
                             title: "Finish setup",
-                            systemImage: "arrow.clockwise",
-                            color: PeakBrand.mid
+                            systemImage: "arrow.clockwise"
                         )
                     }
                     .peakPressable()

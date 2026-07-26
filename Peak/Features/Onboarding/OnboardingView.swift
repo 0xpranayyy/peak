@@ -2,6 +2,7 @@ import SwiftUI
 
 /// First-run onboarding. Brand, product, then start.
 struct OnboardingView: View {
+    @Environment(\.peakBrand) private var brand
     @EnvironmentObject private var categories: CategoryPreferencesStore
     @EnvironmentObject private var auth: PrivyAuthService
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -98,7 +99,7 @@ struct OnboardingView: View {
                     PeakHaptics.press()
                     goTo(page + 1)
                 } label: {
-                    PeakPrimaryCTA(title: page == 0 ? "Next" : "Continue", color: PeakBrand.mid)
+                    PeakPrimaryCTA(title: page == 0 ? "Next" : "Continue")
                 }
                 .peakPressable(haptic: false)
                 .padding(.horizontal, 24)
@@ -108,14 +109,14 @@ struct OnboardingView: View {
                         PeakHaptics.success()
                         finish()
                     } label: {
-                        PeakPrimaryCTA(title: "Browse markets", color: PeakBrand.mid)
+                        PeakPrimaryCTA(title: "Browse markets")
                     }
                     .peakPressable(haptic: false)
 
                     if auth.isAuthenticated {
                         Text("Signed in")
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(PeakBrand.mid)
+                            .foregroundStyle(brand.mid)
                             .padding(.vertical, 8)
                     } else {
                         Button {
@@ -128,7 +129,7 @@ struct OnboardingView: View {
                                 .padding(.vertical, 14)
                         }
                         .buttonStyle(.bordered)
-                        .tint(PeakBrand.mid)
+                        .tint(brand.mid)
                         .controlSize(.large)
                         .peakPressable()
                     }
@@ -333,6 +334,7 @@ private struct OnboardingBackdrop: View {
 // MARK: - Page indicator
 
 private struct OnboardingPageIndicator: View {
+    @Environment(\.peakBrand) private var brand
     let count: Int
     let current: Int
 
@@ -340,7 +342,7 @@ private struct OnboardingPageIndicator: View {
         HStack(spacing: 6) {
             ForEach(0..<count, id: \.self) { index in
                 Capsule()
-                    .fill(index == current ? PeakBrand.mid : Color.secondary.opacity(0.2))
+                    .fill(index == current ? brand.mid : Color.secondary.opacity(0.2))
                     .frame(width: index == current ? 20 : 6, height: 6)
                     .animation(PeakMotion.snappy, value: current)
             }
@@ -405,6 +407,7 @@ private struct OnboardingMarketsVisual: View {
 }
 
 private struct OnboardingWalletVisual: View {
+    @Environment(\.peakBrand) private var brand
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -412,7 +415,7 @@ private struct OnboardingWalletVisual: View {
         VStack(spacing: 16) {
             Image(systemName: "qrcode")
                 .font(.system(size: 56, weight: .regular))
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
                 .padding(20)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)

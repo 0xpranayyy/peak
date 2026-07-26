@@ -8,6 +8,7 @@ import SwiftUI
 /// running, unlike per-frame work. The palette shifts per page so moving
 /// forward feels like moving somewhere.
 struct OnboardingAurora: View {
+    @Environment(\.peakBrand) private var brand
     var page: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -16,10 +17,10 @@ struct OnboardingAurora: View {
 
     private var tint: Color {
         switch page {
-        case 0: return PeakBrand.mid
+        case 0: return brand.mid
         case 1: return PeakTradeStyle.buy
-        case 2: return PeakBrand.soft
-        default: return PeakBrand.mid
+        case 2: return brand.soft
+        default: return brand.mid
         }
     }
 
@@ -38,7 +39,7 @@ struct OnboardingAurora: View {
                 orb(tint, size: w * 0.9)
                     .position(x: drift ? w * 0.22 : w * 0.34, y: drift ? h * 0.20 : h * 0.28)
 
-                orb(PeakBrand.deep, size: w * 0.75)
+                orb(brand.deep, size: w * 0.75)
                     .position(x: drift ? w * 0.86 : w * 0.72, y: drift ? h * 0.34 : h * 0.24)
 
                 orb(tint.opacity(0.7), size: w * 0.8)
@@ -83,6 +84,7 @@ struct OnboardingAurora: View {
 /// frames (the same modifier on live quotes had to be removed for exactly that
 /// reason).
 struct OnboardingLiveOddsCard: View {
+    @Environment(\.peakBrand) private var brand
     let question: String
     let category: String
     var seed: Double
@@ -110,7 +112,7 @@ struct OnboardingLiveOddsCard: View {
                 Text(category.uppercased())
                     .font(.caption2.weight(.bold))
                     .tracking(0.8)
-                    .foregroundStyle(PeakBrand.mid)
+                    .foregroundStyle(brand.mid)
                 Spacer(minLength: 0)
                 Image(systemName: rising ? "arrow.up.right" : "arrow.down.right")
                     .font(.caption.weight(.bold))
@@ -144,7 +146,7 @@ struct OnboardingLiveOddsCard: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [PeakBrand.mid, PeakTradeStyle.buy],
+                                colors: [brand.mid, PeakTradeStyle.buy],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -239,6 +241,7 @@ struct OnboardingMarketStack: View {
 
 /// Self-custody, shown rather than stated: a key that stays on the device.
 struct OnboardingWalletBadge: View {
+    @Environment(\.peakBrand) private var brand
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
     @State private var sweep = false
@@ -247,7 +250,7 @@ struct OnboardingWalletBadge: View {
         ZStack {
             ForEach(0..<3, id: \.self) { ring in
                 Circle()
-                    .strokeBorder(PeakBrand.mid.opacity(0.22 - Double(ring) * 0.06), lineWidth: 1)
+                    .strokeBorder(brand.mid.opacity(0.22 - Double(ring) * 0.06), lineWidth: 1)
                     .frame(width: 128 + CGFloat(ring) * 42, height: 128 + CGFloat(ring) * 42)
                     .scaleEffect(pulse ? 1.04 : 0.98)
                     .animation(
@@ -271,7 +274,7 @@ struct OnboardingWalletBadge: View {
                 .font(.system(size: 46, weight: .semibold))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [PeakBrand.mid, PeakTradeStyle.buy],
+                        colors: [brand.mid, PeakTradeStyle.buy],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )

@@ -38,6 +38,13 @@ struct PeakApp: App {
             .environmentObject(appearance)
             .environmentObject(peakProfile)
             .environmentObject(tradingRegion)
+            // The themed brand ramp. Note there is no `.id(theme)` here: views
+            // that use a brand colour read it from the environment and are
+            // invalidated individually, so switching theme keeps scroll
+            // position, the selected tab and any open sheet. See
+            // `EnvironmentValues.peakBrand`.
+            .environment(\.peakBrand, appearance.brand)
+            .tint(appearance.brand.mid)
             .preferredColorScheme(appearance.preference.preferredColorScheme)
             .animation(.easeInOut(duration: 0.45), value: categoryPrefs.hasCompletedOnboarding)
             .onOpenURL { url in

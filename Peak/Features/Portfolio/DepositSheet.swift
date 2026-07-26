@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct DepositSheet: View {
+    @Environment(\.peakBrand) private var brand
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var env: AppEnvironment
     @EnvironmentObject private var auth: PrivyAuthService
@@ -51,7 +52,7 @@ struct DepositSheet: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(PeakBrand.mid)
+                    .tint(brand.mid)
                     .controlSize(.large)
                     .disabled(isLoading || !auth.isAuthenticated)
                     .frame(minHeight: 44)

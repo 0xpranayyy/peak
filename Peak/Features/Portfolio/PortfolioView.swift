@@ -153,6 +153,7 @@ final class PortfolioViewModel: ObservableObject {
 }
 
 struct PortfolioView: View {
+    @Environment(\.peakBrand) private var brand
     @EnvironmentObject private var env: AppEnvironment
     @EnvironmentObject private var tradingConfig: TradingConfigStore
     @EnvironmentObject private var auth: PrivyAuthService
@@ -379,7 +380,7 @@ struct PortfolioView: View {
             Button {
                 showAccount = true
             } label: {
-                PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill", color: PeakBrand.mid)
+                PeakPrimaryCTA(title: "Sign in", systemImage: "wallet.pass.fill")
             }
             .peakPressable()
             .padding(.horizontal, 40)
@@ -458,8 +459,7 @@ struct PortfolioView: View {
                         } label: {
                             PeakPrimaryCTA(
                                 title: "Retry setup",
-                                systemImage: "arrow.clockwise",
-                                color: PeakBrand.mid
+                                systemImage: "arrow.clockwise"
                             )
                         }
                         .peakPressable()
@@ -507,7 +507,7 @@ struct PortfolioView: View {
                   ? "key.fill"
                   : "link.circle.fill")
                 .font(.title3)
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
                 .accessibilityHidden(true)
 
             Text(
@@ -573,16 +573,16 @@ struct PortfolioView: View {
                     Text("Live")
                         .font(.caption2.weight(.bold))
                         .tracking(0.3)
-                        .foregroundStyle(PeakBrand.mid)
+                        .foregroundStyle(brand.mid)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
-                            PeakBrand.mid.opacity(0.14),
+                            brand.mid.opacity(0.14),
                             in: RoundedRectangle(cornerRadius: PeakLayout.badgeRadius, style: .continuous)
                         )
                         .overlay {
                             RoundedRectangle(cornerRadius: PeakLayout.badgeRadius, style: .continuous)
-                                .strokeBorder(PeakCanvas.brandRim, lineWidth: 1)
+                                .strokeBorder(brand.mid.opacity(0.20), lineWidth: 1)
                         }
                 }
             }
@@ -633,8 +633,7 @@ struct PortfolioView: View {
                 } label: {
                     PeakPrimaryCTA(
                         title: "Deposit",
-                        systemImage: "arrow.down.to.line.circle",
-                        color: PeakBrand.mid
+                        systemImage: "arrow.down.to.line.circle"
                     )
                 }
                 .peakPressable()
@@ -875,7 +874,7 @@ struct PortfolioView: View {
                     PeakRootTab.select(.markets)
                 }
                 .buttonStyle(.bordered)
-                .tint(PeakBrand.mid)
+                .tint(brand.mid)
                 .controlSize(.large)
                 .frame(minHeight: 44)
             } else {
@@ -883,7 +882,7 @@ struct PortfolioView: View {
                     showAccount = true
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(PeakBrand.mid)
+                .tint(brand.mid)
                 .controlSize(.large)
                 .frame(minHeight: 44)
             }
