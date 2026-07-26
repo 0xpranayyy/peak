@@ -32,15 +32,15 @@ enum PeakTradeStyle {
 enum PeakUserCopy {
     static let missingPolymarketAccount =
         "We couldn’t find an account for this wallet. Under More options, import your wallet or paste your profile address."
-    static let offline = "You’re offline. Check your connection and try again."
-    static let timedOut = "That took too long. Try again."
+    static let offline = "You’re offline. Reconnect to Wi‑Fi or mobile data, then try again."
+    static let timedOut = "That took too long to respond. Check your connection and try again."
     static let couldNotConnect = "Couldn’t connect. Try again."
     /// After retries exhausted — clearer than a naked timeout when Gamma/host is unreachable.
     static let marketsUnreachable =
         "Couldn’t reach Polymarket markets. Check your connection and try again."
     static let importWalletRequired =
         "Import the private key or seed for this Polymarket wallet to enable trading."
-    static let signFailed = "Couldn’t sign this order. Try again."
+    static let signFailed = "Couldn’t sign this order. Try again — if it keeps failing, re-import your wallet under Account."
     static let walletAuthFailed =
         "Couldn’t authorize this wallet to trade. Try importing again or contact support."
     static let connectedPolymarketAccount = "Connected to your Polymarket account."
@@ -54,7 +54,7 @@ enum PeakUserCopy {
     static let importFailureTitle = "Couldn’t import wallet"
     static let securedByPrivy = "Secured by Privy"
     static let insufficientFunds =
-        "Not enough funds or allowance. Deposit under Portfolio, then try again."
+        "Not enough cash in your trading wallet. Deposit under Portfolio, then try again."
     static let approvalsNeeded =
         "Trading approvals aren’t ready yet. Open Account → Set up trading, then try again."
 

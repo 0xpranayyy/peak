@@ -115,19 +115,24 @@ enum TradingError: LocalizedError, Sendable {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "Sign in to trade."
+            return "Sign in to place orders."
         case .notAvailable:
-            return "Trading isn’t available right now. Try again later."
+            return "Trading is unavailable right now. This is usually brief — try again in a moment."
         case .invalidAmount:
-            return "Enter a valid USD amount and price."
+            // Buys are entered in dollars and sells in shares, so this must not
+            // name a unit — it used to say "USD amount" and was simply wrong
+            // when selling.
+            return "Enter an amount above zero, at a price between 1¢ and 99¢."
         case .missingToken:
-            return "This market can’t be traded right now."
+            return "This outcome isn’t tradable right now — it may not be listed on the exchange yet."
         case .marketClosed:
-            return "This market is closed or not accepting orders."
+            return "This market has closed, so it’s no longer accepting orders."
         case .setupRequired:
             return "Finish Set up trading under Account, then try again."
         case .builderNotReady:
-            return "Your wallet isn’t ready yet. Try again in a moment."
+            // Missing Builder credentials on OUR backend. Telling users their
+            // wallet is broken sends them off fixing something that is fine.
+            return "Trading isn’t switched on yet. That’s on our side, not your wallet — try again shortly."
         case .insufficientFunds(let message):
             return message
         case .server(let message):

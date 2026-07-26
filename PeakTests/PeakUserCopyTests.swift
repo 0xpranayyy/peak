@@ -73,3 +73,46 @@ final class PeakUserCopyTests: XCTestCase {
         )
     }
 }
+
+/// User-facing copy should say what happened, why, and what to do — and must
+/// never blame the wrong party or name a unit that doesn't apply.
+final class ErrorCopyQualityTests: XCTestCase {
+    private let userFacing: [TradingError] = [
+        .notConfigured, .notAvailable, .invalidAmount, .missingToken,
+        .marketClosed, .setupRequired, .builderNotReady,
+    ]
+
+    func testEveryErrorHasCopy() {
+        for error in userFacing {
+            let text = error.errorDescription ?? ""
+            XCTAssertFalse(text.isEmpty, "\(error) has no description")
+            XCTAssertGreaterThan(text.count, 15, "\(error) copy is too terse to be useful")
+        }
+    }
+
+    func testNoInfrastructureJargonLeaks() {
+        let banned = ["clob", "fok", "builder credential", "funder", "signature_type", "nil", "null"]
+        for error in userFacing {
+            let lower = (error.errorDescription ?? "").lowercased()
+            for word in banned {
+                XCTAssertFalse(lower.contains(word), "\(error) leaks '\(word)'")
+            }
+        }
+    }
+
+    /// Buys are in dollars, sells in shares, so a shared message must not claim
+    /// either. This previously read "Enter a valid USD amount".
+    func testInvalidAmountIsUnitAgnostic() {
+        let text = (TradingError.invalidAmount.errorDescription ?? "").lowercased()
+        XCTAssertFalse(text.contains("usd"))
+        XCTAssertFalse(text.contains("dollar"))
+    }
+
+    /// Missing Builder credentials are our problem; users sent to fix their
+    /// wallet are being sent to fix something that works.
+    func testBuilderNotReadyDoesNotBlameTheWallet() {
+        let text = (TradingError.builderNotReady.errorDescription ?? "").lowercased()
+        XCTAssertFalse(text.contains("your wallet isn’t ready"))
+        XCTAssertTrue(text.contains("our side") || text.contains("not your wallet"))
+    }
+}
