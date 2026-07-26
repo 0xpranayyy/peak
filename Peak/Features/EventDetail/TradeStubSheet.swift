@@ -14,6 +14,9 @@ struct TradeStubSheet: View {
     let action: TradeAction
     /// Bid (sell) or ask (buy) quote from the book when available.
     let quotePrice: Double
+    /// Shares held, when opened from a position. Enables Max / percentage
+    /// shortcuts; nil when opened from a market where holdings are unknown.
+    var maxShares: Double? = nil
 
     enum TradeAction {
         case buy
@@ -58,6 +61,31 @@ struct TradeStubSheet: View {
     }
 
     private let quickAmounts = ["5", "10", "25", "50", "100"]
+
+    private struct QuickChip {
+        let label: String
+        let value: String
+        let accessibility: String
+    }
+
+    /// Dollars when buying. When selling from a known position, fractions of the
+    /// holding — including Max, which is the only way to fully exit without the
+    /// user doing arithmetic against a moving price.
+    private var quickChips: [QuickChip] {
+        guard sellsInShares else {
+            return quickAmounts.map {
+                QuickChip(label: "$\($0)", value: $0, accessibility: "\($0) dollars")
+            }
+        }
+        guard let maxShares, maxShares > 0 else { return [] }
+        let fmt: (Double) -> String = { String(format: "%.2f", $0) }
+        return [
+            QuickChip(label: "25%", value: fmt(maxShares * 0.25), accessibility: "25 percent of your shares"),
+            QuickChip(label: "50%", value: fmt(maxShares * 0.5), accessibility: "50 percent of your shares"),
+            QuickChip(label: "75%", value: fmt(maxShares * 0.75), accessibility: "75 percent of your shares"),
+            QuickChip(label: "Max", value: fmt(maxShares), accessibility: "All \(fmt(maxShares)) shares"),
+        ]
+    }
 
     enum OrderKind: String, CaseIterable, Identifiable {
         case fok = "FOK"
@@ -119,26 +147,30 @@ struct TradeStubSheet: View {
         return quotePrice > 0 ? quotePrice : (isYes ? market.yesPrice : market.noPrice)
     }
 
-    private var usdAmount: Double {
-        Double(amountUSD) ?? 0
+    /// Buys are entered in dollars, sells in shares.
+    ///
+    /// You hold shares, so asking for a dollar amount to exit forces the user
+    /// to do the conversion themselves — and there is no way to express "all of
+    /// it". The field means whichever unit the action actually uses; the other
+    /// is shown underneath.
+    private var sellsInShares: Bool { action == .sell }
+
+    private var enteredValue: Double { Double(amountUSD) ?? 0 }
+
+    /// All unit conversion lives in `TradeAmounts` so it can be tested — see
+    /// TradeAmountsTests. The view only supplies inputs.
+    private var amounts: TradeAmounts {
+        TradeAmounts(
+            isSell: sellsInShares,
+            isMarket: orderType == .fok,
+            price: price,
+            entered: enteredValue
+        )
     }
 
-    private var shareSize: Double {
-        guard price > 0 else { return 0 }
-        return usdAmount / price
-    }
-
-    /// Market BUY spends USD; market SELL / limits use share size as CLOB amount.
-    private var orderAmount: Double {
-        switch action {
-        case .buy where orderType == .fok:
-            return usdAmount
-        case .sell where orderType == .fok:
-            return shareSize
-        default:
-            return shareSize
-        }
-    }
+    private var usdAmount: Double { amounts.usd }
+    private var shareSize: Double { amounts.shares }
+    private var orderAmount: Double { amounts.orderAmount }
 
     /// Polymarket rejects orders from restricted regions, so block them here
     /// rather than after a round trip. Close-only regions may still sell.
@@ -287,36 +319,56 @@ struct TradeStubSheet: View {
                     }
                 } else if canSubmit {
                     Section {
-                        TextField("$", text: $amountUSD)
-                            .keyboardType(.decimalPad)
-                            .font(.title.monospacedDigit().weight(.semibold))
-                            .minimumScaleFactor(0.7)
-                            .focused($focusedField, equals: .amount)
-                            .submitLabel(.done)
-                            .accessibilityLabel("Amount in dollars")
+                        HStack(spacing: 6) {
+                            if !sellsInShares {
+                                Text("$")
+                                    .font(.title.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            TextField(sellsInShares ? "0" : "0", text: $amountUSD)
+                                .keyboardType(.decimalPad)
+                                .font(.title.monospacedDigit().weight(.semibold))
+                                .minimumScaleFactor(0.7)
+                                .focused($focusedField, equals: .amount)
+                                .submitLabel(.done)
+                                .accessibilityLabel(sellsInShares ? "Number of shares to sell" : "Amount in dollars")
+                            if sellsInShares {
+                                Text("shares")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(quickAmounts, id: \.self) { value in
-                                    Button("$\(value)") {
-                                        amountUSD = value
+                                ForEach(quickChips, id: \.label) { chip in
+                                    Button(chip.label) {
+                                        amountUSD = chip.value
                                         PeakHaptics.selection()
                                     }
                                     .buttonStyle(.bordered)
-                                    .tint(amountUSD == value ? action.color : Color.secondary)
+                                    .tint(amountUSD == chip.value ? action.color : Color.secondary)
                                     .frame(minHeight: 44)
-                                    .accessibilityLabel("\(value) dollars")
+                                    .accessibilityLabel(chip.accessibility)
                                 }
                             }
                         }
-                        .animation(PeakMotion.snappy, value: amountUSD)
 
-                        Text("≈ \(String(format: "%.2f", shareSize)) shares")
+                        // Always show the other unit, so neither side has to do
+                        // the conversion in their head before committing money.
+                        Text(sellsInShares
+                             ? "≈ \(PeakFormat.usd(usdAmount)) at \(PeakFormat.cents(price))"
+                             : "≈ \(String(format: "%.2f", shareSize)) shares at \(PeakFormat.cents(price))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .peakNumeric(value: shareSize)
+
+                        if let maxShares, maxShares > 0 {
+                            Text("You hold \(String(format: "%.2f", maxShares)) shares")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                     } header: {
-                        Text("Amount")
+                        Text(sellsInShares ? "Shares to sell" : "Amount to spend")
                     }
 
                     Section {
@@ -468,6 +520,10 @@ struct TradeStubSheet: View {
                     .environmentObject(tradingPath)
             }
             .onAppear {
+                // The default "10" means ten dollars when buying but ten SHARES
+                // when selling, which could be far more than the user holds.
+                // Start a sell empty so the amount is always a deliberate choice.
+                if sellsInShares { amountUSD = "" }
                 limitPrice = String(format: "%.3f", quotePrice > 0 ? quotePrice : price)
                 if !isSignedIn {
                     showSignIn = true
