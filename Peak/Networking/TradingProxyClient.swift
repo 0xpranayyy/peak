@@ -155,6 +155,73 @@ enum TradingProxyClient {
         var errorDescription: String? { tradingError.errorDescription }
     }
 
+    /// A signed order plus everything needed to submit it.
+    struct PreparedOrder: @unchecked Sendable {
+        let url: URL
+        let headers: [String: String]
+        let payload: [String: Any]
+    }
+
+    /// Ask the backend to build and sign an order without submitting it.
+    static func prepareOrder(jsonBody: [String: Any]) async throws -> PreparedOrder {
+        let root = try await jsonObject(path: "orders/prepare", method: "POST", jsonBody: jsonBody)
+        guard let urlString = root["url"] as? String,
+              let url = URL(string: urlString),
+              let headers = root["headers"] as? [String: String],
+              let payload = root["payload"] as? [String: Any] else {
+            throw TradingError.server("Couldn’t prepare this order. Try again.")
+        }
+        return PreparedOrder(url: url, headers: headers, payload: payload)
+    }
+
+    /// Dedicated session for talking to Polymarket directly.
+    ///
+    /// Deliberately NOT the edge proxy: CLOB decides eligibility from the IP the
+    /// order arrives from, so anything we relay through our own infrastructure
+    /// is judged by that infrastructure's location instead of the user's. That
+    /// is the whole bug this path exists to fix — sending it via the proxy would
+    /// swap a Railway IP for a Cloudflare one and change nothing.
+    private static let directSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 45
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    /// Submit a prepared order from this device.
+    static func submitPreparedOrder(_ prepared: PreparedOrder) async throws -> [String: Any] {
+        var request = URLRequest(url: prepared.url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (key, value) in prepared.headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: prepared.payload)
+        request.timeoutInterval = 30
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await directSession.data(for: request)
+        } catch {
+            CrashReporting.capture(error, context: ["path": "clob/order/direct"])
+            throw TradingError.server(PeakUserCopy.fromError(error, fallback: PeakUserCopy.couldNotConnect))
+        }
+
+        let root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let message =
+                (root["error"] as? String)
+                ?? (root["errorMsg"] as? String)
+                ?? String(data: data, encoding: .utf8)
+                ?? "HTTP \(http.statusCode)"
+            throw TradingError.fromServerMessage(message, code: root["code"] as? String)
+        }
+        return root
+    }
+
     static func setupTrading() async throws -> [String: Any] {
         try await jsonObjectKeepingBody(path: "trading/setup", method: "POST", jsonBody: [:])
     }

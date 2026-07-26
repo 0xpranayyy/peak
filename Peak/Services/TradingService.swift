@@ -313,8 +313,26 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
             body["negRisk"] = negRisk
         }
 
-        let root = try await TradingProxyClient.jsonObject(path: "orders", method: "POST", jsonBody: body)
-        return try Self.parseTradeResult(root)
+        // Submit from the device, not the backend.
+        //
+        // CLOB evaluates its geoblock against the IP the order arrives from. Our
+        // backend is hosted in a restricted region, so posting from there gets
+        // every order refused regardless of where the user actually is. The
+        // backend still builds and signs — keys never leave it — but this device
+        // performs the final POST so eligibility is judged per user.
+        do {
+            let prepared = try await TradingProxyClient.prepareOrder(jsonBody: body)
+            let root = try await TradingProxyClient.submitPreparedOrder(prepared)
+            return try Self.parseTradeResult(root)
+        } catch let error as TradingError {
+            // Only fall back when the backend lacks the endpoint. A rejection
+            // (funds, region, closed market) is a real answer and must surface
+            // as-is rather than being retried down the path that fails for
+            // everyone.
+            guard Self.isMissingPrepareEndpoint(error) else { throw error }
+            let root = try await TradingProxyClient.jsonObject(path: "orders", method: "POST", jsonBody: body)
+            return try Self.parseTradeResult(root)
+        }
     }
 
     func fetchOpenOrders() async throws -> [OpenOrder] {
@@ -435,6 +453,17 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         if let s = obj["address"] as? String, !s.isEmpty { return s }
         if let s = obj["depositAddress"] as? String, !s.isEmpty { return s }
         return nil
+    }
+
+    /// True only when the backend predates `/orders/prepare`.
+    ///
+    /// Kept narrow on purpose: treating any failure as "endpoint missing" would
+    /// quietly resend rejected orders through the backend path, which is exactly
+    /// the path that fails for everyone.
+    private static func isMissingPrepareEndpoint(_ error: TradingError) -> Bool {
+        guard case .server(let message) = error else { return false }
+        let lower = message.lowercased()
+        return lower.contains("not found") || lower.contains("404")
     }
 
     private static func parseTradeResult(_ root: [String: Any]) throws -> TradeResult {
