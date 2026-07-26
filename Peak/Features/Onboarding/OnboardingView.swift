@@ -15,8 +15,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            OnboardingBackdrop(page: page)
-                .ignoresSafeArea()
+            OnboardingAurora(page: page)
                 .animation(reduceMotion ? nil : PeakMotion.soft, value: page)
 
             VStack(spacing: 0) {
@@ -150,14 +149,14 @@ struct OnboardingView: View {
         case .markets:
             featurePage(
                 title: "Live markets",
-                subtitle: "Follow prices as they move. Open any event for depth, history, and a clear yes or no price.",
-                visual: { OnboardingMarketsVisual() }
+                subtitle: "Real odds, moving in real time. Tap any market for depth, history, and a clear yes-or-no price.",
+                visual: { OnboardingMarketStack() }
             )
         case .wallet:
             featurePage(
                 title: "Trade with your wallet",
-                subtitle: "Deposit USDC on Polygon with a QR or address. Peak does not hold your keys.",
-                visual: { OnboardingWalletVisual() }
+                subtitle: "Your keys never leave your device. Deposit in seconds, trade in one tap, withdraw whenever you want.",
+                visual: { OnboardingWalletBadge() }
             )
         case .start:
             startPage
@@ -168,17 +167,28 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 24)
 
-            PeakAppLogo(size: 120, showGlow: false)
+            // Staggered entrance: logo settles, then the words arrive. A single
+            // simultaneous fade reads as a screenshot; a sequence reads as an
+            // app waking up.
+            PeakAppLogo(size: 120, showGlow: true)
+                .scaleEffect(appear ? 1 : 0.86)
                 .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 16)
                 .padding(.bottom, 36)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.65, dampingFraction: 0.62),
+                    value: appear
+                )
 
             Text("Peak")
                 .font(.largeTitle.weight(.bold))
                 .tracking(-0.8)
                 .foregroundStyle(.primary)
                 .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 12)
+                .offset(y: appear ? 0 : 14)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.8).delay(0.12),
+                    value: appear
+                )
 
             Text("Prediction markets,\nbuilt for trading.")
                 .font(.title3.weight(.regular))
@@ -187,7 +197,29 @@ struct OnboardingView: View {
                 .lineSpacing(4)
                 .padding(.top, 14)
                 .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 10)
+                .offset(y: appear ? 0 : 12)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.6, dampingFraction: 0.8).delay(0.22),
+                    value: appear
+                )
+
+            // A real market on the very first screen. "Prediction markets" is
+            // abstract until you watch a price move; this answers "what is this
+            // app" before the user has to swipe for it.
+            OnboardingLiveOddsCard(
+                question: "Bitcoin above $150k before July?",
+                category: "Crypto",
+                seed: 0.47,
+                delay: 0.6
+            )
+            .padding(.top, 34)
+            .frame(maxWidth: 300)
+            .opacity(appear ? 1 : 0)
+            .offset(y: appear ? 0 : 22)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.7, dampingFraction: 0.78).delay(0.34),
+                value: appear
+            )
 
             Spacer(minLength: 40)
         }
