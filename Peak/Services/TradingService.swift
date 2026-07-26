@@ -99,6 +99,12 @@ struct TradeResult: Sendable {
     let orderID: String
     let status: String
     let success: Bool
+    /// Shares actually filled, when CLOB reported it.
+    ///
+    /// `nil` means unknown, never zero — a zero fill is a real outcome (FAK
+    /// matched nothing) and the two must not collapse, or "nothing sold" would
+    /// render as a plain success. See `TradeFill`.
+    let filledSize: Double?
 }
 
 enum TradingError: LocalizedError, Sendable {
@@ -208,6 +214,7 @@ enum TradingError: LocalizedError, Sendable {
             || lower.contains("fully filled")
             || lower.contains("no match")
             || lower.contains("fok")
+            || lower.contains("fak")
         {
             return .server(
                 "Not enough liquidity to fill that in one go. Try a smaller amount, or use a limit order to wait for a better price."
@@ -337,7 +344,7 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         do {
             let prepared = try await TradingProxyClient.prepareOrder(jsonBody: body)
             let root = try await TradingProxyClient.submitPreparedOrder(prepared)
-            return try Self.parseTradeResult(root)
+            return try Self.parseTradeResult(root, side: side, requestedShares: size)
         } catch let error as TradingError {
             // Only fall back when the backend lacks the endpoint. A rejection
             // (funds, region, closed market) is a real answer and must surface
@@ -345,7 +352,7 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
             // everyone.
             guard Self.isMissingPrepareEndpoint(error) else { throw error }
             let root = try await TradingProxyClient.jsonObject(path: "orders", method: "POST", jsonBody: body)
-            return try Self.parseTradeResult(root)
+            return try Self.parseTradeResult(root, side: side, requestedShares: size)
         }
     }
 
@@ -480,7 +487,45 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
         return lower.contains("not found") || lower.contains("404")
     }
 
-    private static func parseTradeResult(_ root: [String: Any]) throws -> TradeResult {
+    /// Shares filled, or `nil` when it cannot be established with confidence.
+    ///
+    /// CLOB reports matched amounts from the maker's side: a SELL gives shares
+    /// and receives cash, a BUY the reverse.
+    ///
+    /// The unit is the trap. These arrive as decimal strings, and depending on
+    /// the endpoint they may be human share counts or raw 1e6 base units.
+    /// Guessing wrong does not crash — it prints a confidently wrong sentence
+    /// ("50000000 of 50 shares sold"), which is worse than saying nothing.
+    ///
+    /// So this deliberately does **not** try to rescale a value that looks like
+    /// base units. An earlier attempt did, and turned a 12345-unit response into
+    /// "0.01 of 50 shares filled" — a plausible-looking lie. Anything that does
+    /// not already read as a share count is reported as unknown, which degrades
+    /// to "your order was submitted": vague, but never false.
+    ///
+    /// Consequence worth knowing: if CLOB does return base units here, fills
+    /// simply stop being reported rather than being reported wrongly. That is
+    /// the intended direction to fail in.
+    static func normalizedFill(_ raw: Any?, requestedShares: Double) -> Double? {
+        let value: Double?
+        switch raw {
+        case let text as String: value = Double(text)
+        case let number as NSNumber: value = number.doubleValue
+        default: value = nil
+        }
+        guard let value, value.isFinite, value >= 0, requestedShares > 0 else { return nil }
+        if value == 0 { return 0 }
+
+        // Allow slight over-fill for tick rounding; reject anything beyond it.
+        guard value <= requestedShares * 1.05 else { return nil }
+        return value
+    }
+
+    private static func parseTradeResult(
+        _ root: [String: Any],
+        side: TradeSide,
+        requestedShares: Double
+    ) throws -> TradeResult {
         let orderID = (root["orderID"] as? String) ?? (root["id"] as? String) ?? ""
         let status = (root["status"] as? String) ?? ""
         let errorText =
@@ -507,10 +552,13 @@ struct RemoteTradingService: TradingService, @unchecked Sendable {
                 code: code
             )
         }
+        // A sell makes shares and takes cash; a buy is the reverse.
+        let shareLeg = side == .sell ? root["makingAmount"] : root["takingAmount"]
         return TradeResult(
             orderID: orderID.isEmpty ? (status.isEmpty ? "submitted" : status) : orderID,
             status: status.isEmpty ? "submitted" : status,
-            success: true
+            success: true,
+            filledSize: Self.normalizedFill(shareLeg, requestedShares: requestedShares)
         )
     }
 

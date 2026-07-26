@@ -157,6 +157,22 @@ struct TradeStubSheet: View {
 
     private var enteredValue: Double { Double(amountUSD) ?? 0 }
 
+    /// The CLOB order type to send.
+    ///
+    /// Market *sells* go out as FAK (fill-and-kill) rather than FOK. FOK is
+    /// all-or-nothing: one share short of the full size on a thin book and the
+    /// entire sell is killed, leaving the user holding everything — the failure
+    /// they actually hit. FAK takes whatever the book supports and cancels the
+    /// remainder, so exiting most of a position beats exiting none of it.
+    ///
+    /// Buys stay FOK deliberately. A partial buy quietly spends less than the
+    /// budget the user typed, and unlike a stuck position that is not a problem
+    /// worth changing the semantics of a working path to solve.
+    private var submittedOrderType: String {
+        if orderType == .fok && action == .sell { return "FAK" }
+        return orderType.rawValue
+    }
+
     /// All unit conversion lives in `TradeAmounts` so it can be tested — see
     /// TradeAmountsTests. The view only supplies inputs.
     private var amounts: TradeAmounts {
@@ -637,7 +653,7 @@ struct TradeStubSheet: View {
                 size: shareSize,
                 amount: orderAmount,
                 negRisk: market.negRisk,
-                orderType: orderType.rawValue
+                orderType: submittedOrderType
             )
             guard result.success else {
                 withAnimation(PeakMotion.soft) {
@@ -646,9 +662,24 @@ struct TradeStubSheet: View {
                 }
                 return
             }
+            // FAK can match nothing and still come back successful. That is a
+            // failed exit from the user's side, so it must not read as a win.
+            let fill = TradeFill(
+                requested: shareSize,
+                filled: result.filledSize,
+                isSell: action == .sell
+            )
+            guard fill.didSucceed else {
+                withAnimation(PeakMotion.soft) {
+                    didSucceed = false
+                    message = fill.message
+                }
+                PeakHaptics.error()
+                return
+            }
             withAnimation(PeakMotion.soft) {
                 didSucceed = true
-                message = "Your order was submitted."
+                message = fill.message
             }
             PeakHaptics.success()
             focusedField = nil
@@ -658,7 +689,10 @@ struct TradeStubSheet: View {
                 _ = try? await env.trading.fetchTradingPortfolio()
                 NotificationCenter.default.post(name: .peakTradingPortfolioShouldRefresh, object: nil)
             }
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            // A partial fill tells the user they still hold shares they meant to
+            // sell. Dismissing on the usual beat would pull that off screen
+            // before it can be read.
+            try? await Task.sleep(nanoseconds: fill.isPartial ? 3_500_000_000 : 1_200_000_000)
             dismiss()
         } catch {
             let facing = Self.userFacingTradeError(error)
