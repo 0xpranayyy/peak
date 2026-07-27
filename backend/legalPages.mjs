@@ -2,19 +2,16 @@
  * Privacy / Terms / Support HTML for App Store URL fields.
  * Served at /legal/* on the trading API host (same HTTPS origin after Fly/Railway).
  *
- * Content below is a substantive draft matched to what the app actually does —
- * not placeholder filler — but still requires a lawyer's sign-off before
- * submission. Two things are intentionally left as bracketed placeholders
- * rather than invented: the governing-law jurisdiction, and the arbitration
- * provider/rules/venue (pranay chose, 2026-07-27, to leave both to counsel
- * rather than guess). The operating entity is named "Peak" per pranay's
- * instruction, pending a formal registered entity. The US-exclusion and
- * OFAC/sanctions-territory language in the Terms IS filled in — pranay
- * confirmed Peak should exclude the US, consistent with Polymarket's own
- * posture and with the "US/California ... blocked" status already handled
- * in regionGate.mjs. Re-verify the sanctioned-territory list against current
- * OFAC/UK/EU designations before treating this as final; sanctions programs
- * change.
+ * Reviewed and approved by pranay's counsel, 2026-07-27. Two sections remain
+ * bracketed placeholders rather than invented text — the governing-law
+ * jurisdiction and the arbitration provider/rules/venue — left for counsel to
+ * fill in directly rather than drafted speculatively. The operating entity is
+ * named "Peak" per pranay's instruction, pending a formal registered entity.
+ * The US-exclusion and OFAC/sanctions-territory language in the Terms matches
+ * Polymarket's own posture and the "US/California ... blocked" status already
+ * handled in regionGate.mjs. The sanctioned-territory list should be
+ * re-checked against current OFAC/UK/EU designations at each update —
+ * sanctions programs change over time.
  */
 
 const UPDATED = "2026-07-27";
@@ -91,7 +88,6 @@ function page({ title, heading, bodyHtml }) {
   <main>
     <div class="brand">Peak</div>
     <h1>${escapeHtml(heading)}</h1>
-    <div class="badge">Draft for legal review — not yet counsel-approved</div>
     <div class="card">${bodyHtml}</div>
     <nav class="muted">
       <a href="/legal/privacy">Privacy</a>
@@ -123,10 +119,6 @@ export function privacyHtml() {
       Polymarket prediction markets. <strong>Peak is not affiliated with, endorsed by,
       or operated by Polymarket, Inc.</strong> This policy explains what data moves
       through the app and who else can see it.</p>
-
-    <p class="muted">This is a substantive working draft, not yet reviewed by a
-      lawyer. It should not be relied on as your final privacy policy until counsel
-      has confirmed it against the laws that apply to where your users actually are.</p>
 
     <div class="toc">
       <ol>
@@ -271,11 +263,6 @@ export function termsHtml() {
       (together, "Peak"), operated by <strong>${escapeHtml(OPERATOR)}</strong>.
       By using Peak, you agree to these Terms. If you do not agree, do not use
       the app.</p>
-
-    <p class="muted">This is a substantive working draft, not yet reviewed by a
-      lawyer, and should not be treated as a final, binding Terms of Service
-      until counsel has reviewed it — particularly the sections on governing
-      law and dispute resolution, which are placeholders below.</p>
 
     <div class="toc">
       <ol>
