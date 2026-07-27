@@ -4,16 +4,36 @@
  *
  * Content below is a substantive draft matched to what the app actually does —
  * not placeholder filler — but still requires a lawyer's sign-off before
- * submission. Three facts are intentionally left as bracketed placeholders
- * rather than invented: the operating entity's formal name/address, the
- * governing-law jurisdiction, and the effective date. Those are business and
- * legal decisions, not boilerplate, and guessing wrong here is worse than
- * leaving it visibly blank.
+ * submission. Two things are intentionally left as bracketed placeholders
+ * rather than invented: the governing-law jurisdiction, and the arbitration
+ * provider/rules/venue (pranay chose, 2026-07-27, to leave both to counsel
+ * rather than guess). The operating entity is named "Peak" per pranay's
+ * instruction, pending a formal registered entity. The US-exclusion and
+ * OFAC/sanctions-territory language in the Terms IS filled in — pranay
+ * confirmed Peak should exclude the US, consistent with Polymarket's own
+ * posture and with the "US/California ... blocked" status already handled
+ * in regionGate.mjs. Re-verify the sanctioned-territory list against current
+ * OFAC/UK/EU designations before treating this as final; sanctions programs
+ * change.
  */
 
 const UPDATED = "2026-07-27";
 const OPERATOR = "Peak"; // Replace with the formal registered entity name once one exists.
 const GOVERNING_LAW = "[GOVERNING LAW / JURISDICTION — to be set with counsel]";
+const ARBITRATION_PLACEHOLDER =
+  "[ARBITRATION PROVIDER, RULES, AND VENUE — to be set with counsel, or removed if disputes should go through ordinary courts]";
+
+/**
+ * Countries and regions comprehensively sanctioned or embargoed by the United
+ * States, United Kingdom, or European Union as of this writing. This is a
+ * factual list of public government designations, not a specific provider's
+ * drafted text — but sanctions programs change, so it must be re-checked
+ * against current OFAC / UK / EU lists before this page is treated as final.
+ */
+const RESTRICTED_TERRITORIES =
+  "Cuba, Iran, North Korea, Syria, the Crimea, Donetsk, and Luhansk regions of Ukraine, " +
+  "and any other country or region subject to comprehensive sanctions or embargo by the " +
+  "United States, United Kingdom, or European Union";
 
 function escapeHtml(s) {
   return String(s)
@@ -125,6 +145,9 @@ export function privacyHtml() {
     <hr />
 
     <h2 id="collect">1. What Peak collects, and why</h2>
+    <p class="muted"><strong>TL;DR:</strong> only what's needed to sign you in,
+      show your positions, and let you place a trade — no ads, no tracking, no
+      sale of your data.</p>
     <p>Peak is built to need as little of your data as it can and still place a
       trade. Depending on how you use the app:</p>
     <ul>
@@ -163,6 +186,8 @@ export function privacyHtml() {
     <p>Deleting the app deletes this data along with it.</p>
 
     <h2 id="thirdparties">3. Third parties Peak relies on</h2>
+    <p class="muted"><strong>TL;DR:</strong> Peak doesn't sell your data, and
+      doesn't share it beyond the providers below that Peak itself runs on.</p>
     <p>Peak is a thin client over other people's infrastructure. Each of the
       following processes some of your data under its own privacy terms:</p>
     <ul>
@@ -202,11 +227,30 @@ export function privacyHtml() {
       Do not use Peak if you are under the minimum age for entering into
       financial transactions where you live, whichever is higher.</p>
 
-    <h2 id="rights">7. Your choices</h2>
+    <h2 id="rights">7. Your choices and rights</h2>
     <p>You can sign out, disconnect a wallet, clear on-device data from within
-      Settings, or delete the app at any time. Depending on where you live, you
-      may have a legal right to request access to, correction of, or deletion of
-      data Peak's backend holds about you — contact us to exercise it.</p>
+      Settings, or delete the app at any time.</p>
+
+    <p><strong>If you are in the UK or European Economic Area</strong>, you have
+      rights under UK and EU data protection law (GDPR), including the right
+      to: request access to and a copy of your personal data; request
+      correction or deletion of it; object to or restrict certain processing;
+      request portability of your data; and withdraw consent at any time where
+      processing is based on consent.</p>
+
+    <p><strong>If you are a California resident</strong>, you have rights under
+      the California Consumer Privacy Act (CCPA), including the right to:
+      request access to and a copy of the personal information Peak's backend
+      has collected about you; request its deletion; and opt out of the "sale"
+      or "sharing" of personal information as those terms are defined under
+      CCPA — <strong>Peak does not sell or share your personal information</strong>
+      for cross-context behavioral advertising, so there is nothing to opt out
+      of today, but the right stands regardless.</p>
+
+    <p>To exercise any of these rights, contact us — see
+      <a href="#contact">Contact</a> below. We may need to verify your identity
+      before acting on a request. Peak will not discriminate against you for
+      exercising these rights.</p>
 
     <h2 id="changes">8. Changes to this policy</h2>
     <p>If this policy changes materially, the "Last updated" date below will
@@ -236,9 +280,9 @@ export function termsHtml() {
     <div class="toc">
       <ol>
         <li><a href="#what">What Peak is — and isn't</a></li>
-        <li><a href="#eligibility">Eligibility</a></li>
+        <li><a href="#eligibility">Eligibility and restricted territories</a></li>
         <li><a href="#risk">Risk of loss — read this</a></li>
-        <li><a href="#noadvice">Not financial advice</a></li>
+        <li><a href="#noadvice">Not financial advice, not a fiduciary</a></li>
         <li><a href="#account">Your wallet and account</a></li>
         <li><a href="#conduct">Acceptable use</a></li>
         <li><a href="#ip">Intellectual property</a></li>
@@ -247,6 +291,7 @@ export function termsHtml() {
         <li><a href="#liability">Limitation of liability</a></li>
         <li><a href="#termination">Suspension and termination</a></li>
         <li><a href="#law">Governing law</a></li>
+        <li><a href="#arbitration">Dispute resolution</a></li>
         <li><a href="#changes2">Changes to these Terms</a></li>
         <li><a href="#contact2">Contact</a></li>
       </ol>
@@ -262,20 +307,37 @@ export function termsHtml() {
       to Polymarket's own terms, rules, and restrictions, which apply in addition
       to these Terms.</p>
 
-    <h2 id="eligibility">2. Eligibility</h2>
+    <h2 id="eligibility">2. Eligibility and restricted territories</h2>
+    <p>As a condition of using Peak, you represent and agree, each time you use
+      the app, that:</p>
     <ul>
-      <li>You must be at least <strong>18 years old</strong> to use Peak.</li>
-      <li>You must be legally permitted, under the laws of wherever you are
-        located, to trade on prediction markets and to use cryptocurrency-based
-        financial products. It is <strong>your responsibility</strong>, not
-        Peak's, to know and follow those laws.</li>
-      <li>Peak may show a regional warning or restrict some functionality based
-        on a network signal, but this is a courtesy, not a legal determination,
-        and not a guarantee that using Peak is lawful where you are. Do not rely
-        on Peak's absence of a warning as legal confirmation.</li>
-      <li>You may not use Peak if you are barred from using Polymarket or similar
-        services under sanctions, export control, or other applicable law.</li>
+      <li>You are at least <strong>18 years old</strong>.</li>
+      <li>You are <strong>not located in, a resident or citizen of, or
+        organized under the laws of, the United States</strong>, and you are
+        not accessing Peak on behalf of a person or entity that is. Peak's
+        underlying exchange, Polymarket, does not offer its prediction-market
+        products to persons in the United States, and Peak cannot make that
+        access lawful by routing around it.</li>
+      <li>You are not located in, a resident or national of, or organized under
+        the laws of, ${RESTRICTED_TERRITORIES} (together, "Restricted
+        Territories"), and you are not acting on behalf of anyone who is.</li>
+      <li>You are not listed on any sanctions or restricted-party list
+        maintained by the United States (including OFAC's Specially Designated
+        Nationals list), the United Kingdom, or the European Union, and you are
+        not owned or controlled by, or acting on behalf of, anyone who is.</li>
+      <li>You will not use a VPN, proxy, or any other method to obscure your
+        location in order to access Peak from the United States or a Restricted
+        Territory, or to circumvent any region-based restriction Peak or
+        Polymarket applies. Doing so is itself a breach of these Terms.</li>
+      <li>Beyond the above, you are legally permitted, under the laws that
+        apply to you, to trade on prediction markets and to use
+        cryptocurrency-based financial products. It is <strong>your
+        responsibility</strong>, not Peak's, to know and follow those laws.</li>
     </ul>
+    <p>Peak may show a regional warning or restrict functionality based on a
+      network signal. That is a courtesy, not a legal determination, and not a
+      guarantee that using Peak is lawful where you are — the absence of a
+      warning is not confirmation that you are eligible.</p>
 
     <h2 id="risk">3. Risk of loss — read this</h2>
     <p>Prediction markets involve real money and real risk. Prices move, markets
@@ -285,11 +347,13 @@ export function termsHtml() {
       suggestion of how a market will resolve. <strong>Only trade money you can
       afford to lose.</strong></p>
 
-    <h2 id="noadvice">4. Not financial advice</h2>
+    <h2 id="noadvice">4. Not financial advice, not a fiduciary</h2>
     <p>Peak provides software, not advice. Nothing in the app is a
-      recommendation to buy, sell, or hold any position, and Peak is not acting
-      as a broker, dealer, investment adviser, or fiduciary of any kind. Any
-      decision to trade is yours alone.</p>
+      recommendation to buy, sell, or hold any position. Peak is not a broker,
+      dealer, exchange, custodial wallet provider, money services business, or
+      investment adviser, and does not act as one. Peak owes you no fiduciary
+      duty of any kind, and nothing in these Terms should be read to create
+      one. Any decision to trade is yours alone.</p>
 
     <h2 id="account">5. Your wallet and account</h2>
     <ul>
@@ -354,18 +418,25 @@ export function termsHtml() {
 
     <h2 id="law">12. Governing law</h2>
     <p>These Terms are governed by the laws of <span class="placeholder">${escapeHtml(GOVERNING_LAW)}</span>,
-      without regard to conflict-of-laws principles, and any dispute will be
-      resolved in the courts of that jurisdiction — <strong>pending final
+      without regard to conflict-of-laws principles — <strong>pending final
       selection with counsel.</strong> This section is a placeholder and must
       not be treated as final.</p>
 
-    <h2 id="changes2">13. Changes to these Terms</h2>
+    <h2 id="arbitration">13. Dispute resolution</h2>
+    <p><span class="placeholder">${escapeHtml(ARBITRATION_PLACEHOLDER)}</span></p>
+    <p class="muted">Left open deliberately. Binding arbitration with a
+      class-action waiver is common in comparable apps and would replace
+      ordinary court litigation (other than small-claims) with individual
+      arbitration before a named provider — a real trade-off for users that
+      needs a lawyer's judgment, not default text.</p>
+
+    <h2 id="changes2">14. Changes to these Terms</h2>
     <p>Peak may update these Terms from time to time. If changes are material,
       the "Last updated" date below will change and, where required, we'll tell
       you in the app. Continuing to use Peak after a change takes effect means
       you accept the updated Terms.</p>
 
-    <h2 id="contact2">14. Contact</h2>
+    <h2 id="contact2">15. Contact</h2>
     ${supportContactHtml()}
   `,
   });
