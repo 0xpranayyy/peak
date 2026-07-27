@@ -250,37 +250,216 @@ enum PeakFormat {
     }
 }
 
-/// Peak brand — sea-glass teal; slightly brighter mid on dark for chrome / CTAs.
+/// One brand ramp, in the four steps the app uses.
+///
+/// Every step is a Light/Dark pair, not one colour: a hue that reads well on
+/// white is usually too dark on black. The original teal already did this and
+/// every theme must too.
+struct PeakBrandRamp: Sendable, Equatable {
+    let deepLight: UIColor, deepDark: UIColor
+    let midLight: UIColor, midDark: UIColor
+    let softLight: UIColor, softDark: UIColor
+    let mistLight: UIColor, mistDark: UIColor
+}
+
+/// A resolved ramp, ready to use in a view.
+///
+/// Each `Color` wraps a dynamic `UIColor`, so Light/Dark still resolves at
+/// render time — switching appearance never needs to rebuild anything.
+///
+/// Instances are built once per theme and cached (see `PeakTheme.colors`).
+/// Rebuilding them per access would hand SwiftUI a structurally new value on
+/// every render, defeating diffing in exactly the long lists where it matters.
+struct PeakBrandColors: Equatable {
+    let deep: Color
+    let mid: Color
+    let soft: Color
+    let mist: Color
+
+    init(_ ramp: PeakBrandRamp) {
+        func adaptive(_ light: UIColor, _ dark: UIColor) -> Color {
+            Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+        }
+        deep = adaptive(ramp.deepLight, ramp.deepDark)
+        mid = adaptive(ramp.midLight, ramp.midDark)
+        soft = adaptive(ramp.softLight, ramp.softDark)
+        mist = adaptive(ramp.mistLight, ramp.mistDark)
+    }
+}
+
+private func peakRGB(_ r: Double, _ g: Double, _ b: Double) -> UIColor {
+    UIColor(red: r, green: g, blue: b, alpha: 1)
+}
+
+/// Accent themes.
+///
+/// Curated rather than a free colour picker on purpose: an arbitrary hue
+/// (yellow, say) puts white CTA text at roughly 1.4:1 contrast, which fails
+/// accessibility and is not something the user can be expected to check. Each
+/// ramp here is tuned for both appearances.
+///
+/// Buy/sell colours are deliberately NOT themeable — green-means-up is
+/// information, not decoration, and must not become a preference.
+enum PeakTheme: String, CaseIterable, Identifiable, Sendable {
+    case teal
+    case courtGreen
+    case indigo
+    case ember
+    case graphite
+    case violet
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .teal: return "Peak Teal"
+        case .courtGreen: return "Court Green"
+        case .indigo: return "Midnight Indigo"
+        case .ember: return "Ember"
+        case .graphite: return "Graphite"
+        case .violet: return "Royal Violet"
+        }
+    }
+
+    var ramp: PeakBrandRamp {
+        switch self {
+        case .teal:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.06, 0.28, 0.26), deepDark: peakRGB(0.12, 0.40, 0.37),
+                midLight: peakRGB(0.16, 0.55, 0.48), midDark: peakRGB(0.42, 0.82, 0.72),
+                softLight: peakRGB(0.32, 0.62, 0.56), softDark: peakRGB(0.58, 0.88, 0.80),
+                mistLight: peakRGB(0.52, 0.70, 0.66), mistDark: peakRGB(0.68, 0.88, 0.82)
+            )
+        case .courtGreen:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.04, 0.24, 0.12), deepDark: peakRGB(0.09, 0.36, 0.19),
+                midLight: peakRGB(0.09, 0.45, 0.23), midDark: peakRGB(0.35, 0.78, 0.51),
+                softLight: peakRGB(0.25, 0.58, 0.35), softDark: peakRGB(0.55, 0.86, 0.66),
+                mistLight: peakRGB(0.49, 0.72, 0.56), mistDark: peakRGB(0.70, 0.90, 0.78)
+            )
+        case .indigo:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.12, 0.13, 0.28), deepDark: peakRGB(0.20, 0.22, 0.44),
+                midLight: peakRGB(0.24, 0.26, 0.64), midDark: peakRGB(0.56, 0.59, 0.92),
+                softLight: peakRGB(0.40, 0.42, 0.77), softDark: peakRGB(0.70, 0.72, 0.95),
+                mistLight: peakRGB(0.60, 0.62, 0.86), mistDark: peakRGB(0.80, 0.82, 0.97)
+            )
+        case .ember:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.36, 0.15, 0.06), deepDark: peakRGB(0.48, 0.22, 0.10),
+                midLight: peakRGB(0.75, 0.33, 0.13), midDark: peakRGB(0.94, 0.55, 0.32),
+                softLight: peakRGB(0.84, 0.50, 0.25), softDark: peakRGB(0.96, 0.70, 0.52),
+                mistLight: peakRGB(0.90, 0.67, 0.49), mistDark: peakRGB(0.97, 0.82, 0.70)
+            )
+        case .graphite:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.15, 0.16, 0.17), deepDark: peakRGB(0.26, 0.28, 0.29),
+                midLight: peakRGB(0.30, 0.33, 0.34), midDark: peakRGB(0.72, 0.76, 0.78),
+                softLight: peakRGB(0.46, 0.49, 0.51), softDark: peakRGB(0.82, 0.85, 0.87),
+                mistLight: peakRGB(0.66, 0.69, 0.70), mistDark: peakRGB(0.90, 0.92, 0.93)
+            )
+        case .violet:
+            return PeakBrandRamp(
+                deepLight: peakRGB(0.22, 0.10, 0.31), deepDark: peakRGB(0.33, 0.17, 0.45),
+                midLight: peakRGB(0.43, 0.20, 0.63), midDark: peakRGB(0.72, 0.52, 0.90),
+                softLight: peakRGB(0.56, 0.36, 0.74), softDark: peakRGB(0.82, 0.67, 0.94),
+                mistLight: peakRGB(0.72, 0.58, 0.84), mistDark: peakRGB(0.89, 0.80, 0.96)
+            )
+        }
+    }
+
+    /// Built once per theme, then reused — see `PeakBrandColors`.
+    var colors: PeakBrandColors { Self.cache[self] ?? PeakBrandColors(ramp) }
+
+    private static let cache: [PeakTheme: PeakBrandColors] = Dictionary(
+        uniqueKeysWithValues: PeakTheme.allCases.map { ($0, PeakBrandColors($0.ramp)) }
+    )
+}
+
+/// Picks legible text for a coloured fill.
+///
+/// Exists because hardcoding white was wrong. The dark-appearance brand step is
+/// a bright pastel by design, and white on it measures 1.83:1 — well under the
+/// 3:1 floor for UI text. That was already shipping on the original teal, not
+/// something the extra themes introduced; several of them are simply brighter
+/// and made it obvious.
+enum PeakContrast {
+    /// WCAG relative luminance.
+    static func luminance(_ color: UIColor) -> Double {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func channel(_ c: CGFloat) -> Double {
+            let v = Double(c)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+    }
+
+    static func ratio(_ a: UIColor, _ b: UIColor) -> Double {
+        let l1 = luminance(a), l2 = luminance(b)
+        return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+    }
+
+    /// Near-black rather than pure black — softer on a saturated fill while
+    /// still clearing the contrast floor comfortably.
+    static let onLight = UIColor(white: 0.08, alpha: 1)
+    static let onDark = UIColor.white
+
+    /// WCAG floor for UI components and large text.
+    ///
+    /// Not 4.5. This is a switching threshold, not a compliance target, and the
+    /// distinction matters: picking simply "whichever contrasts more" flips the
+    /// light-mode teal CTA to dark text at 4.50 versus white's 4.08 — a visible
+    /// redesign of the app's primary button to win 0.4. White is kept wherever
+    /// it is adequate, so only the genuinely unreadable cases change.
+    static let minimumRatio = 3.0
+
+    /// White where it reads, dark text where it does not.
+    static func readableText(on fill: UIColor) -> Color {
+        if ratio(onDark, fill) >= minimumRatio { return Color(uiColor: onDark) }
+        return Color(uiColor: onLight)
+    }
+
+    /// Resolve a dynamic `Color` for one appearance, then pick text for it.
+    static func readableText(on fill: Color, in scheme: ColorScheme) -> Color {
+        let resolved = UIColor(fill).resolvedColor(
+            with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
+        )
+        return readableText(on: resolved)
+    }
+}
+
+private struct PeakBrandKey: EnvironmentKey {
+    static let defaultValue = PeakTheme.teal.colors
+}
+
+extension EnvironmentValues {
+    /// The active brand ramp.
+    ///
+    /// Deliberately an environment value rather than mutable global state. An
+    /// earlier attempt cached the ramp in `static var`s, which SwiftUI cannot
+    /// observe — changing the theme published nothing, so the tree had to be
+    /// re-identified with `.id()` to pick it up. That rebuilt every view and
+    /// threw away scroll position, the selected tab and any open sheet on what
+    /// should be a cosmetic tap. Reading through the environment lets SwiftUI
+    /// invalidate exactly the views that use a brand colour, and nothing else.
+    var peakBrand: PeakBrandColors {
+        get { self[PeakBrandKey.self] }
+        set { self[PeakBrandKey.self] = newValue }
+    }
+}
+
+/// The default ramp, for the few places that genuinely cannot read the
+/// environment — UIKit appearance proxies and widget rendering.
+///
+/// Not a theming mechanism. If you are in a `View`, use
+/// `@Environment(\.peakBrand)` instead; this constant does not follow the
+/// user's choice.
 enum PeakBrand {
-    /// Ink teal for washes and depth.
-    static let deep = Color(uiColor: UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.12, green: 0.40, blue: 0.37, alpha: 1)
-        }
-        return UIColor(red: 0.06, green: 0.28, blue: 0.26, alpha: 1)
-    })
-
-    /// Primary brand / CTAs — aligned with AccentColor.
-    static let mid = Color(uiColor: UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.42, green: 0.82, blue: 0.72, alpha: 1)
-        }
-        return UIColor(red: 0.16, green: 0.55, blue: 0.48, alpha: 1)
-    })
-
-    static let soft = Color(uiColor: UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.58, green: 0.88, blue: 0.80, alpha: 1)
-        }
-        return UIColor(red: 0.32, green: 0.62, blue: 0.56, alpha: 1)
-    })
-
-    static let mist = Color(uiColor: UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.68, green: 0.88, blue: 0.82, alpha: 1)
-        }
-        return UIColor(red: 0.52, green: 0.70, blue: 0.66, alpha: 1)
-    })
+    static let deep = PeakTheme.teal.colors.deep
+    static let mid = PeakTheme.teal.colors.mid
+    static let soft = PeakTheme.teal.colors.soft
+    static let mist = PeakTheme.teal.colors.mist
 }
 
 /// Canvas + elevated surfaces — flat, neutral, no tint washes.
@@ -318,13 +497,11 @@ enum PeakCanvas {
         return UIColor(white: 0, alpha: 0.08)
     })
 
-    /// Soft brand rim for featured cards only (not backgrounds).
-    static let brandRim = PeakBrand.mid.opacity(0.20)
 }
 
 /// Nav / tab chrome matched to Peak canvas (call from root on scheme change).
 enum PeakChrome {
-    static func apply(for scheme: ColorScheme) {
+    static func apply(for scheme: ColorScheme, brand: PeakBrandColors) {
         let isDark = scheme == .dark
         let bg = isDark
             ? UIColor.black
@@ -342,7 +519,7 @@ enum PeakChrome {
         UINavigationBar.appearance().standardAppearance = nav
         UINavigationBar.appearance().scrollEdgeAppearance = nav
         UINavigationBar.appearance().compactAppearance = nav
-        UINavigationBar.appearance().tintColor = UIColor(PeakBrand.mid)
+        UINavigationBar.appearance().tintColor = UIColor(brand.mid)
 
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
@@ -350,7 +527,7 @@ enum PeakChrome {
         tab.shadowColor = .clear
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
-        UITabBar.appearance().tintColor = UIColor(PeakBrand.mid)
+        UITabBar.appearance().tintColor = UIColor(brand.mid)
 
         UITableView.appearance().backgroundColor = .clear
         UICollectionView.appearance().backgroundColor = .clear
@@ -372,6 +549,8 @@ struct PeakMaterialBackground: View {
 
 /// Reusable brand gradient mesh (SwiftUI ellipses — no image assets).
 struct PeakAtmosphereMesh: View {
+    @Environment(\.peakBrand) private var brand
+
     var intensity: CGFloat = 1
     var parallax: CGSize = .zero
     @Environment(\.colorScheme) private var colorScheme
@@ -386,8 +565,8 @@ struct PeakAtmosphereMesh: View {
                     .fill(
                         RadialGradient(
                             colors: [
-                                PeakBrand.mid.opacity((isLight ? 0.10 : 0.16) * intensity),
-                                PeakBrand.mid.opacity(0),
+                                brand.mid.opacity((isLight ? 0.10 : 0.16) * intensity),
+                                brand.mid.opacity(0),
                             ],
                             center: .center,
                             startRadius: 0,
@@ -401,8 +580,8 @@ struct PeakAtmosphereMesh: View {
                     .fill(
                         RadialGradient(
                             colors: [
-                                PeakBrand.soft.opacity((isLight ? 0.08 : 0.11) * intensity),
-                                PeakBrand.soft.opacity(0),
+                                brand.soft.opacity((isLight ? 0.08 : 0.11) * intensity),
+                                brand.soft.opacity(0),
                             ],
                             center: .center,
                             startRadius: 0,
@@ -416,8 +595,8 @@ struct PeakAtmosphereMesh: View {
                     .fill(
                         RadialGradient(
                             colors: [
-                                PeakBrand.deep.opacity((isLight ? 0.05 : 0.09) * intensity),
-                                PeakBrand.deep.opacity(0),
+                                brand.deep.opacity((isLight ? 0.05 : 0.09) * intensity),
+                                brand.deep.opacity(0),
                             ],
                             center: .center,
                             startRadius: 0,
@@ -466,6 +645,8 @@ struct PeakAppLogo: View {
 
 /// Geometric Peak mark — ascending peak / chevron, brand teal.
 struct PeakMark: View {
+    @Environment(\.peakBrand) private var brand
+
     var size: CGFloat = 56
     var filled: Bool = true
     @Environment(\.colorScheme) private var colorScheme
@@ -478,8 +659,8 @@ struct PeakMark: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                PeakBrand.mid.opacity(isLight ? 0.14 : 0.24),
-                                PeakBrand.deep.opacity(isLight ? 0.06 : 0.10),
+                                brand.mid.opacity(isLight ? 0.14 : 0.24),
+                                brand.deep.opacity(isLight ? 0.06 : 0.10),
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -488,21 +669,21 @@ struct PeakMark: View {
                     .frame(width: size * 1.55, height: size * 1.55)
 
                 Circle()
-                    .strokeBorder(PeakBrand.mid.opacity(isLight ? 0.22 : 0.20), lineWidth: 1)
+                    .strokeBorder(brand.mid.opacity(isLight ? 0.22 : 0.20), lineWidth: 1)
                     .frame(width: size * 1.55, height: size * 1.55)
             }
 
             PeakMarkShape()
                 .fill(
                     LinearGradient(
-                        colors: [PeakBrand.soft, PeakBrand.mid, PeakBrand.deep],
+                        colors: [brand.soft, brand.mid, brand.deep],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
                 .frame(width: size, height: size * 0.78)
                 .shadow(
-                    color: PeakBrand.deep.opacity(isLight ? 0.14 : 0.22),
+                    color: brand.deep.opacity(isLight ? 0.14 : 0.22),
                     radius: size * 0.12,
                     y: size * 0.06
                 )
@@ -559,6 +740,8 @@ enum PeakEmptyKind {
 }
 
 struct PeakEmptyVisual: View {
+    @Environment(\.peakBrand) private var brand
+
     let kind: PeakEmptyKind
     var size: CGFloat = 88
     @Environment(\.colorScheme) private var colorScheme
@@ -581,14 +764,14 @@ struct PeakEmptyVisual: View {
 
             Image(systemName: kind.primarySymbol)
                 .font(.system(size: size * 0.34, weight: .semibold))
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
                 .symbolRenderingMode(.hierarchical)
 
             Image(systemName: kind.secondarySymbol)
                 .font(.system(size: size * 0.16, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: size * 0.34, height: size * 0.34)
-                .background(Circle().fill(PeakBrand.mid))
+                .background(Circle().fill(brand.mid))
                 .offset(x: size * 0.34, y: size * 0.30)
         }
         .frame(width: size * 1.45, height: size * 1.45)
@@ -598,6 +781,8 @@ struct PeakEmptyVisual: View {
 
 /// Ghost sparkline for bare chart empty states.
 struct PeakChartPlaceholder: View {
+    @Environment(\.peakBrand) private var brand
+
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
@@ -626,7 +811,7 @@ struct PeakChartPlaceholder: View {
                 )
             }
             .stroke(
-                PeakBrand.mid.opacity(0.35),
+                brand.mid.opacity(0.35),
                 style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round, dash: [5, 6])
             )
 
@@ -658,7 +843,7 @@ struct PeakChartPlaceholder: View {
             }
             .fill(
                 LinearGradient(
-                    colors: [PeakBrand.mid.opacity(0.12), PeakBrand.mid.opacity(0)],
+                    colors: [brand.mid.opacity(0.12), brand.mid.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -850,6 +1035,8 @@ struct PeakPageHeader: View {
 
 /// Circular toolbar control — matches liquid dark chrome (WhatsApp-style).
 struct PeakToolbarCircle: View {
+    @Environment(\.peakBrand) private var brand
+
     let systemImage: String
     var emphasized: Bool = false
 
@@ -860,7 +1047,7 @@ struct PeakToolbarCircle: View {
             .frame(width: 34, height: 34)
             .background {
                 Circle()
-                    .fill(emphasized ? PeakBrand.mid : PeakCanvas.inset)
+                    .fill(emphasized ? brand.mid : PeakCanvas.inset)
             }
             .overlay {
                 if !emphasized {
@@ -982,15 +1169,30 @@ extension View {
 struct PeakPrimaryCTA: View {
     let title: String
     var systemImage: String? = nil
-    var color: Color = .accentColor
+    /// `nil` uses the themed brand colour.
+    ///
+    /// A default of `PeakBrand.mid` would be evaluated where there is no
+    /// environment to read, pinning every CTA to teal regardless of theme.
+    /// Callers that want a specific colour (destructive red, say) still pass one.
+    var color: Color? = nil
     var isLoading: Bool = false
     var isEnabled: Bool = true
+    @Environment(\.peakBrand) private var brand
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var fill: Color { color ?? brand.mid }
+
+    /// Chosen from the fill rather than hardcoded to white — on a bright
+    /// dark-mode accent, white title text measures under 2:1.
+    private var titleColor: Color {
+        PeakContrast.readableText(on: fill, in: colorScheme)
+    }
 
     var body: some View {
         Group {
             if isLoading {
                 ProgressView()
-                    .tint(.white)
+                    .tint(titleColor)
             } else if let systemImage {
                 Label(title, systemImage: systemImage)
             } else {
@@ -998,13 +1200,13 @@ struct PeakPrimaryCTA: View {
             }
         }
         .font(.headline)
-        .foregroundStyle(.white)
+        .foregroundStyle(titleColor)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .frame(minHeight: 50)
         .background(
-            (isEnabled ? color : color.opacity(0.45)),
+            isEnabled ? fill : fill.opacity(0.45),
             in: PeakLayout.ctaShape
         )
         .overlay {

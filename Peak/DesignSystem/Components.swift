@@ -42,6 +42,7 @@ struct PeakOddsMetric: View {
 }
 
 struct PeakCategoryChip: View {
+    @Environment(\.peakBrand) private var brand
     let title: String
     var systemImage: String? = nil
     let selected: Bool
@@ -67,7 +68,7 @@ struct PeakCategoryChip: View {
             .frame(minHeight: 32)
             .background {
                 if selected {
-                    shape.fill(PeakBrand.deep)
+                    shape.fill(brand.deep)
                 }
             }
             .overlay {
@@ -150,6 +151,7 @@ struct EventRowView: View {
 
 /// Small market / event image for list rows — falls back to a calm icon tile.
 struct PeakEventThumb: View {
+    @Environment(\.peakBrand) private var brand
     let url: URL?
     var size: CGFloat = 44
     var cornerRadius: CGFloat = 10
@@ -190,13 +192,14 @@ struct PeakEventThumb: View {
             PeakCanvas.inset
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: size * 0.34, weight: .semibold))
-                .foregroundStyle(PeakBrand.mid.opacity(0.85))
+                .foregroundStyle(brand.mid.opacity(0.85))
         }
     }
 }
 
 /// Circular user avatar — remote Polymarket image, else initials tile.
 struct PeakAvatar: View {
+    @Environment(\.peakBrand) private var brand
     let imageURL: URL?
     var title: String = ""
     var size: CGFloat = 40
@@ -245,10 +248,10 @@ struct PeakAvatar: View {
 
     private var initialsTile: some View {
         ZStack {
-            PeakBrand.mid.opacity(0.18)
+            brand.mid.opacity(0.18)
             Text(initials)
                 .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
         }
     }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ForYouRailView: View {
+    @Environment(\.peakBrand) private var brand
     let events: [PeakEvent]
     var title: String = "For you"
     var subtitle: String? = nil
@@ -30,7 +31,7 @@ struct ForYouRailView: View {
                 if let onDismiss {
                     Button("Dismiss", action: onDismiss)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(PeakBrand.mid)
+                        .foregroundStyle(brand.mid)
                         .frame(minHeight: PeakLayout.minTap)
                 }
             }
@@ -66,12 +67,12 @@ struct ForYouRailView: View {
                     Text(category.uppercased())
                         .font(.caption2.weight(.bold))
                         .tracking(0.7)
-                        .foregroundStyle(PeakBrand.mid)
+                        .foregroundStyle(brand.mid)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "arrow.up.right")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(PeakBrand.mid.opacity(0.7))
+                    .foregroundStyle(brand.mid.opacity(0.7))
             }
 
             Text(event.title)

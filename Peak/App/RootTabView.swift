@@ -3,6 +3,7 @@ import SwiftUI
 struct RootTabView: View {
     @State private var selectedTab: PeakRootTab = .markets
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.peakBrand) private var brand
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -22,10 +23,15 @@ struct RootTabView: View {
                 SettingsView()
             }
         }
-        .tint(PeakBrand.mid)
-        .onAppear { PeakChrome.apply(for: colorScheme) }
+        .tint(brand.mid)
+        .onAppear { PeakChrome.apply(for: colorScheme, brand: brand) }
         .onChange(of: colorScheme) { _, scheme in
-            PeakChrome.apply(for: scheme)
+            PeakChrome.apply(for: scheme, brand: brand)
+        }
+        // UIKit appearance proxies only affect bars created afterwards, so
+        // re-apply when the theme changes rather than relying on the tint above.
+        .onChange(of: brand) { _, newBrand in
+            PeakChrome.apply(for: colorScheme, brand: newBrand)
         }
         .onReceive(NotificationCenter.default.publisher(for: .peakSelectRootTab)) { note in
             guard let raw = note.userInfo?["tab"] as? String,

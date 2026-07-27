@@ -545,6 +545,7 @@ final class EventDetailViewModel: ObservableObject {
 }
 
 struct EventDetailView: View {
+    @Environment(\.peakBrand) private var brand
     @EnvironmentObject private var env: AppEnvironment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model: EventDetailViewModel
@@ -727,7 +728,7 @@ struct EventDetailView: View {
                     }
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
             }
 
             HStack(spacing: 14) {
@@ -776,18 +777,18 @@ struct EventDetailView: View {
                                     .frame(width: 148, alignment: .leading)
                                 Text(PeakFormat.cents(market.yesPrice))
                                     .font(.subheadline.monospacedDigit().weight(.bold))
-                                    .foregroundStyle(selected ? PeakBrand.mid : .secondary)
+                                    .foregroundStyle(selected ? brand.mid : .secondary)
                                     // No peakNumeric: this is inside a ForEach and every
                                     // row re-animates on each quote tick. See `metric`.
                             }
                             .padding(12)
                             .background(
-                                selected ? PeakBrand.mid.opacity(0.12) : PeakCanvas.elevated,
+                                selected ? brand.mid.opacity(0.12) : PeakCanvas.elevated,
                                 in: PeakLayout.controlShape
                             )
                             .overlay {
                                 PeakLayout.controlShape.strokeBorder(
-                                    selected ? PeakCanvas.brandRim : PeakCanvas.hairline,
+                                    selected ? brand.mid.opacity(0.20) : PeakCanvas.hairline,
                                     lineWidth: 1
                                 )
                             }
@@ -857,7 +858,7 @@ struct EventDetailView: View {
                 Spacer()
                 Text(PeakFormat.cents(model.displayedYesOdds))
                     .font(.title3.monospacedDigit().weight(.bold))
-                    .foregroundStyle(PeakBrand.mid)
+                    .foregroundStyle(brand.mid)
                     // No peakNumeric: displayedYesOdds moves on every tick. See `metric`.
             }
 
@@ -873,7 +874,7 @@ struct EventDetailView: View {
                                 .padding(.horizontal, 11)
                                 .padding(.vertical, 7)
                                 .background(
-                                    on ? PeakBrand.deep : PeakCanvas.inset,
+                                    on ? brand.deep : PeakCanvas.inset,
                                     in: Capsule(style: .continuous)
                                 )
                                 .overlay {
@@ -904,7 +905,7 @@ struct EventDetailView: View {
                             .foregroundStyle(.secondary)
                     }
             } else {
-                let series = PeakBrand.mid
+                let series = brand.mid
                 let chartPoints = sanitizedHistory
                 let prices = chartPoints.map(\.price)
                 let lo = max(0, (prices.min() ?? 0) - 0.03)

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Central controls: account, interests, wallet, alerts, about.
 struct SettingsView: View {
+    @Environment(\.peakBrand) private var brand
     @EnvironmentObject private var auth: PrivyAuthService
     @EnvironmentObject private var wallet: WalletStore
     @EnvironmentObject private var categoryPrefs: CategoryPreferencesStore
@@ -86,6 +87,17 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .accessibilityLabel("Appearance")
+            }
+            .padding(.vertical, 2)
+            .listRowBackground(PeakCanvas.elevated)
+
+            VStack(alignment: .leading, spacing: 10) {
+                settingsRow(
+                    title: "Accent",
+                    subtitle: appearance.theme.title,
+                    systemImage: "paintpalette"
+                )
+                ThemeSwatchRow(selection: $appearance.theme)
             }
             .padding(.vertical, 2)
             .listRowBackground(PeakCanvas.elevated)
@@ -276,7 +288,7 @@ struct SettingsView: View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: systemImage)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(PeakBrand.mid)
+                .foregroundStyle(brand.mid)
                 .frame(width: 28, height: 28)
                 .background(PeakCanvas.inset, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
@@ -298,6 +310,7 @@ struct SettingsView: View {
 }
 
 struct InterestsSettingsView: View {
+    @Environment(\.peakBrand) private var brand
     @EnvironmentObject private var categoryPrefs: CategoryPreferencesStore
 
     var body: some View {
@@ -310,13 +323,13 @@ struct InterestsSettingsView: View {
                         HStack(spacing: 12) {
                             Image(systemName: category.systemImage)
                                 .frame(width: 22)
-                                .foregroundStyle(PeakBrand.mid)
+                                .foregroundStyle(brand.mid)
                             Text(category.title)
                                 .foregroundStyle(.primary)
                             Spacer()
                             if categoryPrefs.isInterested(category) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(PeakBrand.mid)
+                                    .foregroundStyle(brand.mid)
                             } else {
                                 Image(systemName: "circle")
                                     .foregroundStyle(.tertiary)
