@@ -61,11 +61,61 @@ Release builds do **not** auto-use localhost (code rejects `127.0.0.1` / `localh
 
 - Privy + Reown on device; Builder + Relayer + RPC on the server (host secrets)
 - Manual E2E / TestFlight smoke A+B against hosted API — [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md)
-- Paid Apple Developer team for TestFlight / App Store; legal counsel before treating `/legal/*` as final
+- ~~Paid Apple Developer team; legal counsel on `/legal/*`~~ — both done (2026-07-27)
 
 ## Production checklist
 
 See [docs/PRODUCTION.md](docs/PRODUCTION.md) and [docs/APP_STORE.md](docs/APP_STORE.md).
+
+## Shipping a build
+
+Signing is configured (team `49BZ7S974W`, `com.pranay.peak` + `.widget`,
+automatic). A Release archive builds clean.
+
+**Bump the build number first.** App Store Connect rejects a build number it
+has already accepted, and `ExportOptions.plist` deliberately does not let Xcode
+rewrite it:
+
+```
+CURRENT_PROJECT_VERSION   # in Peak.xcodeproj — bump for every upload
+MARKETING_VERSION         # 1.1 — bump only for a user-visible release
+```
+
+Then:
+
+```bash
+xcodebuild archive -project Peak.xcodeproj -scheme Peak \
+  -destination 'generic/platform=iOS' -archivePath build/Peak.xcarchive
+
+xcodebuild -exportArchive -archivePath build/Peak.xcarchive \
+  -exportOptionsPlist ExportOptions.plist -exportPath build/export
+```
+
+The archive signs "Apple Development"; the export step re-signs it with the
+Apple Distribution certificate. That is the step that needs the paid account,
+and it will prompt for App Store Connect credentials the first time.
+
+Upload with Transporter, or:
+
+```bash
+xcrun altool --upload-app -f build/export/Peak.ipa -t ios \
+  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+```
+
+An app record for `com.pranay.peak` must already exist in App Store Connect —
+upload fails with an unhelpful error if it does not.
+
+### Sentry symbols
+
+`uploadSymbols` sends dSYMs to Apple, not to Sentry. Without a separate upload
+every Sentry stack trace is raw hex:
+
+```bash
+sentry-cli debug-files upload --org <org> --project <project> build/Peak.xcarchive/dSYMs
+```
+
+Reporting is Release-only by design (`CrashReporting.start` disables itself in
+DEBUG), so an empty Sentry dashboard after a Debug run is expected, not a fault.
 
 ## APIs
 

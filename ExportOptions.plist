@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Export config for TestFlight / App Store builds.
+
+	  Tracked deliberately: it contains no secrets (a team ID is public in every
+	  shipped binary) and an untracked copy means the next export silently uses
+	  different settings.
+
+	  Usage is in README under "Shipping a build".
+	-->
+
+	<!-- Xcode 15.3+ spelling. Older toolchains call this "app-store". -->
+	<key>method</key>
+	<string>app-store-connect</string>
+
+	<key>teamID</key>
+	<string>49BZ7S974W</string>
+
+	<!--
+	  Automatic signing requests the Apple Distribution certificate and the
+	  App Store provisioning profiles for com.pranay.peak and
+	  com.pranay.peak.widget. The archive itself is signed "Apple Development";
+	  this export step is what re-signs it for distribution.
+	-->
+	<key>signingStyle</key>
+	<string>automatic</string>
+
+	<!--
+	  Ships dSYMs to App Store Connect so Apple's crash reports symbolicate.
+	  Sentry needs its own upload — see the README note; without it every stack
+	  trace in Sentry is hex addresses.
+	-->
+	<key>uploadSymbols</key>
+	<true/>
+
+	<!--
+	  Build numbers stay under our control. With this true, Xcode rewrites
+	  CFBundleVersion during export, so the number in git stops matching the
+	  number on TestFlight. Bump CURRENT_PROJECT_VERSION in the project instead
+	  — App Store Connect rejects a build number it has already seen.
+	-->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+
+	<key>destination</key>
+	<string>export</string>
+</dict>
+</plist>
