@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy · Peak</title>
+  <style>
+    :root { color-scheme: light dark; --fg: #1a1a1a; --muted: #5c5c5c; --bg: #f7f7f5; --card: #fff; --accent: #0b6e4f; --line: #e3e3df; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #f2f2f0; --muted: #a8a8a4; --bg: #121411; --card: #1c1f1b; --accent: #3dba8c; --line: #2a2e29; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg); color: var(--fg); line-height: 1.6; }
+    main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    .brand { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+    h1 { font-size: 1.65rem; margin: 0.35rem 0 0.75rem; font-weight: 650; }
+    .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); border-radius: 4px;
+      padding: 0.2rem 0.45rem; margin-bottom: 1rem; }
+    .card { background: var(--card); border-radius: 10px; padding: 1.5rem 1.6rem; }
+    p, li { color: var(--fg); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    a { color: var(--accent); }
+    nav { margin-top: 2rem; font-size: 0.9rem; }
+    nav a { margin-right: 1rem; }
+    ul, ol { padding-left: 1.25rem; }
+    li { margin: 0.3rem 0; }
+    h2 { font-size: 1.08rem; margin: 1.6rem 0 0.5rem; font-weight: 650; }
+    h2:first-child { margin-top: 0; }
+    hr { border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }
+    .toc { font-size: 0.9rem; }
+    .toc ol { padding-left: 1.1rem; }
+    .toc li { margin: 0.15rem 0; }
+    .toc a { color: var(--fg); text-decoration: none; }
+    .toc a:hover { color: var(--accent); }
+    .placeholder { background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: 4px; padding: 0.05rem 0.35rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">Peak</div>
+    <h1>Privacy Policy</h1>
+    <div class="card">
+    <p>Peak ("Peak", "we", "us") is an independent iOS app for browsing and trading
+      Polymarket prediction markets. <strong>Peak is not affiliated with, endorsed by,
+      or operated by Polymarket, Inc.</strong> This policy explains what data moves
+      through the app and who else can see it.</p>
+
+    <div class="toc">
+      <ol>
+        <li><a href="#collect">What Peak collects, and why</a></li>
+        <li><a href="#store">What never leaves your device</a></li>
+        <li><a href="#thirdparties">Third parties Peak relies on</a></li>
+        <li><a href="#custody">Peak does not hold your funds</a></li>
+        <li><a href="#retention">Retention and deletion</a></li>
+        <li><a href="#kids">Age</a></li>
+        <li><a href="#rights">Your choices</a></li>
+        <li><a href="#changes">Changes to this policy</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ol>
+    </div>
+
+    <hr />
+
+    <h2 id="collect">1. What Peak collects, and why</h2>
+    <p class="muted"><strong>TL;DR:</strong> only what's needed to sign you in,
+      show your positions, and let you place a trade — no ads, no tracking, no
+      sale of your data.</p>
+    <p>Peak is built to need as little of your data as it can and still place a
+      trade. Depending on how you use the app:</p>
+    <ul>
+      <li><strong>Wallet identifiers.</strong> When you sign in, Peak receives a
+        wallet address and, if you chose email sign-in, your email — both via
+        Privy, our authentication provider. Peak never sees or stores a private key.</li>
+      <li><strong>Trading instructions you send.</strong> Orders you place (token,
+        side, size, price) pass through Peak's backend so an order can be
+        constructed and signed, then submitted from your device to Polymarket's
+        exchange. Peak's backend does not execute trades on its own initiative.</li>
+      <li><strong>Portfolio and activity data.</strong> To show your positions and
+        history, Peak reads them from Polymarket's systems using your wallet
+        address. This is requested live and is not built into a separate profile.</li>
+      <li><strong>Crash and error diagnostics.</strong> In released (non-development)
+        builds, Peak uses Sentry to report crashes and hangs so bugs can be fixed.
+        This is configured to exclude your IP address, device identifiers, and
+        screenshots — see <a href="#thirdparties">Third parties</a> below.</li>
+      <li><strong>Device region signal.</strong> Peak checks a coarse region signal
+        to warn you if Polymarket restricts trading where you are. This is used
+        to inform you, not to profile you, and is not stored against your identity.</li>
+    </ul>
+    <p>Peak does not run advertising, does not sell data, and does not use
+      cross-app or cross-site tracking. Peak's iOS privacy declarations to Apple
+      state <strong>no tracking</strong>.</p>
+
+    <h2 id="store">2. What never leaves your device</h2>
+    <p>Some of what makes Peak feel personal to you stays local, in iOS's standard
+      on-device storage, and is not sent to Peak's servers:</p>
+    <ul>
+      <li>Your watchlist</li>
+      <li>Price alerts you've set</li>
+      <li>Category / interest preferences</li>
+      <li>Appearance and accent theme choice</li>
+      <li>A read-only wallet address, if you added one to view a portfolio without signing in</li>
+    </ul>
+    <p>Deleting the app deletes this data along with it.</p>
+
+    <h2 id="thirdparties">3. Third parties Peak relies on</h2>
+    <p class="muted"><strong>TL;DR:</strong> Peak doesn't sell your data, and
+      doesn't share it beyond the providers below that Peak itself runs on.</p>
+    <p>Peak is a thin client over other people's infrastructure. Each of the
+      following processes some of your data under its own privacy terms:</p>
+    <ul>
+      <li><strong>Polymarket</strong> — the exchange itself. Market data, order
+        execution, and your position history all live on Polymarket's systems.
+        Peak reads and writes there on your instruction.</li>
+      <li><strong>Privy</strong> — authentication and embedded wallet
+        infrastructure. Handles sign-in and, if you use it, secure key management.</li>
+      <li><strong>Reown / WalletConnect</strong> — used if you connect your own
+        external wallet instead of an embedded one.</li>
+      <li><strong>Sentry</strong> — crash and error reporting, released builds
+        only. Configured with <code>sendDefaultPii</code> and screenshot/view
+        attachment both switched off — it does not receive your IP, device
+        identifiers, positions, or balances.</li>
+      <li><strong>Cloudflare</strong> — routes some network requests at the edge
+        so the app can reach Polymarket reliably from more regions.</li>
+      <li><strong>Railway</strong> — hosts Peak's backend server.</li>
+    </ul>
+
+    <h2 id="custody">4. Peak does not hold your funds</h2>
+    <p>Peak is non-custodial. Your funds sit in your own wallet — either one you
+      already control, or an embedded wallet created for you via Privy that only
+      you can authorize transactions from. Peak's backend holds exchange
+      credentials used to help construct and sign order requests on your
+      instruction; it does not hold, control, or have independent authority to
+      move your money.</p>
+
+    <h2 id="retention">5. Retention and deletion</h2>
+    <p>On-device data is deleted when you delete the app. For data Peak's backend
+      touches in the course of relaying a trade, it is kept only as long as
+      needed to operate the service and meet any applicable recordkeeping
+      obligation, then deleted or anonymized. To ask about or request deletion of
+      data associated with your account, see <a href="#contact">Contact</a>.</p>
+
+    <h2 id="kids">6. Age</h2>
+    <p>Peak is not directed at children and is not intended for anyone under 18.
+      Do not use Peak if you are under the minimum age for entering into
+      financial transactions where you live, whichever is higher.</p>
+
+    <h2 id="rights">7. Your choices and rights</h2>
+    <p>You can sign out, disconnect a wallet, clear on-device data from within
+      Settings, or delete the app at any time.</p>
+
+    <p><strong>If you are in the UK or European Economic Area</strong>, you have
+      rights under UK and EU data protection law (GDPR), including the right
+      to: request access to and a copy of your personal data; request
+      correction or deletion of it; object to or restrict certain processing;
+      request portability of your data; and withdraw consent at any time where
+      processing is based on consent.</p>
+
+    <p><strong>If you are a California resident</strong>, you have rights under
+      the California Consumer Privacy Act (CCPA), including the right to:
+      request access to and a copy of the personal information Peak's backend
+      has collected about you; request its deletion; and opt out of the "sale"
+      or "sharing" of personal information as those terms are defined under
+      CCPA — <strong>Peak does not sell or share your personal information</strong>
+      for cross-context behavioral advertising, so there is nothing to opt out
+      of today, but the right stands regardless.</p>
+
+    <p>To exercise any of these rights, contact us — see
+      <a href="#contact">Contact</a> below. We may need to verify your identity
+      before acting on a request. Peak will not discriminate against you for
+      exercising these rights.</p>
+
+    <h2 id="changes">8. Changes to this policy</h2>
+    <p>If this policy changes materially, the "Last updated" date below will
+      change and, where required, we'll tell you in the app.</p>
+
+    <h2 id="contact">9. Contact</h2>
+    <p><strong>Email:</strong> <span class="placeholder">Set <code>PEAK_SUPPORT_EMAIL</code> on the API host</span> —
+    once set, it appears here and in the app automatically. No code change needed.</p>
+  </div>
+    <nav class="muted">
+      <a href="/legal/privacy">Privacy</a>
+      <a href="/legal/terms">Terms</a>
+      <a href="/legal/support">Support</a>
+    </nav>
+    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-07-27</p>
+  </main>
+</body>
+</html>

@@ -35,3 +35,7 @@ Peak/PrivySecrets.local.plist
 
 # Local build output (Cursor/Xcode -derivedDataPath)
 .derivedData/
+
+# Wrangler's local cache (account id, deploy metadata) — not repo content
+.wrangler/
+website/.wrangler/

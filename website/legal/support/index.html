@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Support · Peak</title>
+  <style>
+    :root { color-scheme: light dark; --fg: #1a1a1a; --muted: #5c5c5c; --bg: #f7f7f5; --card: #fff; --accent: #0b6e4f; --line: #e3e3df; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #f2f2f0; --muted: #a8a8a4; --bg: #121411; --card: #1c1f1b; --accent: #3dba8c; --line: #2a2e29; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      background: var(--bg); color: var(--fg); line-height: 1.6; }
+    main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+    .brand { font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+    h1 { font-size: 1.65rem; margin: 0.35rem 0 0.75rem; font-weight: 650; }
+    .badge { display: inline-block; font-size: 0.75rem; font-weight: 600; color: var(--muted);
+      border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); border-radius: 4px;
+      padding: 0.2rem 0.45rem; margin-bottom: 1rem; }
+    .card { background: var(--card); border-radius: 10px; padding: 1.5rem 1.6rem; }
+    p, li { color: var(--fg); }
+    .muted { color: var(--muted); font-size: 0.92rem; }
+    a { color: var(--accent); }
+    nav { margin-top: 2rem; font-size: 0.9rem; }
+    nav a { margin-right: 1rem; }
+    ul, ol { padding-left: 1.25rem; }
+    li { margin: 0.3rem 0; }
+    h2 { font-size: 1.08rem; margin: 1.6rem 0 0.5rem; font-weight: 650; }
+    h2:first-child { margin-top: 0; }
+    hr { border: none; border-top: 1px solid var(--line); margin: 1.5rem 0; }
+    .toc { font-size: 0.9rem; }
+    .toc ol { padding-left: 1.1rem; }
+    .toc li { margin: 0.15rem 0; }
+    .toc a { color: var(--fg); text-decoration: none; }
+    .toc a:hover { color: var(--accent); }
+    .placeholder { background: color-mix(in srgb, var(--accent) 14%, transparent);
+      border-radius: 4px; padding: 0.05rem 0.35rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">Peak</div>
+    <h1>Support</h1>
+    <div class="card">
+    <p>Need help with Peak? Start here.</p>
+    <p><strong>Email:</strong> <span class="placeholder">Set <code>PEAK_SUPPORT_EMAIL</code> on the API host</span> —
+    once set, it appears here and in the app automatically. No code change needed.</p>
+
+    <h2>Common issues</h2>
+    <ul>
+      <li><strong>Trading or deposits stuck.</strong> Peak talks directly to
+        Polymarket's exchange. If an order or deposit looks stuck, check your
+        wallet app, your network (Peak trades on Polygon), and
+        <a href="https://polymarket.com" target="_blank" rel="noopener">Polymarket's</a>
+        own status before assuming it's a Peak issue.</li>
+      <li><strong>Can't sign in.</strong> Peak uses Privy for authentication. Try
+        signing out and back in, or reconnecting your wallet. If you're on a
+        network known to restrict Polymarket, sign-in may be intermittent for
+        reasons outside Peak's control.</li>
+      <li><strong>"Trading isn't switched on yet."</strong> This means Peak's own
+        backend configuration isn't ready for your account, not that your wallet
+        is broken. Try again shortly.</li>
+      <li><strong>A market or order looks wrong.</strong> Prices and fills come
+        from Polymarket in real time. If something looks stale, pull to refresh;
+        if it persists, tell us which market and roughly when.</li>
+      <li><strong>Region restrictions.</strong> Polymarket restricts trading in
+        some countries. Peak reflects that restriction; it doesn't create it,
+        and Peak cannot lift it on your behalf.</li>
+    </ul>
+
+    <h2>When you contact us, please include</h2>
+    <ul>
+      <li>What you were trying to do</li>
+      <li>What happened instead (a screenshot helps)</li>
+      <li>Roughly when it happened</li>
+      <li><strong>Never send us your seed phrase or private key</strong> — Peak
+        support will never ask you for one.</li>
+    </ul>
+  </div>
+    <nav class="muted">
+      <a href="/legal/privacy">Privacy</a>
+      <a href="/legal/terms">Terms</a>
+      <a href="/legal/support">Support</a>
+    </nav>
+    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-07-27</p>
+  </main>
+</body>
+</html>

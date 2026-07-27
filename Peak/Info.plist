@@ -13,15 +13,16 @@
 	<string>https://edge.peakapp.site</string>
 	<key>PEAK_BACKEND_URL</key>
 	<string>https://api.peakapp.site</string>
-	<!-- After deploy, set to https://YOUR_HOST/legal/privacy (same origin as API). Leave empty for local Debug. -->
+	<!-- Legal pages live on the marketing site (Cloudflare Pages), not the
+	     trading API — so a copy fix doesn't require redeploying the backend
+	     that also places live orders. api.peakapp.site/legal/* 302-redirects
+	     here for anything that cached the old address. -->
 	<key>PEAK_PRIVACY_URL</key>
-	<string>https://api.peakapp.site/legal/privacy</string>
-	<!-- After deploy, set to https://YOUR_HOST/legal/terms -->
+	<string>https://peakapp.site/legal/privacy</string>
 	<key>PEAK_TERMS_URL</key>
-	<string>https://api.peakapp.site/legal/terms</string>
-	<!-- After deploy, set to https://YOUR_HOST/legal/support -->
+	<string>https://peakapp.site/legal/terms</string>
 	<key>PEAK_SUPPORT_URL</key>
-	<string>https://api.peakapp.site/legal/support</string>
+	<string>https://peakapp.site/legal/support</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peak — Trade Polymarket, natively</title>
+  <meta name="description" content="Peak is a native iOS app for browsing and trading Polymarket prediction markets." />
+  <style>
+    :root { color-scheme: light dark; --fg: #f2f2f0; --muted: #a8a8a4; --bg: #0a0a0b; --accent: #6bd1b8; }
+    @media (prefers-color-scheme: light) {
+      :root { --fg: #141a1c; --muted: #5c5c5c; --bg: #f9f9f8; --accent: #298c7a; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center;
+      background: var(--bg); color: var(--fg); padding: 2rem;
+      font-family: -apple-system, "SF Pro Display", ui-sans-serif, system-ui, Segoe UI, sans-serif;
+    }
+    h1 { font-size: clamp(2rem, 6vw, 3.25rem); margin: 0 0 0.75rem; font-weight: 700; letter-spacing: -0.02em; }
+    p { color: var(--muted); font-size: 1.05rem; max-width: 32rem; margin: 0 0 2rem; line-height: 1.6; }
+    nav { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .brand { font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="brand">Peak</div>
+  <h1>Odds move. You act.</h1>
+  <p>Peak is a native iOS app for browsing and trading Polymarket prediction
+    markets. The full site is coming soon — for now, here's what you need.</p>
+  <nav>
+    <a href="/legal/privacy">Privacy</a>
+    <a href="/legal/terms">Terms</a>
+    <a href="/legal/support">Support</a>
+  </nav>
+</body>
+</html>
