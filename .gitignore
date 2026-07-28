@@ -42,3 +42,5 @@ sentry.properties
 # Wrangler's local cache (account id, deploy metadata) — not repo content
 .wrangler/
 website/.wrangler/
+Peak [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+*.ipa
