@@ -33,6 +33,9 @@ Peak/PrivySecrets.local.plist
 *.p12
 *.key
 
+# Sentry auth token (see sentry.properties.example)
+sentry.properties
+
 # Local build output (Cursor/Xcode -derivedDataPath)
 .derivedData/
 

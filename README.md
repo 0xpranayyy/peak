@@ -108,15 +108,27 @@ upload fails with an unhelpful error if it does not.
 
 ### Sentry symbols
 
-`uploadSymbols` sends dSYMs to Apple, not to Sentry. Without a separate upload
-every Sentry stack trace is raw hex:
+`uploadSymbols` (in `ExportOptions.plist`) sends dSYMs to Apple, not to
+Sentry — those are two separate destinations. The Peak target has its own
+**"Upload Debug Symbols to Sentry"** build phase that handles the Sentry side
+automatically on every Release archive. One-time local setup:
 
 ```bash
-sentry-cli debug-files upload --org <org> --project <project> build/Peak.xcarchive/dSYMs
+brew install getsentry/tools/sentry-cli
+cp sentry.properties.example sentry.properties   # gitignored, holds a real auth token
 ```
 
-Reporting is Release-only by design (`CrashReporting.start` disables itself in
-DEBUG), so an empty Sentry dashboard after a Debug run is expected, not a fault.
+Fill in `defaults.org`, `defaults.project` (from your Sentry project URL) and
+`auth.token` (sentry.io → Settings → Auth Tokens, scoped to `project:releases`
+or the newer "Debug Files: Write"). Nothing else to run — the next `Product →
+Archive` uploads dSYMs as part of the build.
+
+The phase is deliberately non-fatal: missing `sentry.properties`, missing
+`sentry-cli`, or an upload failure all print a warning and let the build
+continue rather than blocking a release over a symbolication gap. Reporting
+itself is Release-only by design (`CrashReporting.start` disables itself in
+DEBUG), so an empty Sentry dashboard after a Debug run is expected, not a
+fault.
 
 ## APIs
 

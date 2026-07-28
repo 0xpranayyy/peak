@@ -200,6 +200,7 @@
 				P10000000000000000000009 /* Resources */,
 				P20000000000000000000007 /* Embed Foundation Extensions */,
 				PEAKATS000000000000000001 /* Debug Allow Local Networking */,
+				PEAKATS000000000000000002 /* Upload Debug Symbols to Sentry */,
 			);
 			buildRules = (
 			);
@@ -333,6 +334,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  exit 0\nfi\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"${PLIST}\" ]; then\n  echo \"warning: Info.plist not found at ${PLIST}; skipping NSAllowsLocalNetworking\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity:NSAllowsLocalNetworking\" \"${PLIST}\" 2>/dev/null || true\n/usr/libexec/PlistBuddy -c \"Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true\" \"${PLIST}\"\necho \"Enabled NSAllowsLocalNetworking for Debug\"\n";
+		};
+		PEAKATS000000000000000002 /* Upload Debug Symbols to Sentry */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Upload Debug Symbols to Sentry";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" != \"Release\" ]; then\n  echo \"Skipping Sentry dSYM upload for ${CONFIGURATION} build.\"\n  exit 0\nfi\nPROPERTIES=\"${SRCROOT}/sentry.properties\"\nif [ ! -f \"${PROPERTIES}\" ]; then\n  echo \"warning: sentry.properties not found (see sentry.properties.example) -- dSYMs were not uploaded to Sentry.\"\n  exit 0\nfi\nif ! command -v sentry-cli >/dev/null 2>&1; then\n  echo \"warning: sentry-cli not installed -- dSYMs were not uploaded to Sentry. Install via: brew install getsentry/tools/sentry-cli\"\n  exit 0\nfi\nexport SENTRY_PROPERTIES=\"${PROPERTIES}\"\nsentry-cli debug-files upload --include-sources \"${DWARF_DSYM_FOLDER_PATH}\" || echo \"warning: sentry-cli upload failed -- continuing build, Apple upload is unaffected\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

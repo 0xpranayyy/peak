@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Peak.ipa</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>arm64</string>
+			</array>
+			<key>buildNumber</key>
+			<string>3</string>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>20528CDBBEDCCD9D57B26C7DA818BA4AC72D5502</string>
+				<key>dateExpires</key>
+				<string>28/07/27</string>
+				<key>type</key>
+				<string>Cloud Managed Apple Distribution</string>
+			</dict>
+			<key>embeddedBinaries</key>
+			<array>
+				<dict>
+					<key>architectures</key>
+					<array>
+						<string>arm64</string>
+					</array>
+					<key>buildNumber</key>
+					<string>1</string>
+					<key>certificate</key>
+					<dict>
+						<key>SHA1</key>
+						<string>20528CDBBEDCCD9D57B26C7DA818BA4AC72D5502</string>
+						<key>dateExpires</key>
+						<string>28/07/27</string>
+						<key>type</key>
+						<string>Cloud Managed Apple Distribution</string>
+					</dict>
+					<key>name</key>
+					<string>PrivySDK.framework</string>
+					<key>team</key>
+					<dict>
+						<key>id</key>
+						<string>49BZ7S974W</string>
+						<key>name</key>
+						<string>PRANAY AGIAN</string>
+					</dict>
+					<key>versionNumber</key>
+					<string>2.14.0</string>
+				</dict>
+				<dict>
+					<key>architectures</key>
+					<array>
+						<string>arm64</string>
+					</array>
+					<key>buildNumber</key>
+					<string>8.58.4</string>
+					<key>certificate</key>
+					<dict>
+						<key>SHA1</key>
+						<string>20528CDBBEDCCD9D57B26C7DA818BA4AC72D5502</string>
+						<key>dateExpires</key>
+						<string>28/07/27</string>
+						<key>type</key>
+						<string>Cloud Managed Apple Distribution</string>
+					</dict>
+					<key>name</key>
+					<string>Sentry.framework</string>
+					<key>team</key>
+					<dict>
+						<key>id</key>
+						<string>49BZ7S974W</string>
+						<key>name</key>
+						<string>PRANAY AGIAN</string>
+					</dict>
+					<key>versionNumber</key>
+					<string>8.58.4</string>
+				</dict>
+				<dict>
+					<key>architectures</key>
+					<array>
+						<string>arm64</string>
+					</array>
+					<key>buildNumber</key>
+					<string>3</string>
+					<key>certificate</key>
+					<dict>
+						<key>SHA1</key>
+						<string>20528CDBBEDCCD9D57B26C7DA818BA4AC72D5502</string>
+						<key>dateExpires</key>
+						<string>28/07/27</string>
+						<key>type</key>
+						<string>Cloud Managed Apple Distribution</string>
+					</dict>
+					<key>entitlements</key>
+					<dict>
+						<key>application-identifier</key>
+						<string>49BZ7S974W.com.pranay.peak.widget</string>
+						<key>com.apple.developer.team-identifier</key>
+						<string>49BZ7S974W</string>
+						<key>get-task-allow</key>
+						<false/>
+					</dict>
+					<key>name</key>
+					<string>PeakWidgetExtension.appex</string>
+					<key>profile</key>
+					<dict>
+						<key>UUID</key>
+						<string>44025aed-e942-44c3-9fad-f1ee6f89d6f1</string>
+						<key>dateExpires</key>
+						<string>28/07/27</string>
+						<key>name</key>
+						<string>iOS Team Ad Hoc Provisioning Profile: com.pranay.peak.widget</string>
+					</dict>
+					<key>team</key>
+					<dict>
+						<key>id</key>
+						<string>49BZ7S974W</string>
+						<key>name</key>
+						<string>PRANAY AGIAN</string>
+					</dict>
+					<key>versionNumber</key>
+					<string>1.1</string>
+				</dict>
+			</array>
+			<key>entitlements</key>
+			<dict>
+				<key>application-identifier</key>
+				<string>49BZ7S974W.com.pranay.peak</string>
+				<key>com.apple.developer.team-identifier</key>
+				<string>49BZ7S974W</string>
+				<key>com.apple.security.application-groups</key>
+				<array>
+					<string>group.com.pranay.peak</string>
+				</array>
+				<key>get-task-allow</key>
+				<false/>
+			</dict>
+			<key>name</key>
+			<string>Peak.app</string>
+			<key>profile</key>
+			<dict>
+				<key>UUID</key>
+				<string>c561b73c-6b1b-46d4-86c8-8796ac8c01d2</string>
+				<key>dateExpires</key>
+				<string>28/07/27</string>
+				<key>name</key>
+				<string>iOS Team Ad Hoc Provisioning Profile: com.pranay.peak</string>
+			</dict>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>49BZ7S974W</string>
+				<key>name</key>
+				<string>PRANAY AGIAN</string>
+			</dict>
+			<key>versionNumber</key>
+			<string>1.1</string>
+		</dict>
+	</array>
+</dict>
+</plist>

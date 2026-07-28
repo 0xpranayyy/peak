@@ -1,0 +1,17 @@
+# Sentry dSYM upload config — copy to sentry.properties and fill in.
+# NEVER commit sentry.properties: it holds a real auth token. This file
+# is tracked and holds no secrets; sentry.properties is gitignored.
+#
+# org/project: from your Sentry dashboard URL,
+#   sentry.io/organizations/<org>/projects/<project>/
+# auth.token: sentry.io -> Settings -> Auth Tokens -> create one scoped to
+#   "project:releases" (or the newer "Debug Files: Write" scope).
+#
+# Used by the Peak target's "Upload Debug Symbols to Sentry" build phase,
+# Release builds only. Missing this file just skips the upload with a
+# warning -- it never fails the build.
+
+defaults.url=https://sentry.io/
+defaults.org=
+defaults.project=
+auth.token=
