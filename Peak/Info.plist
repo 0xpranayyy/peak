@@ -4,6 +4,13 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Peak</string>
+	<!-- Peak never opens the camera today. Required anyway: the QRCode SPM
+	     package (used in DepositSheet.swift to render your deposit address as
+	     a QR code) bundles an unused video-scanning module that references
+	     AVCaptureDevice, which Apple's static scanner flags regardless of
+	     whether that code path is ever called. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Peak can use your camera to scan a QR code, such as a wallet address, when you choose to.</string>
 	<key>PRIVY_APP_ID</key>
 	<string></string>
 	<key>PRIVY_APP_CLIENT_ID</key>
