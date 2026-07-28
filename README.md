@@ -109,9 +109,9 @@ upload fails with an unhelpful error if it does not.
 ### Sentry symbols
 
 `uploadSymbols` (in `ExportOptions.plist`) sends dSYMs to Apple, not to
-Sentry — those are two separate destinations. The Peak target has its own
-**"Upload Debug Symbols to Sentry"** build phase that handles the Sentry side
-automatically on every Release archive. One-time local setup:
+Sentry — those are two separate destinations. The Peak scheme's Archive action
+has a **Post-action** ("Upload Debug Symbols to Sentry") that handles the
+Sentry side automatically on every Release archive. One-time local setup:
 
 ```bash
 brew install getsentry/tools/sentry-cli
