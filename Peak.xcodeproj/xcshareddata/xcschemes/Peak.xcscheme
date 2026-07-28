@@ -99,5 +99,23 @@
    <ArchiveAction
       buildConfiguration = "Release"
       revealArchiveInOrganizer = "YES">
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Upload Debug Symbols to Sentry"
+               scriptText = "PROPERTIES=&quot;${PROJECT_DIR}/sentry.properties&quot;&#10;if [ ! -f &quot;${PROPERTIES}&quot; ]; then&#10;  echo &quot;warning: sentry.properties not found (see sentry.properties.example) -- dSYMs were not uploaded to Sentry.&quot;&#10;  exit 0&#10;fi&#10;if ! command -v sentry-cli &gt;/dev/null 2&gt;&amp;1; then&#10;  echo &quot;warning: sentry-cli not installed -- dSYMs were not uploaded to Sentry. Install via: brew install getsentry/tools/sentry-cli&quot;&#10;  exit 0&#10;fi&#10;export SENTRY_PROPERTIES=&quot;${PROPERTIES}&quot;&#10;sentry-cli debug-files upload --include-sources &quot;${ARCHIVE_PATH}/dSYMs&quot; || echo &quot;warning: sentry-cli upload failed -- continuing, Apple upload is unaffected&quot;&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "P10000000000000000000006"
+                     BuildableName = "Peak.app"
+                     BlueprintName = "Peak"
+                     ReferencedContainer = "container:Peak.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
    </ArchiveAction>
 </Scheme>
