@@ -2,7 +2,7 @@
 
 Checklist for shipping Peak via TestFlight and App Store Connect. Do **not** invent Connect submissions, screenshots, or secrets in-repo. Builder credential rotation is **deferred** until you explicitly ask.
 
-Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C).
+Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C) · [RELEASE.md](RELEASE.md) (post-TestFlight cadence).
 
 ## Current packaging status (in-repo)
 

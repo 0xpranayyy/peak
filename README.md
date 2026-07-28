@@ -66,7 +66,7 @@ Release builds do **not** auto-use localhost (code rejects `127.0.0.1` / `localh
 
 ## Production checklist
 
-See [docs/PRODUCTION.md](docs/PRODUCTION.md) and [docs/APP_STORE.md](docs/APP_STORE.md).
+See [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md), and [docs/RELEASE.md](docs/RELEASE.md) (ongoing TestFlight / release cadence).
 
 ## Shipping a build
 
