@@ -8,32 +8,34 @@ Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C).
 
 | Item | Status |
 | --- | --- |
+| Development Team | Paid team `49BZ7S974W` (signing configured; archive/export path documented in README) |
 | `Peak/Info.plist` `PEAK_BACKEND_URL` | Set → `https://api.peakapp.site` |
-| `PEAK_PRIVACY_URL` / `PEAK_TERMS_URL` / `PEAK_SUPPORT_URL` | Set → same host `/legal/privacy`, `/legal/terms`, `/legal/support` |
+| `PEAK_PRIVACY_URL` / `PEAK_TERMS_URL` / `PEAK_SUPPORT_URL` | Set → Cloudflare Pages (`https://peak-website-88n.pages.dev/legal/*`) while apex `peakapp.site` SSL is broken (525) |
 | `PrivacyInfo.xcprivacy` | Present (see Nutrition Labels below) |
 | `ITSAppUsesNonExemptEncryption` | `false` in Info.plist (+ Xcode `INFOPLIST_KEY_*`) — confirm with counsel |
-| Sign in with Apple entitlement | **Omitted** (Personal Team–safe). Re-add only on a paid team (below) |
+| Sign in with Apple entitlement | **Still omitted** from `Peak/Peak.entitlements`. Re-add on the paid team before relying on native SIWA (below) |
 | App Groups `group.com.pranay.peak` | Present (Reown / WalletConnect) |
-| Legal HTML on API | **Draft** until counsel; draft badge stays until you replace copy |
+| Legal HTML | Live on Pages (`website/legal/*`); substantive counsel-reviewed copy. Apex custom domain SSL still needs Cloudflare fix for marketing home |
 
 ## Before App Store Connect
 
-- [ ] **Paid Apple Developer Program team** — App Store / TestFlight distribution requires a paid team (not Personal Team). Switch the Peak target’s Development Team in Xcode Signing & Capabilities.
-- [ ] Confirm bundle ID `com.pranay.peak` is registered under that team.
+- [x] **Paid Apple Developer Program team** — team `49BZ7S974W` is configured in the Xcode project.
+- [ ] Confirm bundle ID `com.pranay.peak` is registered under that team / App Store Connect app record exists.
 - [ ] Archive a Release build pointed at the hosted API (plist URLs above; Release rejects localhost / plain HTTP).
+- [ ] Upload via Transporter / `altool` (see README **Shipping a build**).
 
 ## Sign in with Apple entitlement (when to re-add)
 
-Native SIWA is **intentionally omitted** from `Peak/Peak.entitlements` so Personal Team signing works. Privy’s Apple login UI can still appear without the native entitlement.
+Native SIWA is **intentionally omitted** from `Peak/Peak.entitlements` (historically Personal Team–safe). Privy’s Apple login UI can still appear without the native entitlement.
 
-**Re-add only after** you are on a **paid** Apple Developer team and want App Store / TestFlight Apple login:
+**Re-add when** you want App Store / TestFlight Apple login on the paid team:
 
 1. Xcode → Peak target → Signing & Capabilities → **+ Capability** → **Sign in with Apple**.
 2. That adds `com.apple.developer.applesignin` (Default) to `Peak/Peak.entitlements`. Do not hand-edit XML unless you know the capability format.
 3. Confirm the App ID in the [Apple Developer portal](https://developer.apple.com/account/resources/identifiers/list) has Sign in with Apple enabled.
 4. Clean build; let Automatic signing refresh the provisioning profile **with** `applesignin`.
 
-**If Xcode still complains about SIWA after it was removed** (stale Personal Team profile):
+**If Xcode still complains about SIWA after it was removed** (stale profile):
 
 1. Xcode → Settings → Accounts → Apple ID → Download Manual Profiles
 2. Delete stale `iOS Team Provisioning Profile: com.pranay.peak` under `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`
@@ -74,13 +76,13 @@ Prepare in Connect (assets live outside this repo):
   - Auth: Privy (email / social) and **WalletConnect SIWE** (MetaMask, Rainbow, etc.).
   - Trading goes through Peak’s hosted HTTPS API (`api.peakapp.site`); no localhost in Release.
   - Demo account / test wallet instructions if you provide them for review.
-  - Privacy / Terms / Support URLs are the `/legal/*` pages on that API host (draft until counsel).
+  - Privacy / Terms / Support URLs are the Cloudflare Pages `/legal/*` pages (currently `peak-website-88n.pages.dev` while apex SSL is fixed).
 
 Do **not** invent a fake submission ID or “already submitted” status in docs or chat.
 
 ## TestFlight smoke (hosted API)
 
-Use a device build against `https://api.peakapp.site` (or the URL in Info.plist). Full detail: [PRODUCTION.md E2E](PRODUCTION.md#e2e-paths-run-when-secrets--https-backend-are-live).
+**Still required on a physical device.** Use a device build against `https://api.peakapp.site` (or the URL in Info.plist). Full detail: [PRODUCTION.md E2E](PRODUCTION.md#e2e-paths-run-when-secrets--https-backend-are-live).
 
 ### Smoke A — Social path
 
@@ -98,9 +100,10 @@ Use a device build against `https://api.peakapp.site` (or the URL in Info.plist)
 
 ## Legal & support
 
-- [ ] `/legal/*` pages remain **draft until counsel** reviews and you replace HTML (`backend/legalPages.mjs`).
-- [ ] Set **`PEAK_SUPPORT_EMAIL`** on Railway (host env) when you have a real support inbox — fills the Support mailto; until then the page keeps TBD copy.
-- [ ] Info.plist already points at hosted legal URLs; no need to blank them for TestFlight.
+- [x] Consumer legal pages live at `website/legal/*` on Cloudflare Pages (not drafted API HTML).
+- [ ] **Cloudflare:** attach custom domain `peakapp.site` / `www` to the Pages project with a working SSL cert (apex currently **525**). Then retarget Info.plist + `backend/legalPages.mjs` `WEBSITE_ORIGIN` back to `https://peakapp.site`.
+- [ ] **Support inbox:** pages use `mailto:support@peakapp.site` — provision MX/mailbox for that address (branded; not a personal address).
+- [x] Info.plist points at working Pages legal URLs for TestFlight / review.
 
 ## Builder credentials
 

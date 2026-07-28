@@ -67,7 +67,7 @@ fi
 if grep -q 'applesignin' "$ROOT/Peak/Peak.entitlements" 2>/dev/null; then
   ok "Sign in with Apple entitlement present (paid team required)"
 else
-  ok "SIWA entitlement omitted (Personal Team–safe; add on paid team for App Store Apple login)"
+  ok "SIWA entitlement omitted (re-add on paid team for App Store Apple login)"
 fi
 
 if [[ -f "$ROOT/backend/Dockerfile" ]]; then

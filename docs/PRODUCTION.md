@@ -29,7 +29,7 @@ Put in `backend/.env` locally, and **the same keys in the Fly / Railway / Render
 - [ ] `TRUST_PROXY=1` on Fly / Railway / Render
 - [ ] `PEAK_SESSION_STORE` on a persistent volume
 - [ ] `CORS_ORIGINS` — see CORS below (usually leave empty for iOS-only)
-- [ ] `PEAK_SUPPORT_EMAIL` — optional mailto on `/legal/support` (else placeholder TBD copy)
+- [ ] Mailbox / MX for `support@peakapp.site` (shown on static legal pages; not an API env var)
 
 ### Builder codes
 
@@ -50,20 +50,21 @@ iOS (`PrivySecrets.local.plist`, gitignored — **not** `Info.plist`):
 
 Do not put Privy or Reown secrets in tracked `Info.plist`. Backend / legal URLs for the hosted Railway API are set in `Peak/Info.plist` (see below). Local Debug can still point at a backend via `PEAK_BACKEND_URL` in Info.plist.
 
-### Legal / Support URLs (hosted API)
+### Legal / Support URLs (Cloudflare Pages)
 
-Backend serves **draft** consumer-facing pages at `/legal/privacy`, `/legal/terms`, `/legal/support`.
-They are **not counsel-final** — keep the draft badge until a lawyer reviews and you replace the HTML.
-Optional host env `PEAK_SUPPORT_EMAIL` fills the Support mailto; otherwise the page says to contact support from Peak settings / email TBD. Set it on Railway when you have a real inbox.
+Canonical consumer pages are static HTML under `website/legal/*` on Cloudflare Pages.
+`api.peakapp.site/legal/*` only **301-redirects** to that origin (`backend/legalPages.mjs`).
+
+**SSL note (2026-07-28):** apex `https://peakapp.site` and `www` return Cloudflare **525** (origin/cert misconfigured). Until that is fixed in the Cloudflare dashboard, Info.plist and API redirects use the working Pages hostname `peak-website-88n.pages.dev`. Marketing home on the custom domain stays broken until SSL is fixed; legal links in the app do not depend on it.
 
 | Info.plist key | Current value |
 | --- | --- |
 | `PEAK_BACKEND_URL` | `https://api.peakapp.site` |
-| `PEAK_PRIVACY_URL` | `https://api.peakapp.site/legal/privacy` |
-| `PEAK_TERMS_URL` | `https://api.peakapp.site/legal/terms` |
-| `PEAK_SUPPORT_URL` | `https://api.peakapp.site/legal/support` |
+| `PEAK_PRIVACY_URL` | `https://peak-website-88n.pages.dev/legal/privacy` |
+| `PEAK_TERMS_URL` | `https://peak-website-88n.pages.dev/legal/terms` |
+| `PEAK_SUPPORT_URL` | `https://peak-website-88n.pages.dev/legal/support` |
 
-Settings hides legal links only if a key is blank.
+Support contact on those pages: `support@peakapp.site` (provision mailbox/MX when ready). Settings hides legal links only if a key is blank.
 
 Privy Dashboard:
 
@@ -91,7 +92,7 @@ Use this once `PrivySecrets.local.plist` and `backend/.env` (Privy + Builder + R
 4. **Run Debug** — open `Peak.xcodeproj`, select your device, Development Team, ⌘R (Debug injects `NSAllowsLocalNetworking`).
 5. **Smoke** — Connect wallet (MetaMask SIWE) **or** Email/Apple/Google → choose new/existing path → confirm `/health` still up and Portfolio / setup does not show “backend not configured”. Full buy/sell is checklist A/B below.
 
-Optional local legal check: `curl -sI http://127.0.0.1:8080/legal/privacy` → `200`.
+Optional local legal check: `curl -sI http://127.0.0.1:8080/legal/privacy` → `301` to Pages. Live Pages: `curl -sL -o /dev/null -w '%{http_code}\n' https://peak-website-88n.pages.dev/legal/privacy/` → `200`.
 
 ## E2E paths (run when secrets + HTTPS backend are live)
 
@@ -146,8 +147,9 @@ Code path: paste profile address on sign-in or trading-path sheet. App must **no
 
 - [x] Deploy `backend/` with HTTPS (Railway production host live; `backend/Dockerfile` + `backend/fly.toml` template also present)
 - [ ] Set secrets in the host env (from `.env.example`; never commit `.env`) — include `APP_TOKEN` if using legacy mode, and `PEAK_PRIVY_AUTH_KEY` when Privy requires it
-- [x] `PEAK_BACKEND_URL` in `Peak/Info.plist` → Railway HTTPS origin
-- [x] Legal URLs → `/legal/privacy`, `/legal/terms`, `/legal/support` on that host
+- [x] `PEAK_BACKEND_URL` in `Peak/Info.plist` → `https://api.peakapp.site`
+- [x] Legal URLs → working Pages `/legal/*` (temporarily `peak-website-88n.pages.dev`; apex SSL still broken)
+- [ ] Cloudflare: fix custom-domain SSL for `peakapp.site` / `www`, then point plist + `WEBSITE_ORIGIN` back at the apex
 - [ ] Confirm Release build does not use `127.0.0.1` / `localhost` / plain HTTP
   - `TradingConfigStore` accepts only non-local `https://` outside DEBUG
   - `PrivyAuthService` only auto-fills `http://127.0.0.1:8080` inside `#if DEBUG`
@@ -157,17 +159,18 @@ Code path: paste profile address on sign-in or trading-path sheet. App must **no
 
 ## App Store / TestFlight
 
-Full checklist (paid team, SIWA re-add, Nutrition Labels, export compliance, screenshots / review notes, TestFlight smoke A+B, legal draft / `PEAK_SUPPORT_EMAIL`): **[APP_STORE.md](APP_STORE.md)**.
+Full checklist (SIWA re-add, Nutrition Labels, export compliance, screenshots / review notes, TestFlight smoke A+B, support mailbox): **[APP_STORE.md](APP_STORE.md)**.
 
 Short status:
 
 - [x] `PrivacyInfo.xcprivacy` + `ITSAppUsesNonExemptEncryption` = false (confirm encryption with counsel)
-- [x] Hosted backend + legal URLs in Info.plist
-- [x] SIWA entitlement omitted for Personal Team — re-add `com.apple.developer.applesignin` only on a paid team (see APP_STORE.md)
-- [ ] Paid Apple Developer team + TestFlight / Connect submission (manual; do not invent)
+- [x] Hosted backend + working legal URLs in Info.plist (Pages hostname while apex SSL is 525)
+- [x] Paid Apple Developer team (`49BZ7S974W`) + packaging / archive path ready
+- [ ] Re-add SIWA entitlement on paid team when native Apple login is required (see APP_STORE.md)
+- [ ] TestFlight / Connect submission + upload (manual; device required)
 - [ ] Privacy Nutrition Labels in Connect aligned with PrivacyInfo
-- [ ] Legal counsel + `PEAK_SUPPORT_EMAIL` on Railway when inbox exists
-- [ ] TestFlight smoke A (social) + B (wallet SIWE) against hosted API
+- [ ] Provision `support@peakapp.site` mailbox/MX
+- [ ] TestFlight smoke A (social) + B (wallet SIWE) + B2 (imported key) against hosted API — **device E2E still required**
 
 
 

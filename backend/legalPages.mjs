@@ -1,23 +1,17 @@
 /**
  * Redirects only. The actual Privacy Policy, Terms of Use, and Support pages
- * moved to the marketing site (Cloudflare Pages, static HTML) at
- * peakapp.site/legal — see the website/legal directory for the real,
- * counsel-approved content.
+ * live on Cloudflare Pages (static HTML) — see website/legal/.
  *
- * Why: this file used to render the full pages server-side. That meant a
- * one-line copy fix required redeploying the same backend that places live
- * orders — and worse, "pushed to git" was never actually the same thing as
- * "live", because this backend deploys manually via Railway CLI, not on
- * git push. A stale legal page sat live for a full day before that was
- * caught. A static site redeploys independently of trading infrastructure
- * and shows its deploy result immediately.
+ * Temporary origin: peak-website-88n.pages.dev while apex peakapp.site SSL
+ * returns Cloudflare 525. After the custom domain SSL is fixed in Cloudflare,
+ * set WEBSITE_ORIGIN back to https://peakapp.site (and match Info.plist).
  *
- * Kept as redirects, not removed outright, so anything that cached or
- * bookmarked the old api.peakapp.site/legal/* address — including whatever
- * Apple's own review process may have recorded — still resolves.
+ * Why redirects (not inlined HTML): a copy fix must not require redeploying
+ * the same backend that places live orders. Kept so anything that cached
+ * api.peakapp.site/legal/* — including Apple review bookmarks — still resolves.
  */
 
-const WEBSITE_ORIGIN = "https://peakapp.site";
+const WEBSITE_ORIGIN = "https://peak-website-88n.pages.dev";
 
 /**
  * @param {import("express").Express} app

@@ -14,13 +14,13 @@ Markets · Search · Portfolio · Watchlist · Settings
 | --- | --- | --- |
 | Browse markets / charts / order book | Ready | Gamma + CLOB via the `worker/` edge proxy |
 | Connect wallet + Privy SIWE | Code ready | Needs Reown `WALLETCONNECT_PROJECT_ID` + Privy Dashboard **Wallet** login |
-| Email / Apple / Google sign-in | Ready | Privy; native SIWA entitlement omitted for Personal Team (see `docs/PRODUCTION.md`) |
+| Email / Apple / Google sign-in | Ready | Privy; native SIWA entitlement still omitted (re-add on paid team when needed — `docs/APP_STORE.md`) |
 | Path choice (new vs existing) | Ready | Links account wallet via Gamma profile |
 | Magic / social Polymarket (no key) | View-only | Paste profile address — no live trading without a key |
 | Live buy / sell / cancel (per user) | Works where permitted | Verified against production Builder + Relayer; blocked regions are gated client-side (see Regions) |
 | Deposit wallet deploy | Credentials live | Builder / Relayer / RPC configured on the hosted API |
-| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; `PEAK_BACKEND_URL` + `/legal/*` in Info.plist |
-| App Store packaging | Prep checklist | See [docs/APP_STORE.md](docs/APP_STORE.md); SIWA entitlement only on a paid team; legal still draft until counsel |
+| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; legal URLs point at Pages (`peak-website-88n.pages.dev`) while apex SSL is 525 |
+| App Store packaging | Ready to archive | Paid team `49BZ7S974W`; see [docs/APP_STORE.md](docs/APP_STORE.md). Device E2E / TestFlight upload still required |
 
 **Not claimed live yet:** an end-to-end MetaMask / social *order* has not been placed from this repo. Sign-in, wallet import, account linking, portfolio and live balance are verified against production.
 
@@ -60,8 +60,9 @@ Release builds do **not** auto-use localhost (code rejects `127.0.0.1` / `localh
 ## External blockers (before “production ready”)
 
 - Privy + Reown on device; Builder + Relayer + RPC on the server (host secrets)
-- Manual E2E / TestFlight smoke A+B against hosted API — [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md)
+- Manual E2E / TestFlight smoke A+B (+ B2) against hosted API — [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md)
 - ~~Paid Apple Developer team; legal counsel on `/legal/*`~~ — both done (2026-07-27)
+- Cloudflare: fix apex `peakapp.site` SSL (currently 525); legal links temporarily use Pages hostname
 
 ## Production checklist
 

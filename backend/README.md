@@ -42,19 +42,18 @@ curl http://127.0.0.1:8080/health
 curl http://127.0.0.1:8080/health/live
 ```
 
-Legal / support pages (no auth — use these URLs in iOS Info.plist after deploy):
+Legal / support: API routes **301-redirect** to Cloudflare Pages (`website/legal/*`). Point Info.plist at the Pages URLs (see `docs/PRODUCTION.md`); do not serve draft HTML from this API.
 
 ```bash
-curl -sI http://127.0.0.1:8080/legal/privacy
-curl -sI http://127.0.0.1:8080/legal/terms
-curl -sI http://127.0.0.1:8080/legal/support
+curl -sI http://127.0.0.1:8080/legal/privacy   # → 301 to Pages
+curl -sL -o /dev/null -w '%{http_code}\n' https://peak-website-88n.pages.dev/legal/privacy/
 ```
 
-| After HTTPS host is live | Info.plist key |
+| After Pages is live | Info.plist key |
 | --- | --- |
-| `https://YOUR_HOST/legal/privacy` | `PEAK_PRIVACY_URL` |
-| `https://YOUR_HOST/legal/terms` | `PEAK_TERMS_URL` |
-| `https://YOUR_HOST/legal/support` | `PEAK_SUPPORT_URL` |
+| `https://peak-website-88n.pages.dev/legal/privacy` (temp while apex SSL broken) | `PEAK_PRIVACY_URL` |
+| `https://peak-website-88n.pages.dev/legal/terms` | `PEAK_TERMS_URL` |
+| `https://peak-website-88n.pages.dev/legal/support` | `PEAK_SUPPORT_URL` |
 
 ### Device smoke in 5 steps
 
@@ -72,9 +71,9 @@ Full production E2E: [docs/PRODUCTION.md](../docs/PRODUCTION.md).
 | --- | --- | --- |
 | GET | `/health` | Connectivity flags: `ok`, `legacy`, `privy`, `privyAuthKey`, `builder`, `relayer`, `sessions`, `sessionStore`, `cors`, `uptimeSec` |
 | GET | `/health/live` | Liveness probe (minimal) |
-| GET | `/legal/privacy` | Draft privacy page (public HTML) |
-| GET | `/legal/terms` | Draft terms page (public HTML) |
-| GET | `/legal/support` | Support stub (public HTML) |
+| GET | `/legal/privacy` | 301 → Pages privacy |
+| GET | `/legal/terms` | 301 → Pages terms |
+| GET | `/legal/support` | 301 → Pages support |
 | POST | `/auth/session` | Privy: `{ eoa, path?, accountWallet? }` → resolve book |
 | POST | `/auth/import-wallet` | One-time key/seed → Privy TEE + existing path |
 | POST | `/trading/resolve` | Re-resolve account wallet / type |
