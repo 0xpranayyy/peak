@@ -9,8 +9,10 @@ struct SettingsView: View {
     @EnvironmentObject private var watchlist: WatchlistStore
     @EnvironmentObject private var priceAlerts: PriceAlertStore
     @EnvironmentObject private var appearance: AppearanceStore
+    @EnvironmentObject private var referrals: ReferralStore
 
     @State private var showResetConfirm = false
+    @State private var showInviteFriends = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +25,7 @@ struct SettingsView: View {
                 accountSection
                 preferencesSection
                 portfolioSection
+                referralSection
                 alertsSection
                 aboutSection
             }
@@ -47,6 +50,10 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Your category picks are kept unless you change them in Interests.")
+            }
+            .sheet(isPresented: $showInviteFriends) {
+                InviteFriendsSheet()
+                    .environmentObject(referrals)
             }
         }
     }
@@ -136,6 +143,25 @@ struct SettingsView: View {
             sectionHeader("Portfolio")
         } footer: {
             Text("Paste a Polymarket address for view-only positions. To trade, connect under Account.")
+                .font(.footnote)
+        }
+    }
+
+    private var referralSection: some View {
+        Section {
+            Button {
+                showInviteFriends = true
+            } label: {
+                settingsRow(
+                    title: "Invite friends",
+                    subtitle: referrals.balance > 0 ? "\(referrals.balance) points" : "Share your code",
+                    systemImage: "person.badge.plus"
+                )
+            }
+            .foregroundStyle(.primary)
+            .listRowBackground(PeakCanvas.elevated)
+        } footer: {
+            Text("Points are just for fun and don't carry any monetary or redeemable value.")
                 .font(.footnote)
         }
     }
