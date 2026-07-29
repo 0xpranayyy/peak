@@ -43,6 +43,15 @@ import {
   shouldRefuseForRegion,
 } from "./regionGate.mjs";
 import { mountLegalPages } from "./legalPages.mjs";
+import {
+  getOrCreateCode,
+  redeemCode,
+  awardMilestone,
+  getBalance,
+  getHistory,
+  ReferralError,
+  referralStorePath,
+} from "./referralStore.mjs";
 
 const {
   PORT = 8080,
@@ -875,6 +884,7 @@ app.get("/health", (_req, res) => {
     funder: legacyEnabled ? FUNDER_ADDRESS : null,
     sessions: sessions.size,
     sessionStore: sessionStorePath,
+    referralStore: referralStorePath,
     cors: corsOrigins.length ? "allowlist" : "off",
     uptimeSec: Math.floor(process.uptime()),
   });
@@ -1721,7 +1731,62 @@ app.get("/activity", wrap(async (req, res) => {
   const session = getSession(req.auth.userId);
   const user = session?.accountWallet || session?.safeAddress || session?.eoa;
   if (!user) return res.status(400).json({ error: "Call POST /auth/session with eoa first" });
-  res.json(await getJSON(`${DATA}/activity?user=${user}&limit=${limit}`));
+  const activity = await getJSON(`${DATA}/activity?user=${user}&limit=${limit}`);
+
+  // Checked here, not in the order-submission routes: most real orders are
+  // signed by the backend but submitted straight from the device to CLOB
+  // (see /orders/prepare), so this endpoint's own request path never
+  // observes most trades. Polymarket's activity feed is the one place every
+  // trade shows up regardless of how it was submitted. awardMilestone() is
+  // idempotent, so calling it on every fetch is deliberate, not wasteful --
+  // the ledger's own unique constraint is what prevents a double award, and
+  // a referral hiccup must never break the activity response the user is
+  // waiting on.
+  if (Array.isArray(activity) && activity.length > 0) {
+    try {
+      awardMilestone(req.auth.userId);
+    } catch (e) {
+      console.warn("referral milestone award failed:", e?.message ?? e);
+    }
+  }
+
+  res.json(activity);
+}));
+
+// Referrals key off the Privy user ID directly — there is no concept of a
+// shared identity in legacy mode, so these are Privy-only.
+function requirePrivyUser(req, res) {
+  if (req.auth.mode !== "privy" || !req.auth.userId) {
+    res.status(400).json({ error: "Referrals require signing in." });
+    return null;
+  }
+  return req.auth.userId;
+}
+
+app.get("/referral/code", wrap(async (req, res) => {
+  const userId = requirePrivyUser(req, res);
+  if (!userId) return;
+  res.json({ code: getOrCreateCode(userId) });
+}));
+
+app.post("/referral/redeem", wrap(async (req, res) => {
+  const userId = requirePrivyUser(req, res);
+  if (!userId) return;
+  try {
+    redeemCode(userId, req.body?.code);
+    res.json({ ok: true });
+  } catch (e) {
+    if (e instanceof ReferralError) {
+      return res.status(400).json({ error: e.message, code: e.code });
+    }
+    throw e;
+  }
+}));
+
+app.get("/referral/points", wrap(async (req, res) => {
+  const userId = requirePrivyUser(req, res);
+  if (!userId) return;
+  res.json({ balance: getBalance(userId), history: getHistory(userId) });
 }));
 
 app.get("/orders", wrap(async (req, res) => {
