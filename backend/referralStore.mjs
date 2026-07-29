@@ -13,6 +13,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import { sessionStorePath } from "./sessionStore.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,11 +41,20 @@ function resolveDbPath(raw) {
   return resolved;
 }
 
-// Same env var family as the session store — same Railway volume, one
-// variable per file so either can move independently later if needed.
+// PEAK_REFERRAL_STORE is an explicit override, when set. Otherwise this rides
+// the same Railway volume as the session store — but as a sibling *file* next
+// to it, not by re-parsing PEAK_SESSION_STORE independently. That re-parse is
+// exactly what broke production: PEAK_SESSION_STORE is set on Railway to the
+// full file path /data/sessions.json, not the bare /data directory this
+// module's own directory-detection assumed, so it fell through to opening
+// sessions.json — a plain JSON file — as a SQLite database and crash-looped
+// the entire backend on every restart. Deriving from sessionStorePath (which
+// sessionStore.mjs already resolves correctly) means both files can only ever
+// disagree about the directory if that module's own resolution is wrong,
+// which is a much smaller, already-tested surface than duplicating it here.
 const DB_PATH = process.env.PEAK_REFERRAL_STORE
   ? resolveDbPath(process.env.PEAK_REFERRAL_STORE)
-  : resolveDbPath(process.env.PEAK_SESSION_STORE);
+  : path.join(path.dirname(sessionStorePath), "referrals.db");
 
 function ensureParentDir(p) {
   const dir = path.dirname(p);
