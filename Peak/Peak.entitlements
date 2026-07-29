@@ -6,5 +6,9 @@
 	<array>
 		<string>group.com.pranay.peak</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:peakapp.site</string>
+	</array>
 </dict>
 </plist>
