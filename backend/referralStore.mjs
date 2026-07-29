@@ -17,10 +17,10 @@ import { sessionStorePath } from "./sessionStore.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Referrer bonus for a friend's first successful trade; the friend's own
-// welcome bonus for the same event. Cosmetic numbers — easy to retune.
+// Both sides of a successful referral get the same reward — a referral is
+// worth 100 points, full stop, symmetric for referrer and friend.
 export const REFERRER_BONUS = 100;
-export const REFERRED_BONUS = 50;
+export const REFERRED_BONUS = 100;
 
 function resolveDbPath(raw) {
   const fallback = path.join(__dirname, ".referrals.db");
@@ -96,6 +96,19 @@ function generateCode() {
 
 function codeExists(code) {
   return !!db.prepare("SELECT 1 FROM users WHERE referral_code = ?").get(code);
+}
+
+/**
+ * Whether `code` belongs to a real user. Public and unauthenticated by
+ * design — the invite webpage checks this before telling a visitor
+ * "you've been invited", so a made-up or mistyped code in a URL doesn't
+ * render as a real invitation. Reveals only true/false, nothing about who
+ * owns it.
+ */
+export function isValidCode(code) {
+  const trimmed = String(code || "").trim().toUpperCase();
+  if (!trimmed) return false;
+  return codeExists(trimmed);
 }
 
 function findUser(privyUserId) {

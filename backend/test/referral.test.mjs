@@ -12,6 +12,7 @@ const {
   awardMilestone,
   getBalance,
   getHistory,
+  isValidCode,
   ReferralError,
   REFERRER_BONUS,
   REFERRED_BONUS,
@@ -23,6 +24,15 @@ const {
  * trust signal, even for something cosmetic. Every test uses its own user IDs
  * so it doesn't depend on --test's execution order.
  */
+
+test("a referral is worth the same to both sides", () => {
+  // Pins the actual product decision, not just the mechanism: an asymmetric
+  // split (the earlier default was 100/50) is a real design choice a future
+  // change could silently reverse. This fails loudly if it does.
+  assert.equal(REFERRER_BONUS, 100);
+  assert.equal(REFERRED_BONUS, 100);
+  assert.equal(REFERRER_BONUS, REFERRED_BONUS, "a referral must be worth the same to both sides");
+});
 
 test("getOrCreateCode is idempotent per user", () => {
   const code1 = getOrCreateCode("user-idempotent-1");
@@ -138,4 +148,21 @@ test("getHistory returns entries newest-first and respects the limit", () => {
 test("getBalance and getHistory are empty for a user who has never earned anything", () => {
   assert.equal(getBalance("user-nobody-1234"), 0);
   assert.deepEqual(getHistory("user-nobody-1234"), []);
+});
+
+test("isValidCode is true only for a code that actually exists", () => {
+  const code = getOrCreateCode("user-validate-1");
+  assert.equal(isValidCode(code), true);
+  assert.equal(isValidCode("TOTALLYMADEUP"), false);
+});
+
+test("isValidCode is case-insensitive, matching how redeemCode normalizes", () => {
+  const code = getOrCreateCode("user-validate-2");
+  assert.equal(isValidCode(code.toLowerCase()), true);
+});
+
+test("isValidCode handles empty and nullish input without throwing", () => {
+  assert.equal(isValidCode(""), false);
+  assert.equal(isValidCode(null), false);
+  assert.equal(isValidCode(undefined), false);
 });

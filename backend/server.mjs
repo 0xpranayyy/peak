@@ -49,6 +49,7 @@ import {
   awardMilestone,
   getBalance,
   getHistory,
+  isValidCode,
   ReferralError,
   referralStorePath,
 } from "./referralStore.mjs";
@@ -896,6 +897,13 @@ app.get("/health/live", (_req, res) => {
 
 // Public legal / support pages (App Store URLs → same HTTPS API host after deploy).
 mountLegalPages(app);
+
+// Public, unauthenticated: the invite webpage calls this before rendering
+// "you've been invited", so a well-formed but made-up code in a URL doesn't
+// render as a real invitation. Deliberately reveals only true/false.
+app.get("/referral/validate/:code", wrap(async (req, res) => {
+  res.json({ valid: isValidCode(req.params.code) });
+}));
 
 /**
  * Public Gamma read proxy — helps clients on networks that blackhole / DPI
