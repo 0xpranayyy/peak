@@ -1,0 +1,5 @@
+# Apple's Universal Links validator fetches this without a file extension --
+# no explicit content-type here and some CDNs default to octet-stream, which
+# a few Apple CDN nodes have been reported to reject.
+/.well-known/apple-app-site-association
+  Content-Type: application/json
