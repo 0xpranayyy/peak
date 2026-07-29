@@ -63,6 +63,8 @@ function page({ heading, body, codeBlock }) {
     body { margin: 0; font-family: -apple-system, "SF Pro Display", ui-sans-serif, system-ui, Segoe UI, sans-serif;
       background: var(--bg); color: var(--fg); line-height: 1.6; }
     main { max-width: 30rem; margin: 0 auto; padding: 3.5rem 1.25rem 4rem; text-align: center; }
+    .logo { width: 64px; height: 64px; border-radius: 15px; display: block; margin: 0 auto 0.9rem;
+      border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,0.28); }
     .brand { font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
     h1 { font-size: clamp(1.6rem, 5vw, 2.1rem); margin: 0.6rem 0 0.6rem; font-weight: 700; letter-spacing: -0.01em; }
     p.lede { color: var(--muted); font-size: 1.02rem; margin: 0 0 1.75rem; }
@@ -91,6 +93,7 @@ function page({ heading, body, codeBlock }) {
 </head>
 <body>
   <main>
+    <img class="logo" src="/PeakLogo.png" width="64" height="64" alt="Peak app icon" />
     <div class="brand">Peak</div>
     <h1>${escapeHtml(heading)}</h1>
     <p class="lede">${body}</p>
