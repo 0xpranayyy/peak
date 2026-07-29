@@ -20,6 +20,7 @@ struct InviteFriendsSheet: View {
             ScrollView {
                 VStack(spacing: 24) {
                     codeCard
+                    howItWorksCard
                     pointsCard
                     if !referrals.history.isEmpty {
                         historyList
@@ -73,6 +74,43 @@ struct InviteFriendsSheet: View {
             }
         }
         .padding(18)
+        .background(PeakCanvas.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private static let steps: [(title: String, subtitle: String)] = [
+        ("Share your code", "Send the link or code to a friend, however you like."),
+        ("They sign up and enter it", "Under Settings → Invite friends, once they've installed Peak."),
+        ("Their first trade clears", "You both get 100 points — just for fun, no monetary value."),
+    ]
+
+    private var howItWorksCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("How it works")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(Array(Self.steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(brand.mid)
+                            .frame(width: 26, height: 26)
+                            .background(brand.mid.opacity(0.14), in: Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(step.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(PeakCanvas.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
