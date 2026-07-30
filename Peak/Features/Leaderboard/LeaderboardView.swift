@@ -70,8 +70,12 @@ struct LeaderboardView: View {
         List {
             Section {
                 ForEach(entries) { entry in
-                    LeaderboardRow(entry: entry, metric: metric)
-                        .listRowBackground(PeakCanvas.elevated)
+                    NavigationLink {
+                        TraderDetailView(entry: entry, metric: metric, window: window)
+                    } label: {
+                        LeaderboardRow(entry: entry, metric: metric)
+                    }
+                    .listRowBackground(PeakCanvas.elevated)
                 }
             } footer: {
                 Text("Live from Polymarket. Peak is an independent client and doesn’t rank or verify traders itself.")
