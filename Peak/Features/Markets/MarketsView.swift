@@ -438,6 +438,14 @@ struct MarketsView: View {
                     }
                     .accessibilityLabel("Compare markets")
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        LeaderboardView()
+                    } label: {
+                        PeakToolbarCircle(systemImage: "trophy")
+                    }
+                    .accessibilityLabel("Leaderboard")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 8) {
                         if model.isRefreshing {
