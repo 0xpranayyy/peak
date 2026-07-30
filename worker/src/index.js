@@ -134,6 +134,18 @@ function json(body, status = 200) {
 
 /** First path segment decides the upstream; the rest is forwarded verbatim. */
 function resolveTarget(url) {
+  // Leaderboard lives under data-api's /v1/ namespace, which the generic
+  // group/resource allowlist below does not cover. Matched explicitly so we
+  // forward exactly this one read-only path — NOT all of /data/v1/*, and with
+  // zero effect on the existing gamma/clob/data trading routes, which never
+  // match this exact pathname and fall through to the unchanged logic below.
+  if (url.pathname === "/data/v1/leaderboard") {
+    const target = new URL("/v1/leaderboard", UPSTREAMS.data);
+    target.search = url.search;
+    // Rankings move slowly; 60s collapses load without showing stale boards.
+    return { target, cacheTtl: 60 };
+  }
+
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) return null;
 
