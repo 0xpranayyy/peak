@@ -20,6 +20,10 @@ const UPSTREAMS = {
   gamma: "https://gamma-api.polymarket.com",
   clob: "https://clob.polymarket.com",
   data: "https://data-api.polymarket.com",
+  // Leaderboard host — the one behind polymarket.com/leaderboard. NOT
+  // data-api's /v1/leaderboard, which is a separate (daily, ~50-row) board
+  // that does not match the site.
+  lb: "https://lb-api.polymarket.com",
 };
 
 /**
@@ -58,6 +62,13 @@ const ROUTES = {
     positions: 5,
     activity: 5,
     value: 5,
+  },
+  lb: {
+    // Public trader leaderboard by profit / volume. Cache key includes the
+    // ?window= param, so each timeframe caches separately. Rankings move
+    // slowly; 60s collapses load without showing a stale board.
+    profit: 60,
+    volume: 60,
   },
 };
 
@@ -134,18 +145,6 @@ function json(body, status = 200) {
 
 /** First path segment decides the upstream; the rest is forwarded verbatim. */
 function resolveTarget(url) {
-  // Leaderboard lives under data-api's /v1/ namespace, which the generic
-  // group/resource allowlist below does not cover. Matched explicitly so we
-  // forward exactly this one read-only path — NOT all of /data/v1/*, and with
-  // zero effect on the existing gamma/clob/data trading routes, which never
-  // match this exact pathname and fall through to the unchanged logic below.
-  if (url.pathname === "/data/v1/leaderboard") {
-    const target = new URL("/v1/leaderboard", UPSTREAMS.data);
-    target.search = url.search;
-    // Rankings move slowly; 60s collapses load without showing stale boards.
-    return { target, cacheTtl: 60 };
-  }
-
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) return null;
 
