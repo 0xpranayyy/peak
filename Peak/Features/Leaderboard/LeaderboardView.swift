@@ -2,13 +2,16 @@ import SwiftUI
 
 /// Polymarket's public trader leaderboard, read-only.
 ///
-/// Pushed from the Markets top bar rather than given its own tab — five tabs
-/// already fill the bar, and a sixth would collapse the lot into iOS's "More"
-/// list. Deliberately a lean list: this mirrors Polymarket's own ranking, it
-/// isn't a social surface (no following, no profiles to open).
+/// Data is the exact board behind polymarket.com/leaderboard (lb-api), so the
+/// ranking and figures match the site. Defaults to Monthly Profit — the same
+/// view the official site opens on. Pushed from the Markets top bar rather
+/// than given its own tab (five tabs already fill the bar; a sixth collapses
+/// into iOS's "More").
 struct LeaderboardView: View {
     @Environment(\.peakBrand) private var brand
 
+    @State private var metric: LeaderboardAPI.Metric = .profit
+    @State private var window: LeaderboardAPI.Window = .month
     @State private var entries: [LeaderboardEntry] = []
     @State private var phase: Phase = .loading
 
@@ -19,21 +22,47 @@ struct LeaderboardView: View {
     }
 
     var body: some View {
-        Group {
-            switch phase {
-            case .loading where entries.isEmpty:
-                PeakSkeletonList(style: .markets, rowCount: 10)
-            case .failed(let message) where entries.isEmpty:
-                errorState(message)
-            default:
-                list
-            }
+        VStack(spacing: 0) {
+            controls
+            content
         }
         .background(PeakMaterialBackground())
         .navigationTitle("Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if entries.isEmpty { await load() }
+        // Re-runs whenever the metric or window changes, and on first appear.
+        .task(id: "\(metric.rawValue)-\(window.rawValue)") { await load() }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 10) {
+            Picker("Metric", selection: $metric) {
+                ForEach(LeaderboardAPI.Metric.allCases) { m in
+                    Text(m.title).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Window", selection: $window) {
+                ForEach(LeaderboardAPI.Window.allCases) { w in
+                    Text(w.title).tag(w)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch phase {
+        case .loading where entries.isEmpty:
+            PeakSkeletonList(style: .markets, rowCount: 10)
+        case .failed(let message) where entries.isEmpty:
+            errorState(message)
+        default:
+            list
         }
     }
 
@@ -41,19 +70,14 @@ struct LeaderboardView: View {
         List {
             Section {
                 ForEach(entries) { entry in
-                    LeaderboardRow(entry: entry)
+                    LeaderboardRow(entry: entry, metric: metric)
                         .listRowBackground(PeakCanvas.elevated)
                 }
-            } header: {
-                Text("Top traders on Polymarket, by all-time profit")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .textCase(nil)
-                    .padding(.bottom, 4)
             } footer: {
                 Text("Live from Polymarket. Peak is an independent client and doesn’t rank or verify traders itself.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .padding(.top, 4)
             }
         }
         .listStyle(.insetGrouped)
@@ -61,6 +85,9 @@ struct LeaderboardView: View {
         .listRowSeparatorTint(PeakCanvas.hairline)
         .contentMargins(.horizontal, 16, for: .scrollContent)
         .refreshable { await load() }
+        // Dim slightly while a toggle change is loading fresh rows.
+        .opacity(phase == .loading ? 0.5 : 1)
+        .animation(PeakMotion.soft, value: phase == .loading)
     }
 
     private func errorState(_ message: String) -> some View {
@@ -72,11 +99,9 @@ struct LeaderboardView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("Try again") {
-                Task { await load() }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(brand.mid)
+            Button("Try again") { Task { await load() } }
+                .buttonStyle(.borderedProminent)
+                .tint(brand.mid)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
@@ -85,7 +110,7 @@ struct LeaderboardView: View {
     private func load() async {
         if entries.isEmpty { phase = .loading }
         do {
-            let fetched = try await LeaderboardAPI.fetch(limit: 100)
+            let fetched = try await LeaderboardAPI.fetch(metric: metric, window: window)
             entries = fetched
             phase = .loaded
         } catch {
@@ -96,48 +121,61 @@ struct LeaderboardView: View {
 
 private struct LeaderboardRow: View {
     let entry: LeaderboardEntry
+    let metric: LeaderboardAPI.Metric
 
-    private var isPositive: Bool { entry.pnl >= 0 }
+    private var isProfit: Bool { metric == .profit }
+    private var isPositive: Bool { entry.amount >= 0 }
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("\(entry.rank)")
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 26, alignment: .trailing)
+            rankBadge
 
             avatar
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(entry.displayName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    if entry.verifiedBadge {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.caption2)
-                            .foregroundStyle(PeakTradeStyle.buy)
-                            .accessibilityLabel("Verified")
-                    }
-                }
-                Text("Volume \(PeakFormat.usd(entry.vol, compact: true))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(entry.displayName)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
 
             Spacer(minLength: 8)
 
-            Text("\(isPositive ? "+" : "")\(PeakFormat.usd(entry.pnl, compact: true))")
+            Text(amountText)
                 .font(.callout.weight(.semibold).monospacedDigit())
-                .foregroundStyle(isPositive ? PeakTradeStyle.buy : PeakTradeStyle.sell)
+                .foregroundStyle(amountColor)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "Rank \(entry.rank), \(entry.displayName)\(entry.verifiedBadge ? ", verified" : ""), "
-            + "profit \(isPositive ? "up" : "down") \(PeakFormat.usd(abs(entry.pnl), compact: true)), "
-            + "volume \(PeakFormat.usd(entry.vol, compact: true))"
+            "Rank \(entry.rank), \(entry.displayName), "
+            + "\(metric.title.lowercased()) \(amountText)"
         )
+    }
+
+    private var amountText: String {
+        let formatted = PeakFormat.usd(abs(entry.amount), compact: true)
+        if isProfit { return "\(isPositive ? "+" : "−")\(formatted)" }
+        return formatted
+    }
+
+    private var amountColor: Color {
+        guard isProfit else { return .primary }
+        return isPositive ? PeakTradeStyle.buy : PeakTradeStyle.sell
+    }
+
+    /// Top three get a medal tint; the rest a plain muted number.
+    private var rankBadge: some View {
+        Text("\(entry.rank)")
+            .font(.subheadline.weight(.bold).monospacedDigit())
+            .foregroundStyle(medalColor ?? .secondary)
+            .frame(minWidth: 28, alignment: .center)
+    }
+
+    private var medalColor: Color? {
+        switch entry.rank {
+        case 1: return Color(red: 0.85, green: 0.68, blue: 0.28) // gold
+        case 2: return Color(red: 0.66, green: 0.70, blue: 0.74) // silver
+        case 3: return Color(red: 0.78, green: 0.53, blue: 0.33) // bronze
+        default: return nil
+        }
     }
 
     private var avatar: some View {
@@ -145,17 +183,15 @@ private struct LeaderboardRow: View {
             if let url = entry.profileImageURL {
                 AsyncImage(url: url) { phase in
                     switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        monogram
+                    case .success(let image): image.resizable().scaledToFill()
+                    default: monogram
                     }
                 }
             } else {
                 monogram
             }
         }
-        .frame(width: 34, height: 34)
+        .frame(width: 36, height: 36)
         .clipShape(Circle())
         .overlay(Circle().strokeBorder(PeakCanvas.hairline, lineWidth: 1))
         .accessibilityHidden(true)

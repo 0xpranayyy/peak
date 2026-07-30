@@ -244,6 +244,7 @@ enum PeakAPIBase {
     static let gammaDirect = URL(string: "https://gamma-api.polymarket.com")!
     static let clobDirect = URL(string: "https://clob.polymarket.com")!
     static let dataDirect = URL(string: "https://data-api.polymarket.com")!
+    static let leaderboardDirect = URL(string: "https://lb-api.polymarket.com")!
     static let marketWebSocketDirect = URL(string: "wss://ws-subscriptions-clob.polymarket.com/ws/market")!
 
     /// Peak edge proxy (`worker/`) from Info.plist `PEAK_EDGE_URL`.
@@ -285,6 +286,7 @@ enum PeakAPIBase {
     static var gamma: URL { edgeRoot?.appendingPathComponent("gamma") ?? gammaDirect }
     static var clob: URL { edgeRoot?.appendingPathComponent("clob") ?? clobDirect }
     static var data: URL { edgeRoot?.appendingPathComponent("data") ?? dataDirect }
+    static var leaderboard: URL { edgeRoot?.appendingPathComponent("lb") ?? leaderboardDirect }
 
     /// `https://edge.example.com` → `wss://edge.example.com/ws/market`.
     static var marketWebSocket: URL {
