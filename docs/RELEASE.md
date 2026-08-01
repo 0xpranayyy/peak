@@ -87,6 +87,7 @@ Quick pass each upload:
 | --- | --- |
 | Client crash / Release exception | Sentry (after dSYM upload). Apple Organizer if you only uploaded to Connect. |
 | Unreadable Sentry stacks | Re-upload dSYMs from that archive’s `dSYMs` folder. |
+| Xcode “missing Sentry.framework dSYM” | Warning only (upload still works). Peak uses `Sentry-Dynamic` so the archive should include that dSYM — see [APP_STORE.md](APP_STORE.md#sentryframework-missing-dsym-xcode-16-upload-warning). |
 | Auth / setup / order `5xx` | Railway (or host) logs for `backend/`; confirm host env matches `.env.example` keys (never commit `.env`). |
 | Device-only oddity | Mac **Console** app → device → filter for Peak process; reproduce once. |
 | “Backend not configured” | Host missing Builder/Relayer/Privy; or Release build still on bad URL (Release rejects localhost / plain HTTP). |

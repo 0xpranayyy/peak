@@ -114,6 +114,14 @@ work around Privy 2.14.0 shipping an unsigned XCFramework.
 
 ### Sentry symbols
 
+Peak links the SPM product **`Sentry-Dynamic`** (sentry-cocoa ≥ 8.x), not the
+static `Sentry` binary. The static XCFramework ships **no** `dSYMs/`; Xcode 16+
+then warns *"The archive did not include a dSYM for the Sentry.framework"* on
+upload. That message is a **warning** (TestFlight / App Store upload still
+proceeds). Dynamic linking embeds `Sentry.framework` and its matching
+`Sentry.framework.dSYM` in the archive so Apple’s symbol upload and the
+scheme post-action both see it.
+
 `uploadSymbols` (in `ExportOptions.plist`) sends dSYMs to Apple, not to
 Sentry — those are two separate destinations. The Peak scheme's Archive action
 has a **Post-action** ("Upload Debug Symbols to Sentry") that handles the

@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		9C6BC8CD0C1B10F7AE8B06BC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3075EF805F260D65C36702F /* Foundation.framework */; };
-		BC577C344CEB56A696DBD96C /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 9AC023AEE768F3E62898B6BB /* Sentry */; };
+		BC577C344CEB56A696DBD96C /* Sentry-Dynamic in Frameworks */ = {isa = PBXBuildFile; productRef = 9AC023AEE768F3E62898B6BB /* Sentry-Dynamic */; };
 		CRYPT00000000000000000003 /* CryptoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = CRYPT00000000000000000002 /* CryptoSwift */; };
 		P20000000000000000000004 /* PeakWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = P20000000000000000000005 /* PeakWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		PRIVY00000000000000000003 /* Privy in Frameworks */ = {isa = PBXBuildFile; productRef = PRIVY00000000000000000002 /* Privy */; };
@@ -116,7 +116,7 @@
 				STAR00000000000000000003 /* Starscream in Frameworks */,
 				CRYPT00000000000000000003 /* CryptoSwift in Frameworks */,
 				WEB3X00000000000000000003 /* Web3 in Frameworks */,
-				BC577C344CEB56A696DBD96C /* Sentry in Frameworks */,
+				BC577C344CEB56A696DBD96C /* Sentry-Dynamic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -218,7 +218,7 @@
 				STAR00000000000000000002 /* Starscream */,
 				CRYPT00000000000000000002 /* CryptoSwift */,
 				WEB3X00000000000000000002 /* Web3 */,
-				9AC023AEE768F3E62898B6BB /* Sentry */,
+				9AC023AEE768F3E62898B6BB /* Sentry-Dynamic */,
 			);
 			productName = Peak;
 			productReference = P10000000000000000000005 /* Peak.app */;
@@ -772,10 +772,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		9AC023AEE768F3E62898B6BB /* Sentry */ = {
+		9AC023AEE768F3E62898B6BB /* Sentry-Dynamic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A1DDCB58E828240444EED0D8 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
-			productName = Sentry;
+			productName = Sentry-Dynamic;
 		};
 		CRYPT00000000000000000002 /* CryptoSwift */ = {
 			isa = XCSwiftPackageProductDependency;

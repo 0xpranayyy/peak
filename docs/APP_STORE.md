@@ -25,6 +25,21 @@ Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C) · [RE
 - [ ] Archive a Release build pointed at the hosted API (plist URLs above; Release rejects localhost / plain HTTP).
 - [ ] Upload via Transporter / `altool` (see README **Shipping a build**).
 
+## Sentry.framework missing dSYM (Xcode 16+ upload warning)
+
+**Symptom:** Organizer / Transporter shows *Upload Symbols Failed* — archive
+missing a dSYM for `Sentry.framework` with some UUID.
+
+**Not blocking.** Apple still accepts the IPA for TestFlight / App Store. The
+warning only means Apple (not Sentry) lacks symbols for the Sentry SDK binary.
+
+**In-repo fix:** Peak depends on SPM product **`Sentry-Dynamic`** so the
+prebuilt XCFramework’s `ios-arm64/.../dSYMs/Sentry.framework.dSYM` is copied
+into the archive. Keep linking `Sentry-Dynamic` (not static `Sentry`) unless
+you intentionally accept the warning again. App crash stacks still need the
+scheme post-action / `sentry-cli` upload of `*.xcarchive/dSYMs` (README
+**Sentry symbols**).
+
 ## TMS-91065 — PrivySDK / SwiftyJSON missing signature
 
 **Symptom:** App Store Connect rejects the upload with `TMS-91065: Missing signature` on `Frameworks/PrivySDK.framework/PrivySDK` (mentions SwiftyJSON).
