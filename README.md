@@ -103,8 +103,14 @@ xcrun altool --upload-app -f build/export/Peak.ipa -t ios \
   --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 ```
 
-An app record for `com.pranay.peak` must already exist in App Store Connect —
-upload fails with an unhelpful error if it does not.
+An app record for **`com.pranay.peak`** must already exist in App Store Connect —
+upload fails with an unhelpful error if it does not. When creating the New App,
+pick that bundle ID (not Asteria / not the widget).
+
+If Connect rejects with **TMS-91065** (PrivySDK / SwiftyJSON missing signature),
+see [docs/APP_STORE.md](docs/APP_STORE.md#tms-91065--privysdk--swiftyjson-missing-signature).
+Peak’s **Sign PrivySDK XCFramework** build phase + `scripts/sign-privy-xcframework.sh`
+work around Privy 2.14.0 shipping an unsigned XCFramework.
 
 ### Sentry symbols
 

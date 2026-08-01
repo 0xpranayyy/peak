@@ -20,9 +20,39 @@ Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C) · [RE
 ## Before App Store Connect
 
 - [x] **Paid Apple Developer Program team** — team `49BZ7S974W` is configured in the Xcode project.
-- [ ] Confirm bundle ID `com.pranay.peak` is registered under that team / App Store Connect app record exists.
+- [ ] Confirm bundle ID **`com.pranay.peak`** is registered under that team / App Store Connect app record exists.
+  - When creating a **New App** in Connect, pick bundle **`com.pranay.peak`** — not Asteria, not `com.pranay.peak.widget`.
 - [ ] Archive a Release build pointed at the hosted API (plist URLs above; Release rejects localhost / plain HTTP).
 - [ ] Upload via Transporter / `altool` (see README **Shipping a build**).
+
+## TMS-91065 — PrivySDK / SwiftyJSON missing signature
+
+**Symptom:** App Store Connect rejects the upload with `TMS-91065: Missing signature` on `Frameworks/PrivySDK.framework/PrivySDK` (mentions SwiftyJSON).
+
+**Root cause:** Privy is an SPM **binary** XCFramework (`https://github.com/privy-io/privy-ios`). Through **2.14.0** (latest as of 2026-08-01) the XCFramework has **no top-level `_CodeSignature`**. Apple requires signatures for listed third-party SDKs used as binary dependencies, including SDKs that **repackage** them — PrivySDK embeds SwiftyJSON. Compare with Sentry’s XCFramework, which ships `Apple Distribution`-signed `_CodeSignature`.
+
+There is **no newer Privy tag** that fixes this yet. Peak pins `minimumVersion = 2.14.0` and applies a local workaround:
+
+1. Build phase **Sign PrivySDK XCFramework** runs `scripts/sign-privy-xcframework.sh` before compile.
+2. Script injects a minimal `PrivacyInfo.xcprivacy` into each `PrivySDK.framework` slice (if missing) and `codesign`s the XCFramework (prefers Apple Distribution identity when present).
+
+### Manual Xcode steps after pull
+
+1. **File → Packages → Resolve Package Versions** (optional: **Update to Latest Package Versions** — stay on ≥ 2.14.0).
+2. Confirm Peak target → Build Phases starts with **Sign PrivySDK XCFramework**.
+3. Bump `CURRENT_PROJECT_VERSION`, **Product → Archive**, export/upload as usual (README **Shipping a build**).
+
+### Verify signature locally
+
+```bash
+# After a build (or run the script against DerivedData checkout):
+./scripts/sign-privy-xcframework.sh
+codesign -dv --verbose=2 \
+  ~/Library/Developer/Xcode/DerivedData/Peak-*/SourcePackages/checkouts/privy-ios/PrivySDK.xcframework
+# Expect: Authority=Apple Development|Distribution … and _CodeSignature present
+```
+
+When Privy ships a vendor-signed XCFramework + privacy manifest, raise `minimumVersion` to that release and consider removing the build-phase workaround.
 
 ## Sign in with Apple entitlement (when to re-add)
 

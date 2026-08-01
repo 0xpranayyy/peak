@@ -195,6 +195,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = P10000000000000000000007 /* Build configuration list for PBXNativeTarget "Peak" */;
 			buildPhases = (
+				PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */,
 				P10000000000000000000008 /* Sources */,
 				P10000000000000000000002 /* Frameworks */,
 				P10000000000000000000009 /* Resources */,
@@ -315,6 +316,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sign PrivySDK XCFramework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/sign-privy-xcframework.sh\"\n";
+		};
 		PEAKATS000000000000000001 /* Debug Allow Local Networking */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -722,7 +742,7 @@
 			repositoryURL = "https://github.com/privy-io/privy-ios";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
+				minimumVersion = 2.14.0;
 			};
 		};
 		REOWN00000000000000000001 /* XCRemoteSwiftPackageReference "reown-swift" */ = {
