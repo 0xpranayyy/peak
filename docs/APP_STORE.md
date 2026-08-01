@@ -35,12 +35,14 @@ There is **no newer Privy tag** that fixes this yet. Peak pins `minimumVersion =
 
 1. Build phase **Sign PrivySDK XCFramework** runs `scripts/sign-privy-xcframework.sh` before compile.
 2. Script injects a minimal `PrivacyInfo.xcprivacy` into each `PrivySDK.framework` slice (if missing) and `codesign`s the XCFramework (prefers Apple Distribution identity when present).
+3. Project setting **`ENABLE_USER_SCRIPT_SANDBOXING = NO`** (Debug + Release). The sign phase must write into SPM’s DerivedData checkout, touch the keychain (`security find-identity`), and run `codesign` — Xcode’s user-script sandbox blocks those with `/bin/sh: … Operation not permitted` / PhaseScriptExecution failure. Keep sandbox off until Privy ships a vendor-signed XCFramework and this phase can be removed.
 
 ### Manual Xcode steps after pull
 
 1. **File → Packages → Resolve Package Versions** (optional: **Update to Latest Package Versions** — stay on ≥ 2.14.0).
 2. Confirm Peak target → Build Phases starts with **Sign PrivySDK XCFramework**.
-3. Bump `CURRENT_PROJECT_VERSION`, **Product → Archive**, export/upload as usual (README **Shipping a build**).
+3. If Archive fails with `Operation not permitted` on `sign-privy-xcframework.sh`, confirm Build Settings → **User Script Sandboxing** is **No**, then **Product → Clean Build Folder** and Archive again.
+4. Bump `CURRENT_PROJECT_VERSION`, **Product → Archive**, export/upload as usual (README **Shipping a build**).
 
 ### Verify signature locally
 
