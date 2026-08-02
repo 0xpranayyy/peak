@@ -20,7 +20,7 @@ After the first workflow works, starting a build is a few clicks. The painful pa
 - [ ] **Paid Apple Developer Program** team (Peak uses `49BZ7S974W`).
 - [ ] **App Store Connect app** for bundle `com.pranay.peak` already exists (or create it before the first upload).
 - [ ] Repo on **GitHub** (`0xpranayyy/peak` or your fork) — Xcode Cloud clones from the remote.
-- [ ] This branch includes `ci_scripts/ci_post_clone.sh` and `ci_scripts/ci_pre_xcodebuild.sh`.
+- [ ] This branch includes `ci_scripts/ci_post_clone.sh` (writes PrivySecrets from env).
 
 ## 1. Create a workflow
 
@@ -68,10 +68,10 @@ Peak runs `scripts/sign-privy-xcframework.sh` in a build phase (after Frameworks
 
 On Cloud:
 
-1. `ci_pre_xcodebuild.sh` best-effort unlocks the keychain / prepares an identity (ephemeral self-signed if empty — typical for **Build - iOS**). It never signs the XCFramework (SPM usually has not resolved yet) and **always exits 0** so a prep failure cannot fail the Cloud build.
-2. The build phase (after package resolve) exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and runs the script to sign `PrivySDK.xcframework`.
-3. The script prefers, in order: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed.
-4. Logs (no secrets) include `identity_path=…` so you can see which path was chosen.
+1. There is **no** `ci_pre_xcodebuild.sh` (removed — it could fail the job before `xcodebuild`).
+2. The **Sign PrivySDK** build phase (after package resolve) exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and signs `PrivySDK.xcframework`.
+3. The script prefers: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed.
+4. Logs include `identity_path=…` (no secret values).
 
 `ENABLE_USER_SCRIPT_SANDBOXING` must stay **No** so the phase can touch the keychain and SPM checkout.
 
@@ -99,7 +99,7 @@ On Archive, the script **exits non-zero** if any required Privy / WalletConnect 
 1. Confirm the workflow action is **Archive - iOS** (not only Build).
 2. Confirm Environment secrets above are set.
 3. Connect → **Xcode Cloud** → select the workflow → **Start Build** on branch **`main`** (pick the commit with this fix), **or** Xcode → Report navigator → Cloud → start build.
-4. Watch **Clone** → **ci_post_clone** → **ci_pre_xcodebuild** → resolve packages → **Archive**.
+4. Watch **Clone** → **ci_post_clone** → resolve packages → **Sign PrivySDK** (build phase) → **Archive**.
 5. In the Sign PrivySDK log lines, expect either `identity_path=keychain` / `build_env` (Distribution) or `identity_path=ephemeral_*` on Build-only runs.
 6. On success with a TestFlight post-action: build appears under **TestFlight** → iOS builds (processing may take minutes).
 7. Assign to an internal group and install on device. Smoke: [APP_STORE.md](APP_STORE.md#testflight-smoke-hosted-api) · [RELEASE.md](RELEASE.md).
