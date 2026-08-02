@@ -68,8 +68,8 @@ Peak runs `scripts/sign-privy-xcframework.sh` in a build phase (after Frameworks
 
 On Cloud:
 
-1. `ci_pre_xcodebuild.sh` unlocks the keychain and ensures a codesigning identity exists (creates an ephemeral self-signed cert if the keychain is empty — typical for **Build - iOS**).
-2. The build phase exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and runs the script.
+1. `ci_pre_xcodebuild.sh` best-effort unlocks the keychain / prepares an identity (ephemeral self-signed if empty — typical for **Build - iOS**). It never signs the XCFramework (SPM usually has not resolved yet) and **always exits 0** so a prep failure cannot fail the Cloud build.
+2. The build phase (after package resolve) exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and runs the script to sign `PrivySDK.xcframework`.
 3. The script prefers, in order: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed.
 4. Logs (no secrets) include `identity_path=…` so you can see which path was chosen.
 

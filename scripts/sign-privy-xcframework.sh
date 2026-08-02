@@ -331,11 +331,13 @@ resolve_identity() {
 }
 
 # Optional: CI pre-xcodebuild only needs a usable identity in the keychain.
+# Never fail the Cloud build from this path — signing happens in the build
+# phase after SPM resolve (xcframework is usually absent at pre_xcodebuild).
 if [ "${PREPARE_IDENTITY_ONLY:-}" = "1" ]; then
   _prep="$(resolve_identity || true)"
   if [ -z "${_prep}" ]; then
-    echo "error: PREPARE_IDENTITY_ONLY failed — no codesigning identity" >&2
-    exit 1
+    echo "warning: PREPARE_IDENTITY_ONLY — no codesigning identity yet; build phase will retry after SPM resolve" >&2
+    exit 0
   fi
   echo "Prepared codesigning identity for PrivySDK: ${_prep}"
   exit 0
