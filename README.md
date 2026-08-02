@@ -70,6 +70,8 @@ See [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE
 
 ## Shipping a build
 
+On an Xcode **beta** Mac, use [docs/XCODE_CLOUD.md](docs/XCODE_CLOUD.md) to Archive with a public/GM Xcode for TestFlight.
+
 Signing is configured (team `49BZ7S974W`, `com.pranay.peak` + `.widget`,
 automatic). A Release archive builds clean.
 

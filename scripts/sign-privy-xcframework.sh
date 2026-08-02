@@ -14,6 +14,15 @@
 # Usage:
 #   ./scripts/sign-privy-xcframework.sh [path-to-PrivySDK.xcframework]
 #   (Xcode build phase sets SRCROOT / DERIVED_DATA paths automatically)
+#
+# Identity selection (Xcode Cloud–aware):
+#   1. EXPANDED_CODE_SIGN_IDENTITY / CODE_SIGN_IDENTITY /
+#      CODE_SIGN_IDENTITY_FOR_DRIVERKIT from the Xcode build env (if set, not "-")
+#   2. security find-identity: Apple Distribution → Apple Development →
+#      iPhone Distribution → any codesigning identity
+#   3. On CI (CI_XCODE_CLOUD / CI): brief wait/retry for keychain identities
+#   Prefer a real Apple identity. Do not use ad-hoc (`codesign -s -`) for
+#   App Store / TestFlight nested XCFrameworks.
 
 set -euo pipefail
 
@@ -46,6 +55,91 @@ find_xcframework() {
   if [ -n "${SRCROOT:-}" ] && [ -d "$SRCROOT/.spm-cache/checkouts/privy-ios/PrivySDK.xcframework" ]; then
     printf '%s\n' "$SRCROOT/.spm-cache/checkouts/privy-ios/PrivySDK.xcframework"
     return 0
+  fi
+
+  return 1
+}
+
+# True when running under Xcode Cloud or generic CI.
+is_ci() {
+  [ "${CI_XCODE_CLOUD:-}" = "TRUE" ] || [ "${CI_XCODE_CLOUD:-}" = "true" ] \
+    || [ "${CI:-}" = "TRUE" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ]
+}
+
+# Extract the quoted identity name from a `security find-identity` line.
+identity_from_line() {
+  printf '%s\n' "$1" | sed -E 's/.*"([^"]+)".*/\1/'
+}
+
+# Prefer named Apple identities, then any codesigning identity present.
+identity_from_keychain() {
+  _list="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+  if [ -z "${_list}" ]; then
+    return 1
+  fi
+
+  _line="$(printf '%s\n' "${_list}" | grep -E 'Apple Distribution' | head -1 || true)"
+  if [ -z "${_line}" ]; then
+    _line="$(printf '%s\n' "${_list}" | grep -E 'Apple Development' | head -1 || true)"
+  fi
+  if [ -z "${_line}" ]; then
+    _line="$(printf '%s\n' "${_list}" | grep -E 'iPhone Distribution' | head -1 || true)"
+  fi
+  if [ -z "${_line}" ]; then
+    # Any valid identity line: "  1) HASH "Name""
+    _line="$(printf '%s\n' "${_list}" | grep -E '^[ ]*[0-9]+\)' | head -1 || true)"
+  fi
+  if [ -z "${_line}" ]; then
+    return 1
+  fi
+  identity_from_line "${_line}"
+}
+
+# Xcode build settings first (Cloud often has these before find-identity is ready).
+identity_from_build_env() {
+  for _var in EXPANDED_CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY_FOR_DRIVERKIT; do
+    eval "_val=\${${_var}:-}"
+    if [ -n "${_val}" ] && [ "${_val}" != "-" ] && [ "${_val}" != "Don't Code Sign" ]; then
+      printf '%s\n' "${_val}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolve_identity() {
+  _id=""
+  _id="$(identity_from_build_env || true)"
+  if [ -n "${_id}" ]; then
+    printf '%s\n' "${_id}"
+    return 0
+  fi
+
+  _id="$(identity_from_keychain || true)"
+  if [ -n "${_id}" ]; then
+    printf '%s\n' "${_id}"
+    return 0
+  fi
+
+  # On Xcode Cloud / CI, signing certs may land in the keychain slightly after
+  # the early "Sign PrivySDK" phase starts — retry briefly.
+  if is_ci; then
+    echo "warning: no codesigning identity yet; waiting for Cloud keychain (up to ~30s)…"
+    _attempt=0
+    while [ "${_attempt}" -lt 6 ]; do
+      sleep 5
+      _attempt=$((_attempt + 1))
+      _id="$(identity_from_build_env || true)"
+      if [ -z "${_id}" ]; then
+        _id="$(identity_from_keychain || true)"
+      fi
+      if [ -n "${_id}" ]; then
+        echo "Found codesigning identity after retry ${_attempt}"
+        printf '%s\n' "${_id}"
+        return 0
+      fi
+      echo "  retry ${_attempt}/6: still no identity"
+    done
   fi
 
   return 1
@@ -94,24 +188,19 @@ find "${XCF}" -type d -name 'PrivySDK.framework' | while IFS= read -r fw; do
 done
 rm -f "${PRIVACY_TMP}"
 
-# Prefer Apple Distribution (matches how Sentry ships); fall back to build identity.
-IDENTITY=""
-if [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] && [ "${EXPANDED_CODE_SIGN_IDENTITY}" != "-" ]; then
-  IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
-fi
-DIST_LINE="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Apple Distribution' | head -1 || true)"
-if [ -n "${DIST_LINE}" ]; then
-  IDENTITY="$(printf '%s\n' "${DIST_LINE}" | sed -E 's/.*"([^"]+)".*/\1/')"
-fi
+IDENTITY="$(resolve_identity || true)"
 if [ -z "${IDENTITY}" ]; then
-  DEV_LINE="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Apple Development' | head -1 || true)"
-  if [ -n "${DEV_LINE}" ]; then
-    IDENTITY="$(printf '%s\n' "${DEV_LINE}" | sed -E 's/.*"([^"]+)".*/\1/')"
+  echo "error: no codesigning identity available to sign PrivySDK.xcframework" >&2
+  echo "error: dump of security find-identity -v -p codesigning:" >&2
+  security find-identity -v -p codesigning 2>&1 | sed 's/^/  /' >&2 || true
+  echo "error: EXPANDED_CODE_SIGN_IDENTITY='${EXPANDED_CODE_SIGN_IDENTITY:-}' CODE_SIGN_IDENTITY='${CODE_SIGN_IDENTITY:-}'" >&2
+  if is_ci; then
+    echo "error: On Xcode Cloud Archive, a Distribution cert should exist after signing setup." >&2
+    echo "error: Confirm automatic signing for team 49BZ7S974W and re-run the workflow." >&2
+  else
+    echo "error: Locally: open Xcode → Settings → Accounts, download certificates," >&2
+    echo "error: or set CODE_SIGN_IDENTITY / sign in with a Development team." >&2
   fi
-fi
-
-if [ -z "${IDENTITY}" ]; then
-  echo "error: no codesigning identity available to sign PrivySDK.xcframework"
   exit 1
 fi
 

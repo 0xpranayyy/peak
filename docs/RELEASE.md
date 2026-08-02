@@ -5,6 +5,7 @@ Short post-TestFlight maintenance guide. Credentials, Connect checklists, and E2
 - Credentials / hosting / E2E A·B·B2·C → [PRODUCTION.md](PRODUCTION.md)
 - Connect packaging, SIWA, Nutrition Labels, review notes → [APP_STORE.md](APP_STORE.md)
 - Archive / export / Sentry one-liners → [README Shipping a build](../README.md#shipping-a-build)
+- Xcode Cloud (GM toolchain when local is beta) → [XCODE_CLOUD.md](XCODE_CLOUD.md)
 
 ## Web vs iOS
 
