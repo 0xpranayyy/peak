@@ -195,10 +195,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = P10000000000000000000007 /* Build configuration list for PBXNativeTarget "Peak" */;
 			buildPhases = (
-				PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */,
 				P10000000000000000000008 /* Sources */,
 				P10000000000000000000002 /* Frameworks */,
 				P10000000000000000000009 /* Resources */,
+				PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */,
 				P20000000000000000000007 /* Embed Foundation Extensions */,
 				PEAKATS000000000000000001 /* Debug Allow Local Networking */,
 			);
@@ -333,7 +333,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# TMS-91065: codesign PrivySDK.xcframework (needs sandbox OFF — see ENABLE_USER_SCRIPT_SANDBOXING).\ncd \"${SRCROOT}\"\n/bin/sh \"${SRCROOT}/scripts/sign-privy-xcframework.sh\"\n";
+			shellScript = "# TMS-91065: codesign PrivySDK.xcframework (needs sandbox OFF — see ENABLE_USER_SCRIPT_SANDBOXING).\n# Run after Frameworks so EXPANDED_CODE_SIGN_IDENTITY is more often populated on Archive.\ncd \"${SRCROOT}\"\nexport IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}\"\necho \"Sign PrivySDK: IDENTITY=${IDENTITY} EXPANDED=${EXPANDED_CODE_SIGN_IDENTITY:-} CODE_SIGN_IDENTITY=${CODE_SIGN_IDENTITY:-} action=${CI_XCODEBUILD_ACTION:-local}\"\n/bin/sh \"${SRCROOT}/scripts/sign-privy-xcframework.sh\"\n";
 		};
 		PEAKATS000000000000000001 /* Debug Allow Local Networking */ = {
 			isa = PBXShellScriptBuildPhase;

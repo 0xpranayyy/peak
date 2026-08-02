@@ -20,7 +20,7 @@ After the first workflow works, starting a build is a few clicks. The painful pa
 - [ ] **Paid Apple Developer Program** team (Peak uses `49BZ7S974W`).
 - [ ] **App Store Connect app** for bundle `com.pranay.peak` already exists (or create it before the first upload).
 - [ ] Repo on **GitHub** (`0xpranayyy/peak` or your fork) — Xcode Cloud clones from the remote.
-- [ ] This branch includes `ci_scripts/ci_post_clone.sh` (creates `Peak/PrivySecrets.local.plist` from env vars).
+- [ ] This branch includes `ci_scripts/ci_post_clone.sh` and `ci_scripts/ci_pre_xcodebuild.sh`.
 
 ## 1. Create a workflow
 
@@ -47,23 +47,37 @@ In the workflow editor (Xcode or Connect → Xcode Cloud → Workflows → Peak 
 | **Xcode version** | A **public / GM** release (e.g. latest non-beta). **Do not** pick an Xcode beta for Archive — Connect rejects or blocks GM distribution from beta toolchains. |
 | **macOS** | Matching recommended pair for that Xcode (Cloud offers a pair). |
 | **Scheme** | **Peak** |
-| **Actions** | At least **Archive** for **iOS** (platform iOS). Add Test only if you want; Archive is what feeds TestFlight. |
+| **Actions** | **Archive - iOS** (required for TestFlight / App Store). A plain **Build - iOS** action often has **no Distribution identity** in the keychain — that is why Privy signing used to hard-fail. Keep Build only as an optional compile check. |
 | **Post-actions** | **TestFlight Internal Testing** (or External when ready) so a green Archive lands in Connect. |
 | **Start condition** | Manual is fine for the first builds; later: branch `main` on push, or tag. |
 
 Signing: leave **automatic** / managed by Cloud for team `49BZ7S974W`. Cloud provisions certificates and profiles.
 
+### Critical: use Archive - iOS, not only Build - iOS
+
+| Action | Keychain identities | TestFlight | PrivySDK sign |
+| --- | --- | --- | --- |
+| **Archive - iOS** | Apple Distribution (after Cloud signing setup) | Yes | Prefers Distribution |
+| **Build - iOS** | Often **empty** (no Distribution cert installed) | No | Falls back to ephemeral self-signed cert |
+
+If your workflow screenshot shows only **Build - iOS**, edit the workflow → Actions → add **Archive - iOS**, then re-run on `main`.
+
 ### PrivySDK / TMS-91065 (Sign PrivySDK XCFramework)
 
-Peak runs `scripts/sign-privy-xcframework.sh` in an early build phase so App Store Connect accepts the unsigned Privy XCFramework (nested SwiftyJSON). On Cloud that script:
+Peak runs `scripts/sign-privy-xcframework.sh` in a build phase (after Frameworks / Resources, before Embed Extensions) so App Store Connect accepts the unsigned Privy XCFramework (nested SwiftyJSON).
 
-1. Uses `EXPANDED_CODE_SIGN_IDENTITY` / `CODE_SIGN_IDENTITY` from the archive environment when set.
-2. Otherwise picks **Apple Distribution** (then Development / iPhone Distribution / any codesigning identity) from `security find-identity`.
-3. If the keychain is still empty early in the job (`CI_XCODE_CLOUD=TRUE`), retries for ~30s.
+On Cloud:
 
-`ENABLE_USER_SCRIPT_SANDBOXING` must stay **No** so the phase can touch the keychain and SPM checkout. Prefer a real Apple identity — do not rely on ad-hoc (`codesign -s -`) for TestFlight / App Store nested frameworks.
+1. `ci_pre_xcodebuild.sh` unlocks the keychain and ensures a codesigning identity exists (creates an ephemeral self-signed cert if the keychain is empty — typical for **Build - iOS**).
+2. The build phase exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and runs the script.
+3. The script prefers, in order: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed.
+4. Logs (no secrets) include `identity_path=…` so you can see which path was chosen.
 
-If Archive fails with `no codesigning identity available to sign PrivySDK.xcframework`, confirm automatic signing for team `49BZ7S974W` and re-run; the script logs `find-identity` output on failure.
+`ENABLE_USER_SCRIPT_SANDBOXING` must stay **No** so the phase can touch the keychain and SPM checkout.
+
+**Archive must still produce a signed `PrivySDK.xcframework`** (Apple Distribution when available, otherwise the ephemeral CI signer). Do not rely on ad-hoc (`codesign -s -`) for TestFlight / App Store nested frameworks.
+
+If Archive fails with `no codesigning identity available to sign PrivySDK.xcframework` even after this fallback, confirm automatic signing for team `49BZ7S974W`, check the build log for `identity_path=`, and re-run.
 
 ## 3. Environment variables (secrets)
 
@@ -82,10 +96,13 @@ On Archive, the script **exits non-zero** if any required Privy / WalletConnect 
 
 ## 4. Start a build → TestFlight
 
-1. Connect → **Xcode Cloud** → select the workflow → **Start Build** (pick branch / commit), **or** Xcode → Report navigator → Cloud → start build.
-2. Watch **Clone** → **ci_post_clone** → resolve packages → **Archive**.
-3. On success with a TestFlight post-action: build appears under **TestFlight** → iOS builds (processing may take minutes).
-4. Assign to an internal group and install on device. Smoke: [APP_STORE.md](APP_STORE.md#testflight-smoke-hosted-api) · [RELEASE.md](RELEASE.md).
+1. Confirm the workflow action is **Archive - iOS** (not only Build).
+2. Confirm Environment secrets above are set.
+3. Connect → **Xcode Cloud** → select the workflow → **Start Build** on branch **`main`** (pick the commit with this fix), **or** Xcode → Report navigator → Cloud → start build.
+4. Watch **Clone** → **ci_post_clone** → **ci_pre_xcodebuild** → resolve packages → **Archive**.
+5. In the Sign PrivySDK log lines, expect either `identity_path=keychain` / `build_env` (Distribution) or `identity_path=ephemeral_*` on Build-only runs.
+6. On success with a TestFlight post-action: build appears under **TestFlight** → iOS builds (processing may take minutes).
+7. Assign to an internal group and install on device. Smoke: [APP_STORE.md](APP_STORE.md#testflight-smoke-hosted-api) · [RELEASE.md](RELEASE.md).
 
 Bump `CURRENT_PROJECT_VERSION` (and `MARKETING_VERSION` when needed) in the project **before** the commit you archive — same rule as local uploads ([RELEASE.md](RELEASE.md)).
 

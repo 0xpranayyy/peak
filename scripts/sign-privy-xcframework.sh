@@ -16,15 +16,20 @@
 #   (Xcode build phase sets SRCROOT / DERIVED_DATA paths automatically)
 #
 # Identity selection (Xcode Cloud–aware):
-#   1. EXPANDED_CODE_SIGN_IDENTITY / CODE_SIGN_IDENTITY /
+#   1. IDENTITY env (build phase may export EXPANDED_CODE_SIGN_IDENTITY)
+#   2. EXPANDED_CODE_SIGN_IDENTITY / CODE_SIGN_IDENTITY /
 #      CODE_SIGN_IDENTITY_FOR_DRIVERKIT from the Xcode build env (if set, not "-")
-#   2. security find-identity: Apple Distribution → Apple Development →
+#   3. security find-identity: Apple Distribution → Apple Development →
 #      iPhone Distribution → any codesigning identity
-#   3. On CI (CI_XCODE_CLOUD / CI): brief wait/retry for keychain identities
-#   Prefer a real Apple identity. Do not use ad-hoc (`codesign -s -`) for
-#   App Store / TestFlight nested XCFrameworks.
+#   4. On CI (CI_XCODE_CLOUD / CI): brief wait/retry for keychain identities
+#   5. On CI: create an ephemeral self-signed codesigning cert dedicated to
+#      signing this XCFramework (Build actions often have no Apple certs)
+#   Prefer a real Apple identity when present. Ephemeral self-signed is only
+#   for Cloud Build / empty-keychain cases; Archive should use Distribution.
 
 set -euo pipefail
+
+EPHEMERAL_CERT_NAME="Peak PrivySDK CI Signer"
 
 find_xcframework() {
   if [ -n "${1:-}" ] && [ -d "$1" ]; then
@@ -51,10 +56,28 @@ find_xcframework() {
     fi
   fi
 
+  # Xcode Cloud / CI: common DerivedData under CI_DERIVED_DATA_PATH
+  if [ -n "${CI_DERIVED_DATA_PATH:-}" ]; then
+    sp="${CI_DERIVED_DATA_PATH}/SourcePackages/checkouts/privy-ios/PrivySDK.xcframework"
+    if [ -d "$sp" ]; then
+      printf '%s\n' "$sp"
+      return 0
+    fi
+  fi
+
   # Local SPM cache used by Peak tooling
   if [ -n "${SRCROOT:-}" ] && [ -d "$SRCROOT/.spm-cache/checkouts/privy-ios/PrivySDK.xcframework" ]; then
     printf '%s\n' "$SRCROOT/.spm-cache/checkouts/privy-ios/PrivySDK.xcframework"
     return 0
+  fi
+
+  # Last resort: search under SRCROOT DerivedData-style checkouts
+  if [ -n "${SRCROOT:-}" ]; then
+    _hit="$(find "${SRCROOT}" -type d -path '*/SourcePackages/checkouts/privy-ios/PrivySDK.xcframework' 2>/dev/null | head -1 || true)"
+    if [ -n "${_hit}" ] && [ -d "${_hit}" ]; then
+      printf '%s\n' "${_hit}"
+      return 0
+    fi
   fi
 
   return 1
@@ -64,6 +87,30 @@ find_xcframework() {
 is_ci() {
   [ "${CI_XCODE_CLOUD:-}" = "TRUE" ] || [ "${CI_XCODE_CLOUD:-}" = "true" ] \
     || [ "${CI:-}" = "TRUE" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ]
+}
+
+login_keychain() {
+  if [ -f "${HOME}/Library/Keychains/login.keychain-db" ]; then
+    printf '%s\n' "${HOME}/Library/Keychains/login.keychain-db"
+  elif [ -f "${HOME}/Library/Keychains/login.keychain" ]; then
+    printf '%s\n' "${HOME}/Library/Keychains/login.keychain"
+  else
+    security default-keychain -d user 2>/dev/null | sed -E 's/^[[:space:]]*"([^"]+)".*/\1/' || true
+  fi
+}
+
+# Best-effort unlock so find-identity / codesign can see Cloud-managed certs.
+unlock_keychain_if_needed() {
+  _kc="$(login_keychain || true)"
+  if [ -z "${_kc}" ]; then
+    return 0
+  fi
+  # Xcode Cloud login keychain is often unlocked already; empty password is the
+  # common CI default. Never print passwords.
+  security unlock-keychain -p "" "${_kc}" >/dev/null 2>&1 \
+    || security unlock-keychain "${_kc}" >/dev/null 2>&1 \
+    || true
+  security set-keychain-settings -t 3600 -u "${_kc}" >/dev/null 2>&1 || true
 }
 
 # Extract the quoted identity name from a `security find-identity` line.
@@ -86,7 +133,10 @@ identity_from_keychain() {
     _line="$(printf '%s\n' "${_list}" | grep -E 'iPhone Distribution' | head -1 || true)"
   fi
   if [ -z "${_line}" ]; then
-    # Any valid identity line: "  1) HASH "Name""
+    # Prefer a non-ephemeral identity if both exist.
+    _line="$(printf '%s\n' "${_list}" | grep -E '^[ ]*[0-9]+\)' | grep -v "${EPHEMERAL_CERT_NAME}" | head -1 || true)"
+  fi
+  if [ -z "${_line}" ]; then
     _line="$(printf '%s\n' "${_list}" | grep -E '^[ ]*[0-9]+\)' | head -1 || true)"
   fi
   if [ -z "${_line}" ]; then
@@ -95,11 +145,40 @@ identity_from_keychain() {
   identity_from_line "${_line}"
 }
 
-# Xcode build settings first (Cloud often has these before find-identity is ready).
+# True if a candidate string resolves to a usable codesigning identity.
+identity_usable() {
+  _cand="$1"
+  [ -n "${_cand}" ] || return 1
+  [ "${_cand}" != "-" ] || return 1
+  [ "${_cand}" != "Don't Code Sign" ] || return 1
+  # Generic preference strings without a matching cert are not usable.
+  case "${_cand}" in
+    "Apple Development"|"Apple Distribution"|"iPhone Developer"|"iPhone Distribution"|"Mac Developer"|"Mac App Distribution"|"Developer ID Application")
+      security find-identity -v -p codesigning 2>/dev/null | grep -F "${_cand}" >/dev/null 2>&1
+      return $?
+      ;;
+  esac
+  # Hash (40 hex) or full "Apple Development: Name (TEAM)" — try codesign dry probe via find-identity.
+  if printf '%s\n' "${_cand}" | grep -Eq '^[A-Fa-f0-9]{40}$'; then
+    security find-identity -v -p codesigning 2>/dev/null | grep -qi "${_cand}" >/dev/null 2>&1
+    return $?
+  fi
+  # Named identity — accept if find-identity lists it, else still try (local may work).
+  if security find-identity -v -p codesigning 2>/dev/null | grep -F "${_cand}" >/dev/null 2>&1; then
+    return 0
+  fi
+  # On non-CI, allow Xcode-expanded names that may still codesign.
+  if ! is_ci; then
+    return 0
+  fi
+  return 1
+}
+
+# Xcode build settings first (Cloud Archive often expands these).
 identity_from_build_env() {
-  for _var in EXPANDED_CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY_FOR_DRIVERKIT; do
+  for _var in IDENTITY EXPANDED_CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY CODE_SIGN_IDENTITY_FOR_DRIVERKIT; do
     eval "_val=\${${_var}:-}"
-    if [ -n "${_val}" ] && [ "${_val}" != "-" ] && [ "${_val}" != "Don't Code Sign" ]; then
+    if identity_usable "${_val}"; then
       printf '%s\n' "${_val}"
       return 0
     fi
@@ -107,43 +186,160 @@ identity_from_build_env() {
   return 1
 }
 
+# Create a dedicated self-signed codesigning identity for XCFramework signing
+# when Cloud Build has no Apple certs in the keychain. Satisfies TMS-91065
+# (signature present); Archive still prefers Apple Distribution when available.
+ensure_ephemeral_codesign_identity() {
+  if ! is_ci; then
+    return 1
+  fi
+
+  _kc="$(login_keychain || true)"
+  if [ -z "${_kc}" ]; then
+    echo "warning: no login keychain found; cannot create ephemeral signer" >&2
+    return 1
+  fi
+
+  unlock_keychain_if_needed
+
+  if security find-identity -v -p codesigning 2>/dev/null | grep -F "${EPHEMERAL_CERT_NAME}" >/dev/null 2>&1; then
+    echo "identity_path=ephemeral_reuse name=${EPHEMERAL_CERT_NAME}" >&2
+    printf '%s\n' "${EPHEMERAL_CERT_NAME}"
+    return 0
+  fi
+
+  echo "warning: no Apple codesigning identity; creating ephemeral self-signed cert for PrivySDK XCFramework…" >&2
+  _tmpdir="$(mktemp -d)"
+
+  if ! openssl req -x509 -newkey rsa:2048 -nodes \
+      -keyout "${_tmpdir}/key.pem" \
+      -out "${_tmpdir}/cert.pem" \
+      -days 2 \
+      -subj "/CN=${EPHEMERAL_CERT_NAME}/O=Peak CI/OU=Xcode Cloud" \
+      -addext "keyUsage=critical,digitalSignature" \
+      -addext "extendedKeyUsage=codeSigning" \
+      2>/dev/null; then
+    echo "error: openssl failed to create ephemeral codesigning cert" >&2
+    rm -rf "${_tmpdir}"
+    return 1
+  fi
+
+  _p12_pw="$(openssl rand -hex 16)"
+  # OpenSSL 3 defaults break macOS security import — use legacy PKCS#12.
+  if ! openssl pkcs12 -export -legacy \
+      -macalg sha1 \
+      -keypbe PBE-SHA1-3DES \
+      -certpbe PBE-SHA1-3DES \
+      -inkey "${_tmpdir}/key.pem" \
+      -in "${_tmpdir}/cert.pem" \
+      -name "${EPHEMERAL_CERT_NAME}" \
+      -out "${_tmpdir}/cert.p12" \
+      -passout "pass:${_p12_pw}" 2>/dev/null; then
+    if ! openssl pkcs12 -export \
+        -inkey "${_tmpdir}/key.pem" \
+        -in "${_tmpdir}/cert.pem" \
+        -name "${EPHEMERAL_CERT_NAME}" \
+        -out "${_tmpdir}/cert.p12" \
+        -passout "pass:${_p12_pw}" 2>/dev/null; then
+      echo "error: openssl pkcs12 export failed" >&2
+      rm -rf "${_tmpdir}"
+      return 1
+    fi
+  fi
+
+  if ! security import "${_tmpdir}/cert.p12" \
+      -k "${_kc}" \
+      -P "${_p12_pw}" \
+      -A \
+      -T /usr/bin/codesign \
+      -T /usr/bin/security >/dev/null 2>&1; then
+    echo "error: security import of ephemeral cert failed" >&2
+    rm -rf "${_tmpdir}"
+    return 1
+  fi
+
+  # Allow codesign without UI prompt (empty login password is typical on Cloud).
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "${_kc}" >/dev/null 2>&1 || true
+  security add-trusted-cert -p codeSign -k "${_kc}" "${_tmpdir}/cert.pem" >/dev/null 2>&1 || true
+
+  rm -rf "${_tmpdir}"
+
+  if ! security find-identity -v -p codesigning 2>/dev/null | grep -F "${EPHEMERAL_CERT_NAME}" >/dev/null 2>&1; then
+    echo "error: ephemeral cert imported but not visible to find-identity" >&2
+    security find-identity -v -p codesigning 2>&1 | sed 's/^/  /' >&2 || true
+    return 1
+  fi
+
+  echo "identity_path=ephemeral_created name=${EPHEMERAL_CERT_NAME}" >&2
+  printf '%s\n' "${EPHEMERAL_CERT_NAME}"
+  return 0
+}
+
 resolve_identity() {
+  unlock_keychain_if_needed
+
   _id=""
   _id="$(identity_from_build_env || true)"
   if [ -n "${_id}" ]; then
+    echo "identity_path=build_env value=${_id}" >&2
     printf '%s\n' "${_id}"
     return 0
   fi
 
   _id="$(identity_from_keychain || true)"
   if [ -n "${_id}" ]; then
+    echo "identity_path=keychain value=${_id}" >&2
     printf '%s\n' "${_id}"
     return 0
   fi
 
   # On Xcode Cloud / CI, signing certs may land in the keychain slightly after
-  # the early "Sign PrivySDK" phase starts — retry briefly.
+  # the "Sign PrivySDK" phase starts — retry briefly (skip long wait during
+  # PREPARE_IDENTITY_ONLY; Archive certs often appear only inside xcodebuild).
   if is_ci; then
-    echo "warning: no codesigning identity yet; waiting for Cloud keychain (up to ~30s)…"
-    _attempt=0
-    while [ "${_attempt}" -lt 6 ]; do
-      sleep 5
-      _attempt=$((_attempt + 1))
-      _id="$(identity_from_build_env || true)"
-      if [ -z "${_id}" ]; then
-        _id="$(identity_from_keychain || true)"
-      fi
-      if [ -n "${_id}" ]; then
-        echo "Found codesigning identity after retry ${_attempt}"
-        printf '%s\n' "${_id}"
-        return 0
-      fi
-      echo "  retry ${_attempt}/6: still no identity"
-    done
+    if [ "${PREPARE_IDENTITY_ONLY:-}" != "1" ]; then
+      echo "warning: no codesigning identity yet; waiting for Cloud keychain (up to ~30s)…" >&2
+      _attempt=0
+      while [ "${_attempt}" -lt 6 ]; do
+        sleep 5
+        _attempt=$((_attempt + 1))
+        unlock_keychain_if_needed
+        _id="$(identity_from_build_env || true)"
+        if [ -z "${_id}" ]; then
+          _id="$(identity_from_keychain || true)"
+        fi
+        if [ -n "${_id}" ]; then
+          echo "identity_path=keychain_retry attempt=${_attempt} value=${_id}" >&2
+          printf '%s\n' "${_id}"
+          return 0
+        fi
+        echo "  retry ${_attempt}/6: still no identity" >&2
+      done
+    fi
+
+    # Build - iOS often never installs Distribution/Development certs.
+    # Fall back to an ephemeral self-signed identity so the phase succeeds
+    # and PrivySDK.xcframework still gets a _CodeSignature (TMS-91065).
+    _id="$(ensure_ephemeral_codesign_identity || true)"
+    if [ -n "${_id}" ]; then
+      printf '%s\n' "${_id}"
+      return 0
+    fi
   fi
 
   return 1
 }
+
+# Optional: CI pre-xcodebuild only needs a usable identity in the keychain.
+if [ "${PREPARE_IDENTITY_ONLY:-}" = "1" ]; then
+  _prep="$(resolve_identity || true)"
+  if [ -z "${_prep}" ]; then
+    echo "error: PREPARE_IDENTITY_ONLY failed — no codesigning identity" >&2
+    exit 1
+  fi
+  echo "Prepared codesigning identity for PrivySDK: ${_prep}"
+  exit 0
+fi
 
 XCF="$(find_xcframework "${1:-}" || true)"
 if [ -z "${XCF}" ]; then
@@ -193,9 +389,10 @@ if [ -z "${IDENTITY}" ]; then
   echo "error: no codesigning identity available to sign PrivySDK.xcframework" >&2
   echo "error: dump of security find-identity -v -p codesigning:" >&2
   security find-identity -v -p codesigning 2>&1 | sed 's/^/  /' >&2 || true
-  echo "error: EXPANDED_CODE_SIGN_IDENTITY='${EXPANDED_CODE_SIGN_IDENTITY:-}' CODE_SIGN_IDENTITY='${CODE_SIGN_IDENTITY:-}'" >&2
+  echo "error: EXPANDED_CODE_SIGN_IDENTITY='${EXPANDED_CODE_SIGN_IDENTITY:-}' CODE_SIGN_IDENTITY='${CODE_SIGN_IDENTITY:-}' IDENTITY='${IDENTITY:-}'" >&2
+  echo "error: CI_XCODE_CLOUD='${CI_XCODE_CLOUD:-}' CI='${CI:-}' CI_XCODEBUILD_ACTION='${CI_XCODEBUILD_ACTION:-}'" >&2
   if is_ci; then
-    echo "error: On Xcode Cloud Archive, a Distribution cert should exist after signing setup." >&2
+    echo "error: On Xcode Cloud, prefer workflow action Archive - iOS (Distribution identity)." >&2
     echo "error: Confirm automatic signing for team 49BZ7S974W and re-run the workflow." >&2
   else
     echo "error: Locally: open Xcode → Settings → Accounts, download certificates," >&2
