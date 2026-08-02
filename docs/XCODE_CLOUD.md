@@ -58,9 +58,30 @@ Signing: leave **automatic** / managed by Cloud for team `49BZ7S974W`. Cloud pro
 | Action | Keychain identities | TestFlight | PrivySDK sign |
 | --- | --- | --- | --- |
 | **Archive - iOS** | Apple Distribution (after Cloud signing setup) | Yes | Prefers Distribution |
-| **Build - iOS** | Often **empty** (no Distribution cert installed) | No | Falls back to ephemeral self-signed cert |
+| **Build - iOS** | Often **empty** (`CODE_SIGN_IDENTITY='-'`) | No | Ephemeral self-signed, or **skip** (exit 0) if import fails |
 
-If your workflow screenshot shows only **Build - iOS**, edit the workflow → Actions → add **Archive - iOS**, then re-run on `main`.
+Build 8-style logs (`CI_XCODEBUILD_ACTION='build'`, identities `-`, `security import of ephemeral cert failed`) mean the Default workflow is still **Build - iOS**. That cannot ship to TestFlight.
+
+#### Exact clicks — switch Default workflow to Archive (App Store Connect)
+
+1. Open [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → **Peak**.
+2. Sidebar → **Xcode Cloud** → **Workflows**.
+3. Open the **Default** (or active) workflow → **Edit Workflow** (pencil / Edit).
+4. Under **Actions**:
+   - If the only action is **Build - iOS**: select it → **Delete** (or disable), **or** leave it and add Archive beside it.
+   - Click **+** / **Add Action** → choose **Archive - iOS** (platform iOS, scheme **Peak**).
+5. Under **Post-Actions** → **+** → **TestFlight Internal Testing** (pick an internal group when asked).
+6. Confirm **Environment** still has `PRIVY_APP_ID`, `PRIVY_APP_CLIENT_ID`, `WALLETCONNECT_PROJECT_ID` (Secret).
+7. **Save**.
+8. Back on the workflow → **Start Build** → branch **`main`** → latest commit → Start.
+
+#### Exact clicks — same change from Xcode
+
+1. Open `Peak.xcodeproj` → Report navigator (speech bubble) → **Cloud** tab.
+2. Select the Peak workflow → **Manage Workflows…** / gear → edit the workflow.
+3. **Actions** → replace or add **Archive - iOS** (not only Build).
+4. **Post-Actions** → TestFlight Internal Testing → Save.
+5. **Start Build** on **`main`**.
 
 ### PrivySDK / TMS-91065 (Sign PrivySDK XCFramework)
 
@@ -70,14 +91,17 @@ On Cloud:
 
 1. There is **no** `ci_pre_xcodebuild.sh` (removed — it could fail the job before `xcodebuild`).
 2. The **Sign PrivySDK** build phase (after package resolve) exports `IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}"` and signs `PrivySDK.xcframework`.
-3. The script prefers: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed.
-4. Logs include `identity_path=…` (no secret values).
+3. The script prefers: build-env identity → Apple Distribution → Apple Development → any keychain identity → (CI only) ephemeral self-signed in a **temporary keychain** (`create-keychain` → `security import -f pkcs12 -T codesign` → `set-key-partition-list`).
+4. On **Build-only** (`CI_XCODEBUILD_ACTION=build`) or empty/`-` CODE_SIGN identities: if ephemeral import still fails, the phase **exits 0** with  
+   `Skipping PrivySDK sign on Build-only; add Archive - iOS for TestFlight/TMS-91065`  
+   so a compile-check workflow does not red-fail. **Archive / install still require a successful sign.**
+5. Logs include `identity_path=…`, `ephemeral_import=…` (no secret values).
 
 `ENABLE_USER_SCRIPT_SANDBOXING` must stay **No** so the phase can touch the keychain and SPM checkout.
 
 **Archive must still produce a signed `PrivySDK.xcframework`** (Apple Distribution when available, otherwise the ephemeral CI signer). Do not rely on ad-hoc (`codesign -s -`) for TestFlight / App Store nested frameworks.
 
-If Archive fails with `no codesigning identity available to sign PrivySDK.xcframework` even after this fallback, confirm automatic signing for team `49BZ7S974W`, check the build log for `identity_path=`, and re-run.
+If Archive fails with `no codesigning identity available to sign PrivySDK.xcframework` even after this fallback, confirm automatic signing for team `49BZ7S974W`, check the build log for `identity_path=` / `ephemeral_import=`, and re-run.
 
 ## 3. Environment variables (secrets)
 
@@ -96,11 +120,11 @@ On Archive, the script **exits non-zero** if any required Privy / WalletConnect 
 
 ## 4. Start a build → TestFlight
 
-1. Confirm the workflow action is **Archive - iOS** (not only Build).
+1. Confirm the workflow action is **Archive - iOS** (not only Build) — see exact clicks above.
 2. Confirm Environment secrets above are set.
 3. Connect → **Xcode Cloud** → select the workflow → **Start Build** on branch **`main`** (pick the commit with this fix), **or** Xcode → Report navigator → Cloud → start build.
 4. Watch **Clone** → **ci_post_clone** → resolve packages → **Sign PrivySDK** (build phase) → **Archive**.
-5. In the Sign PrivySDK log lines, expect either `identity_path=keychain` / `build_env` (Distribution) or `identity_path=ephemeral_*` on Build-only runs.
+5. In the Sign PrivySDK log lines, expect `identity_path=keychain` / `build_env` (Distribution) on Archive. On leftover Build-only runs you may see `ephemeral_*` or the skip banner (`Skipping PrivySDK sign on Build-only…`).
 6. On success with a TestFlight post-action: build appears under **TestFlight** → iOS builds (processing may take minutes).
 7. Assign to an internal group and install on device. Smoke: [APP_STORE.md](APP_STORE.md#testflight-smoke-hosted-api) · [RELEASE.md](RELEASE.md).
 
