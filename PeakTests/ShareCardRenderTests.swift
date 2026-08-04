@@ -189,6 +189,22 @@ final class ShareCardRenderTests: XCTestCase {
         XCTAssertTrue(result.tweetText.contains("Peak"))
     }
 
+    func testTradeReceiptMetricsMapFromFill() {
+        let buy = TradeCelebrationResult.previewBuy
+        XCTAssertEqual(buy.impliedOdds, 42)
+        XCTAssertEqual(buy.potentialProfit ?? -1, 58, accuracy: 0.01)
+        XCTAssertEqual(buy.potentialReturnPct ?? -1, 138, accuracy: 0.5)
+        XCTAssertEqual(buy.potentialPayout ?? -1, 100, accuracy: 0.01)
+        XCTAssertNotNil(buy.marketURL)
+
+        let sell = TradeCelebrationResult.previewSell
+        XCTAssertNil(sell.potentialProfit)
+        XCTAssertNil(sell.potentialReturnPct)
+        XCTAssertNil(sell.potentialPayout)
+        XCTAssertEqual(sell.impliedOdds, 61)
+        XCTAssertEqual(sell.displayName, "Mira Chen")
+    }
+
     /// Run with `-only-testing:PeakTests/ShareCardRenderTests/testExportTradeShareCardPreviews`
     /// to write Bought/Sold PNGs under `docs/share-previews/`.
     func testExportTradeShareCardPreviews() throws {

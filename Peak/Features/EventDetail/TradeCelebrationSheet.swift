@@ -279,9 +279,11 @@ struct TradeCelebrationSheet: View {
     // MARK: - Share render
 
     private func renderShareCard() async {
-        let icon = await PeakTradeShareCardRenderer.loadIcon(url: result.marketImageURL)
+        async let iconTask = PeakTradeShareCardRenderer.loadIcon(url: result.marketImageURL)
+        async let avatarTask = PeakTradeShareCardRenderer.loadIcon(url: result.avatarURL)
+        let (icon, avatar) = await (iconTask, avatarTask)
         let image = await MainActor.run {
-            PeakTradeShareCardRenderer.image(result: result, icon: icon)
+            PeakTradeShareCardRenderer.image(result: result, icon: icon, avatar: avatar)
         }
         await MainActor.run {
             cardImage = image

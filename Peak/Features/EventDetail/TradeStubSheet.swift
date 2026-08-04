@@ -268,7 +268,9 @@ struct TradeStubSheet: View {
                                 fillMessage: "DEBUG preview",
                                 marketImageURL: market.imageURL,
                                 marketSlug: market.slug,
-                                username: celebrationUsername
+                                username: celebrationUsername,
+                                avatarURL: peakProfile.profile?.profileImageURL,
+                                tradedAt: Date()
                             )
                         }
                         .font(.caption.weight(.semibold))
@@ -771,7 +773,9 @@ struct TradeStubSheet: View {
                 fillMessage: fill.message,
                 marketImageURL: market.imageURL,
                 marketSlug: market.slug,
-                username: celebrationUsername
+                username: celebrationUsername,
+                avatarURL: peakProfile.profile?.profileImageURL,
+                tradedAt: Date()
             )
 
             focusedField = nil

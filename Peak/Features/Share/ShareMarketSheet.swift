@@ -4,7 +4,7 @@ import UIKit
 // MARK: - Shared postcard chrome (Peak-original — not a receipt clone)
 
 /// Soft Peak paper postcard chrome — calm ink, teal accent.
-/// Trade fill shares use a separate modern card in `PeakTradeShareCard`.
+/// Trade fill shares use the trade-receipt card in `PeakTradeShareCard`.
 enum PeakPostcard {
     static let paper = Color(red: 0.975, green: 0.978, blue: 0.972)
     static let ink = Color(red: 0.08, green: 0.10, blue: 0.11)
@@ -31,9 +31,8 @@ enum PeakPostcard {
     /// The position card carries four numbers and no chart. At the market
     /// card's height it renders with a third of the paper empty.
     static let positionCardHeight: CGFloat = 520
-    /// Trade fill share — thumbnail + 2×2 stats + footer handle need a bit
-    /// more vertical room than the position postcard.
-    static let tradeCardHeight: CGFloat = 540
+    /// Trade receipt — header, market row, hero profit, 3-col stats, payout, footer.
+    static let tradeCardHeight: CGFloat = 580
 }
 
 struct PeakShareBrandHeader: View {
@@ -295,6 +294,14 @@ enum PeakShareDate {
     static func stamp(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("d MMM · HH:mm")
+        return formatter.string(from: date)
+    }
+
+    /// Trade receipt footer — matches the share prototype ("Aug 4 · 8:42 PM").
+    static func receiptStamp(_ date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d · h:mm a"
         return formatter.string(from: date)
     }
 
