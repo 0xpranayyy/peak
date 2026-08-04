@@ -144,4 +144,46 @@ final class ShareCardRenderTests: XCTestCase {
         XCTAssertEqual(image.size.height, PeakPostcard.positionCardHeight, accuracy: 1)
         XCTAssertLessThan(PeakPostcard.positionCardHeight, PeakPostcard.cardHeight)
     }
+
+    func testTradeCardRendersBuyAndSell() throws {
+        let (_, market) = fixture()
+        for side in [TradeCelebrationResult.Side.buy, .sell] {
+            let result = TradeCelebrationResult(
+                side: side,
+                outcomeLabel: market.yesLabel,
+                marketQuestion: market.question,
+                eventTitle: market.eventTitle,
+                price: 0.54,
+                shares: 18.5,
+                usd: 10,
+                isPartial: false,
+                fillMessage: "Filled",
+                marketImageURL: nil,
+                marketSlug: market.slug
+            )
+            let image = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: result))
+            XCTAssertEqual(image.size.width, PeakPostcard.cardWidth, accuracy: 1)
+            XCTAssertEqual(image.size.height, PeakPostcard.positionCardHeight, accuracy: 1)
+            XCTAssertGreaterThan(image.scale, 1)
+        }
+    }
+
+    func testTradeCelebrationTweetMentionsSide() {
+        let result = TradeCelebrationResult(
+            side: .buy,
+            outcomeLabel: "Yes",
+            marketQuestion: "Will it rain?",
+            eventTitle: nil,
+            price: 0.4,
+            shares: 25,
+            usd: 10,
+            isPartial: false,
+            fillMessage: "Filled",
+            marketImageURL: nil,
+            marketSlug: nil
+        )
+        XCTAssertTrue(result.tweetText.lowercased().contains("bought"))
+        XCTAssertTrue(result.tweetText.contains("Yes"))
+        XCTAssertTrue(result.tweetText.contains("Peak"))
+    }
 }

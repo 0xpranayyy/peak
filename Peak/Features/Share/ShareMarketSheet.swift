@@ -103,7 +103,7 @@ struct PeakShareBrandFooter: View {
 }
 
 /// Label · value row used on postcard share cards.
-private struct PeakPostcardStatRow: View {
+struct PeakPostcardStatRow: View {
     let label: String
     let value: String
     var valueColor: Color = PeakPostcard.ink
@@ -124,7 +124,7 @@ private struct PeakPostcardStatRow: View {
     }
 }
 
-private struct PeakPostcardRule: View {
+struct PeakPostcardRule: View {
     var body: some View {
         Rectangle()
             .fill(PeakPostcard.rule)
@@ -133,7 +133,7 @@ private struct PeakPostcardRule: View {
     }
 }
 
-private struct PeakPostcardStage: View {
+struct PeakPostcardStage: View {
     var body: some View {
         ZStack {
             PeakPostcard.stage
@@ -174,7 +174,7 @@ private struct PeakPostcardStage: View {
 /// synchronously and will not wait on `AsyncImage`, so anything still loading
 /// renders as a blank tile. The caller fetches first — see
 /// `PeakShareCardRenderer.loadIcon`.
-private struct PeakShareMarketIcon: View {
+struct PeakShareMarketIcon: View {
     let image: UIImage?
     var size: CGFloat = 58
     var corner: CGFloat = 14
@@ -271,7 +271,7 @@ private struct PeakPostcardOddsBar: View {
     }
 }
 
-private struct PeakPostcardPaper: View {
+struct PeakPostcardPaper: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous)
             .fill(PeakPostcard.paper)
@@ -283,7 +283,7 @@ private struct PeakPostcardPaper: View {
     }
 }
 
-private enum PeakShareDate {
+enum PeakShareDate {
     /// Deliberately compact. Odds move, so the time matters, but a full
     /// "27 Jul 2026 at 11:09 AM" crowds the footer into wrapping.
     static func stamp(_ date: Date = Date()) -> String {

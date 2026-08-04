@@ -42,6 +42,13 @@ struct TradeStubSheet: View {
             case .sell: return .sell
             }
         }
+
+        var celebrationSide: TradeCelebrationResult.Side {
+            switch self {
+            case .buy: return .buy
+            case .sell: return .sell
+            }
+        }
     }
 
     @State private var amountUSD: String = "10"
@@ -50,6 +57,7 @@ struct TradeStubSheet: View {
     @State private var isSubmitting = false
     @State private var message: String?
     @State private var didSucceed = false
+    @State private var celebration: TradeCelebrationResult?
     @State private var showSignIn = false
     @State private var showDeposit = false
     @State private var showImportKey = false
@@ -210,303 +218,37 @@ struct TradeStubSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(market.question)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Text("\(action.title) \(sideLabel)")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(action.color)
-                            .minimumScaleFactor(0.8)
-                            .accessibilityLabel("\(action.title) \(sideLabel)")
-                        Spacer()
-                        Text(PeakFormat.cents(price))
-                            .font(.title3.monospacedDigit().weight(.semibold))
-                            .minimumScaleFactor(0.8)
-                            .peakNumeric(value: price)
-                            .accessibilityLabel("Odds \(PeakFormat.cents(price))")
+            Group {
+                if let celebration {
+                    TradeCelebrationSheet(result: celebration) {
+                        dismiss()
                     }
-                }
-
-                if marketClosed {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "lock.fill",
-                            title: "Market closed",
-                            message: "This market isn’t accepting orders.",
-                            accent: PeakTradeStyle.sell
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.98)),
+                            removal: .opacity
                         )
-                        .peakStatusTransition()
-                    }
-                } else if !hasBackend {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "exclamationmark.triangle",
-                            title: "Trading unavailable",
-                            message: "Couldn’t connect. Try again in a moment.",
-                            accent: .secondary
-                        )
-                        .peakStatusTransition()
-                    }
-                } else if !isSignedIn {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "wallet.pass.fill",
-                            title: "Sign in to \(action.title.lowercased())",
-                            message: "Connect a wallet, or use email, Apple, or Google.",
-                            accent: action.color
-                        ) {
-                            Button {
-                                showSignIn = true
-                            } label: {
-                                PeakPrimaryCTA(
-                                    title: "Sign in",
-                                    systemImage: "wallet.pass.fill",
-                                    color: action.color
-                                )
-                            }
-                            .peakPressable()
-                        }
-                        .peakStatusTransition()
-                    }
-                } else if setupBlocked {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "arrow.clockwise",
-                            title: "Finishing setup",
-                            message: "We’re linking your trading wallet. Retry, or open Account → Need help?",
-                            accent: action.color
-                        ) {
-                            Button {
-                                Task {
-                                    await auth.finishTradingSetup(
-                                        wallet: env.wallet,
-                                        tradingConfig: tradingConfig
-                                    )
-                                }
-                            } label: {
-                                PeakPrimaryCTA(
-                                    title: "Retry setup",
-                                    systemImage: "arrow.clockwise",
-                                    color: action.color
-                                )
-                            }
-                            .peakPressable()
-                        }
-                        .peakStatusTransition()
-                    }
-                } else if walletNotSynced {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "arrow.clockwise",
-                            title: "Finish setup",
-                            message: "Your trading wallet isn’t linked yet. Retry setup, then try again.",
-                            accent: action.color
-                        ) {
-                            Button {
-                                Task {
-                                    await auth.finishTradingSetup(
-                                        wallet: env.wallet,
-                                        tradingConfig: tradingConfig
-                                    )
-                                }
-                            } label: {
-                                PeakPrimaryCTA(
-                                    title: "Retry setup",
-                                    systemImage: "arrow.clockwise",
-                                    color: action.color
-                                )
-                            }
-                            .peakPressable()
-                        }
-                        .peakStatusTransition()
-                    }
-                } else if builderBlocked {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: "hourglass",
-                            title: "Almost ready",
-                            message: "Live trading isn’t available yet. Try again in a moment.",
-                            accent: .secondary
-                        )
-                        .peakStatusTransition()
-                    }
-                } else if canSubmit {
-                    Section {
-                        HStack(spacing: 6) {
-                            if !sellsInShares {
-                                Text("$")
-                                    .font(.title.monospacedDigit().weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            TextField(sellsInShares ? "0" : "0", text: $amountUSD)
-                                .keyboardType(.decimalPad)
-                                .font(.title.monospacedDigit().weight(.semibold))
-                                .minimumScaleFactor(0.7)
-                                .focused($focusedField, equals: .amount)
-                                .submitLabel(.done)
-                                .accessibilityLabel(sellsInShares ? "Number of shares to sell" : "Amount in dollars")
-                            if sellsInShares {
-                                Text("shares")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(quickChips, id: \.label) { chip in
-                                    Button(chip.label) {
-                                        amountUSD = chip.value
-                                        PeakHaptics.selection()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(amountUSD == chip.value ? action.color : Color.secondary)
-                                    .frame(minHeight: 44)
-                                    .accessibilityLabel(chip.accessibility)
-                                }
-                            }
-                        }
-
-                        // Always show the other unit, so neither side has to do
-                        // the conversion in their head before committing money.
-                        Text(sellsInShares
-                             ? "≈ \(PeakFormat.usd(usdAmount)) at \(PeakFormat.cents(price))"
-                             : "≈ \(String(format: "%.2f", shareSize)) shares at \(PeakFormat.cents(price))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if let maxShares, maxShares > 0 {
-                            Text("You hold \(String(format: "%.2f", maxShares)) shares")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    } header: {
-                        Text(sellsInShares ? "Shares to sell" : "Amount to spend")
-                    }
-
-                    Section {
-                        Picker("Type", selection: $orderType) {
-                            ForEach(OrderKind.allCases) { kind in
-                                Text(kind.title).tag(kind)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        if orderType == .gtc {
-                            TextField("Limit price", text: $limitPrice)
-                                .keyboardType(.decimalPad)
-                                .focused($focusedField, equals: .limit)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    } footer: {
-                        Text(orderType == .fok
-                            ? "Fills at the current price, or cancels if it can’t."
-                            : "Waits at your price until filled or you cancel.")
-                    }
-                    .animation(PeakMotion.soft, value: orderType)
-
-                    if regionBlocked, let restriction = region.restrictionMessage {
-                        Section {
-                            Label {
-                                Text(restriction)
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            } icon: {
-                                Image(systemName: "globe")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    Section {
-                        Button {
-                            focusedField = nil
-                            Task { await submit() }
-                        } label: {
-                            PeakPrimaryCTA(
-                                title: didSucceed ? "Submitted" : "\(action.title) \(sideLabel)",
-                                color: action.color,
-                                isLoading: isSubmitting,
-                                isEnabled: !submitDisabled
-                            )
-                        }
-                        .peakPressable()
-                        .disabled(submitDisabled)
-                    }
-                }
-
-                if let message {
-                    Section {
-                        TradeBlockedPanel(
-                            systemImage: didSucceed ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                            title: didSucceed ? "Order submitted" : "Couldn’t place order",
-                            message: message,
-                            accent: didSucceed ? PeakTradeStyle.buy : PeakTradeStyle.sell
-                        ) {
-                            if !didSucceed, shouldOfferImport {
-                                Button {
-                                    showImportKey = true
-                                } label: {
-                                    PeakPrimaryCTA(
-                                        title: "Import private key",
-                                        systemImage: "key.fill",
-                                        color: action.color
-                                    )
-                                }
-                                .peakPressable()
-                            } else if !didSucceed, shouldOfferDeposit {
-                                Button {
-                                    showDeposit = true
-                                } label: {
-                                    PeakPrimaryCTA(
-                                        title: "Deposit",
-                                        systemImage: "arrow.down.to.line.circle",
-                                        color: PeakTradeStyle.buy
-                                    )
-                                }
-                                .peakPressable()
-                            } else if !didSucceed {
-                                Button {
-                                    Task { await submit() }
-                                } label: {
-                                    PeakPrimaryCTA(
-                                        title: "Try again",
-                                        systemImage: "arrow.clockwise",
-                                        color: action.color,
-                                        isLoading: isSubmitting,
-                                        isEnabled: !isSubmitting
-                                    )
-                                }
-                                .peakPressable()
-                                .disabled(isSubmitting)
-                            }
-                        }
-                        .peakStatusTransition()
-                    }
+                    )
+                } else {
+                    tradeForm
+                        .transition(.opacity)
                 }
             }
-            .scrollDismissesKeyboard(.immediately)
-            .animation(PeakMotion.soft, value: message)
-            .animation(PeakMotion.soft, value: didSucceed)
-            .animation(PeakMotion.soft, value: isSignedIn)
-            .animation(PeakMotion.soft, value: setupBlocked)
-            .animation(PeakMotion.soft, value: walletNotSynced)
-            .animation(PeakMotion.soft, value: builderBlocked)
-            .navigationTitle(action.title)
+            .animation(PeakMotion.soft, value: celebration != nil)
+            .navigationTitle(celebration == nil ? action.title : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        focusedField = nil
+                if celebration == nil {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
                     }
-                    .fontWeight(.semibold)
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            focusedField = nil
+                        }
+                        .fontWeight(.semibold)
+                    }
                 }
             }
             .onChange(of: orderType) { _, _ in
@@ -558,13 +300,317 @@ struct TradeStubSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(celebration == nil ? [.medium, .large] : [.large])
+        .presentationDragIndicator(celebration == nil ? .visible : .hidden)
         .peakSheetChrome()
+        .animation(PeakMotion.soft, value: celebration != nil)
+    }
+
+    // MARK: - Trade form
+
+    private var tradeForm: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(market.question)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("\(action.title) \(sideLabel)")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(action.color)
+                            .minimumScaleFactor(0.8)
+                            .lineLimit(2)
+                            .accessibilityLabel("\(action.title) \(sideLabel)")
+                        Spacer(minLength: 8)
+                        Text(PeakFormat.cents(price))
+                            .font(.title2.monospacedDigit().weight(.semibold))
+                            .minimumScaleFactor(0.8)
+                            .peakNumeric(value: price)
+                            .accessibilityLabel("Odds \(PeakFormat.cents(price))")
+                    }
+                }
+                .padding(.vertical, 2)
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            }
+
+            if marketClosed {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "lock.fill",
+                        title: "Market closed",
+                        message: "This market isn’t accepting orders.",
+                        accent: PeakTradeStyle.sell
+                    )
+                    .peakStatusTransition()
+                }
+            } else if !hasBackend {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "exclamationmark.triangle",
+                        title: "Trading unavailable",
+                        message: "Couldn’t connect. Try again in a moment.",
+                        accent: .secondary
+                    )
+                    .peakStatusTransition()
+                }
+            } else if !isSignedIn {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "wallet.pass.fill",
+                        title: "Sign in to \(action.title.lowercased())",
+                        message: "Connect a wallet, or use email, Apple, or Google.",
+                        accent: action.color
+                    ) {
+                        Button {
+                            showSignIn = true
+                        } label: {
+                            PeakPrimaryCTA(
+                                title: "Sign in",
+                                systemImage: "wallet.pass.fill",
+                                color: action.color
+                            )
+                        }
+                        .peakPressable()
+                    }
+                    .peakStatusTransition()
+                }
+            } else if setupBlocked {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "arrow.clockwise",
+                        title: "Finishing setup",
+                        message: "We’re linking your trading wallet. Retry, or open Account → Need help?",
+                        accent: action.color
+                    ) {
+                        Button {
+                            Task {
+                                await auth.finishTradingSetup(
+                                    wallet: env.wallet,
+                                    tradingConfig: tradingConfig
+                                )
+                            }
+                        } label: {
+                            PeakPrimaryCTA(
+                                title: "Retry setup",
+                                systemImage: "arrow.clockwise",
+                                color: action.color
+                            )
+                        }
+                        .peakPressable()
+                    }
+                    .peakStatusTransition()
+                }
+            } else if walletNotSynced {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "arrow.clockwise",
+                        title: "Finish setup",
+                        message: "Your trading wallet isn’t linked yet. Retry setup, then try again.",
+                        accent: action.color
+                    ) {
+                        Button {
+                            Task {
+                                await auth.finishTradingSetup(
+                                    wallet: env.wallet,
+                                    tradingConfig: tradingConfig
+                                )
+                            }
+                        } label: {
+                            PeakPrimaryCTA(
+                                title: "Retry setup",
+                                systemImage: "arrow.clockwise",
+                                color: action.color
+                            )
+                        }
+                        .peakPressable()
+                    }
+                    .peakStatusTransition()
+                }
+            } else if builderBlocked {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "hourglass",
+                        title: "Almost ready",
+                        message: "Live trading isn’t available yet. Try again in a moment.",
+                        accent: .secondary
+                    )
+                    .peakStatusTransition()
+                }
+            } else if canSubmit {
+                Section {
+                    HStack(spacing: 6) {
+                        if !sellsInShares {
+                            Text("$")
+                                .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        TextField(sellsInShares ? "0" : "0", text: $amountUSD)
+                            .keyboardType(.decimalPad)
+                            .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                            .minimumScaleFactor(0.7)
+                            .focused($focusedField, equals: .amount)
+                            .submitLabel(.done)
+                            .accessibilityLabel(sellsInShares ? "Number of shares to sell" : "Amount in dollars")
+                        if sellsInShares {
+                            Text("shares")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if !quickChips.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(quickChips, id: \.label) { chip in
+                                    Button(chip.label) {
+                                        amountUSD = chip.value
+                                        PeakHaptics.selection()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(amountUSD == chip.value ? action.color : Color.secondary)
+                                    .frame(minHeight: 44)
+                                    .accessibilityLabel(chip.accessibility)
+                                }
+                            }
+                        }
+                    }
+
+                    // Always show the other unit, so neither side has to do
+                    // the conversion in their head before committing money.
+                    Text(sellsInShares
+                         ? "≈ \(PeakFormat.usd(usdAmount)) at \(PeakFormat.cents(price))"
+                         : "≈ \(String(format: "%.2f", shareSize)) shares at \(PeakFormat.cents(price))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let maxShares, maxShares > 0 {
+                        Text("You hold \(String(format: "%.2f", maxShares)) shares")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                } header: {
+                    Text(sellsInShares ? "Shares" : "Amount")
+                }
+
+                Section {
+                    Picker("Type", selection: $orderType) {
+                        ForEach(OrderKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+
+                    if orderType == .gtc {
+                        TextField("Limit price", text: $limitPrice)
+                            .keyboardType(.decimalPad)
+                            .focused($focusedField, equals: .limit)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                } footer: {
+                    Text(orderType == .fok
+                        ? "Fills at the current price, or cancels if it can’t."
+                        : "Waits at your price until filled or you cancel.")
+                }
+                .animation(PeakMotion.soft, value: orderType)
+
+                if regionBlocked, let restriction = region.restrictionMessage {
+                    Section {
+                        Label {
+                            Text(restriction)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } icon: {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        focusedField = nil
+                        Task { await submit() }
+                    } label: {
+                        PeakPrimaryCTA(
+                            title: "\(action.title) \(sideLabel)",
+                            color: action.color,
+                            isLoading: isSubmitting,
+                            isEnabled: !submitDisabled
+                        )
+                    }
+                    .peakPressable()
+                    .disabled(submitDisabled)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+            }
+
+            // Errors only — success opens the celebration composition.
+            if let message, !didSucceed {
+                Section {
+                    TradeBlockedPanel(
+                        systemImage: "exclamationmark.triangle.fill",
+                        title: "Couldn’t place order",
+                        message: message,
+                        accent: PeakTradeStyle.sell
+                    ) {
+                        if shouldOfferImport {
+                            Button {
+                                showImportKey = true
+                            } label: {
+                                PeakPrimaryCTA(
+                                    title: "Import private key",
+                                    systemImage: "key.fill",
+                                    color: action.color
+                                )
+                            }
+                            .peakPressable()
+                        } else if shouldOfferDeposit {
+                            Button {
+                                showDeposit = true
+                            } label: {
+                                PeakPrimaryCTA(
+                                    title: "Deposit",
+                                    systemImage: "arrow.down.to.line.circle",
+                                    color: PeakTradeStyle.buy
+                                )
+                            }
+                            .peakPressable()
+                        } else {
+                            Button {
+                                Task { await submit() }
+                            } label: {
+                                PeakPrimaryCTA(
+                                    title: "Try again",
+                                    systemImage: "arrow.clockwise",
+                                    color: action.color,
+                                    isLoading: isSubmitting,
+                                    isEnabled: !isSubmitting
+                                )
+                            }
+                            .peakPressable()
+                            .disabled(isSubmitting)
+                        }
+                    }
+                    .peakStatusTransition()
+                }
+            }
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .animation(PeakMotion.soft, value: message)
+        .animation(PeakMotion.soft, value: isSignedIn)
+        .animation(PeakMotion.soft, value: setupBlocked)
+        .animation(PeakMotion.soft, value: walletNotSynced)
+        .animation(PeakMotion.soft, value: builderBlocked)
     }
 
     private func focusAmountSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            guard canSubmit, !didSucceed, !isSubmitting else { return }
+            guard canSubmit, !didSucceed, !isSubmitting, celebration == nil else { return }
             focusedField = .amount
         }
     }
@@ -677,23 +723,35 @@ struct TradeStubSheet: View {
                 PeakHaptics.error()
                 return
             }
+
+            let filledShares = fill.filled ?? shareSize
+            let filledUSD = filledShares * price
+            let celebrationResult = TradeCelebrationResult(
+                side: action.celebrationSide,
+                outcomeLabel: sideLabel,
+                marketQuestion: market.question,
+                eventTitle: market.eventTitle,
+                price: price,
+                shares: filledShares,
+                usd: filledUSD,
+                isPartial: fill.isPartial,
+                fillMessage: fill.message,
+                marketImageURL: market.imageURL,
+                marketSlug: market.slug
+            )
+
+            focusedField = nil
             withAnimation(PeakMotion.soft) {
                 didSucceed = true
-                message = fill.message
+                message = nil
+                celebration = celebrationResult
             }
-            PeakHaptics.success()
-            focusedField = nil
             NotificationCenter.default.post(name: .peakTradingPortfolioShouldRefresh, object: nil)
             // Best-effort sync so Portfolio shows the fill / open order promptly.
             Task {
                 _ = try? await env.trading.fetchTradingPortfolio()
                 NotificationCenter.default.post(name: .peakTradingPortfolioShouldRefresh, object: nil)
             }
-            // A partial fill tells the user they still hold shares they meant to
-            // sell. Dismissing on the usual beat would pull that off screen
-            // before it can be read.
-            try? await Task.sleep(nanoseconds: fill.isPartial ? 3_500_000_000 : 1_200_000_000)
-            dismiss()
         } catch {
             let facing = Self.userFacingTradeError(error)
             if PeakUserCopy.isImportWalletMessage(facing) || PeakUserCopy.isWalletAuthFailure(facing) {

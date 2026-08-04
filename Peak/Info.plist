@@ -57,6 +57,8 @@
 		<string>safe</string>
 		<string>argent</string>
 		<string>wc</string>
+		<string>twitter</string>
+		<string>twitter-x</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
