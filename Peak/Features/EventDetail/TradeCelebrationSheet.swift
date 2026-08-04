@@ -1,17 +1,18 @@
 import SwiftUI
 import UIKit
 
-/// Post-trade completion — celebration composition, share card, X + system share.
+/// Post-trade completion — TRADE RECEIPT as the hero, then Share / X / Done.
 struct TradeCelebrationSheet: View {
     let result: TradeCelebrationResult
     var onDone: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     @State private var appear = false
-    @State private var checkScale: CGFloat = 0.4
     @State private var cardImage: UIImage?
+    @State private var marketIcon: UIImage?
+    @State private var avatarImage: UIImage?
+    @State private var blurredBackground: UIImage?
 
     /// Match share-card energy: buy = mint/win, sell = Peak teal (not traffic red).
     private var accent: Color {
@@ -34,20 +35,14 @@ struct TradeCelebrationSheet: View {
                 .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                Spacer(minLength: 12)
-
-                successHero
-                    .padding(.horizontal, 28)
-
-                Spacer(minLength: 20)
-
-                tradeSummary
-                    .padding(.horizontal, 24)
-
-                Spacer(minLength: 24)
+                receiptHero
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .frame(maxHeight: .infinity)
 
                 actionColumn
                     .padding(.horizontal, 24)
+                    .padding(.top, 14)
                     .padding(.bottom, 28)
             }
         }
@@ -55,150 +50,60 @@ struct TradeCelebrationSheet: View {
             PeakHaptics.success()
             if reduceMotion {
                 appear = true
-                checkScale = 1
             } else {
                 withAnimation(PeakMotion.appear) { appear = true }
-                withAnimation(PeakMotion.soft.delay(0.08)) { checkScale = 1 }
             }
         }
         .task {
             await renderShareCard()
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(result.headline) \(result.outcomeLabel)")
+        .accessibilityLabel("\(result.headline) \(result.outcomeLabel). Trade receipt.")
     }
 
-    // MARK: - Hero
+    // MARK: - Receipt hero
 
-    private var successHero: some View {
-        VStack(spacing: 18) {
-            PeakAppLogo(size: 44, cornerRadius: 10)
-                .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 8)
+    /// Live `PeakTradeShareCard` immediately; swaps to the rendered share image
+    /// once ready so on-screen matches what Share / X paste.
+    private var receiptHero: some View {
+        GeometryReader { geo in
+            let scale = min(
+                geo.size.width / PeakPostcard.cardWidth,
+                geo.size.height / PeakPostcard.tradeCardHeight
+            )
+            let w = PeakPostcard.cardWidth * scale
+            let h = PeakPostcard.tradeCardHeight * scale
 
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                accent.opacity(colorScheme == .dark ? 0.28 : 0.18),
-                                accentDeep.opacity(colorScheme == .dark ? 0.10 : 0.06),
-                            ],
-                            center: .center,
-                            startRadius: 4,
-                            endRadius: 48
-                        )
+            Group {
+                if let cardImage {
+                    Image(uiImage: cardImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: w, height: h)
+                        .clipShape(RoundedRectangle(cornerRadius: 28 * scale, style: .continuous))
+                } else {
+                    PeakTradeShareCard(
+                        result: result,
+                        icon: marketIcon,
+                        avatar: avatarImage,
+                        blurredBackground: blurredBackground
                     )
-                    .frame(width: 88, height: 88)
-                    .scaleEffect(appear ? 1 : 0.7)
-
-                Circle()
-                    .strokeBorder(accent.opacity(0.40), lineWidth: 1.5)
-                    .frame(width: 88, height: 88)
-                    .scaleEffect(appear ? 1.08 : 0.85)
-                    .opacity(appear ? 1 : 0)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(accentDeep)
-                    .scaleEffect(checkScale)
-            }
-            .accessibilityHidden(true)
-
-            VStack(spacing: 8) {
-                Text(result.headline)
-                    .font(.system(size: 34, weight: .bold, design: .default))
-                    .foregroundStyle(.primary)
-                    .opacity(appear ? 1 : 0)
-                    .offset(y: appear ? 0 : 10)
-
-                Text(result.outcomeLabel)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(accentDeep)
-                    .multilineTextAlignment(.center)
-                    .opacity(appear ? 1 : 0)
-                    .offset(y: appear ? 0 : 8)
-
-                if result.isPartial {
-                    Text("Partial fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(accentDeep)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(accent.opacity(0.12), in: Capsule())
-                        .overlay {
-                            Capsule().strokeBorder(accent.opacity(0.28), lineWidth: 1)
-                        }
+                    .scaleEffect(scale)
+                    .frame(width: w, height: h)
                 }
             }
+            .shadow(color: Color.black.opacity(0.32), radius: 28, y: 14)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .opacity(appear ? 1 : 0)
+            .offset(y: appear ? 0 : 16)
+            .scaleEffect(appear ? 1 : 0.96)
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Summary
-
-    private var tradeSummary: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(result.displayTitle)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if result.displayTitle != result.marketQuestion {
-                Text(result.marketQuestion)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            HStack(spacing: 0) {
-                summaryMetric(label: "Amount", value: PeakFormat.usd(result.usd), emphasize: true)
-                summaryDivider
-                summaryMetric(label: "Price", value: PeakFormat.cents(result.price))
-                summaryDivider
-                summaryMetric(label: "Shares", value: sharesLabel)
-            }
-            .padding(.top, 4)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PeakCanvas.elevated, in: PeakLayout.cardShape)
-        .overlay {
-            PeakLayout.cardShape.strokeBorder(accent.opacity(0.22), lineWidth: 1)
-        }
-        .opacity(appear ? 1 : 0)
-        .offset(y: appear ? 0 : 14)
-    }
-
-    private var summaryDivider: some View {
-        Rectangle()
-            .fill(PeakCanvas.hairline)
-            .frame(width: 1, height: 36)
-            .padding(.horizontal, 4)
-    }
-
-    private func summaryMetric(label: String, value: String, emphasize: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(0.6)
-                .foregroundStyle(.tertiary)
-            Text(value)
-                .font(.body.monospacedDigit().weight(.bold))
-                .foregroundStyle(emphasize ? accentDeep : Color.primary)
-                .minimumScaleFactor(0.8)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var sharesLabel: String {
-        let rounded = (result.shares * 100).rounded() / 100
-        if rounded == rounded.rounded() && abs(rounded) < 1_000_000 {
-            return String(format: "%.0f", rounded)
-        }
-        return String(format: "%.2f", rounded)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "Trade receipt. \(result.outcomeLabel) · \(PeakFormat.usd(result.usd)) · \(result.displayTitle)"
+        )
+        .accessibilityAddTraits(.isImage)
     }
 
     // MARK: - Actions
@@ -282,6 +187,15 @@ struct TradeCelebrationSheet: View {
         async let iconTask = PeakTradeShareCardRenderer.loadIcon(url: result.marketImageURL)
         async let avatarTask = PeakTradeShareCardRenderer.loadIcon(url: result.avatarURL)
         let (icon, avatar) = await (iconTask, avatarTask)
+        let blurred = icon.flatMap { PeakShareImageBlur.blurred($0, radius: 34) }
+
+        // Paint the live receipt as soon as art is ready, then snapshot for share.
+        await MainActor.run {
+            marketIcon = icon
+            avatarImage = avatar
+            blurredBackground = blurred
+        }
+
         let image = await MainActor.run {
             PeakTradeShareCardRenderer.image(result: result, icon: icon, avatar: avatar)
         }
