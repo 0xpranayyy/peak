@@ -186,4 +186,35 @@ final class ShareCardRenderTests: XCTestCase {
         XCTAssertTrue(result.tweetText.contains("Yes"))
         XCTAssertTrue(result.tweetText.contains("Peak"))
     }
+
+    /// Run with `-only-testing:PeakTests/ShareCardRenderTests/testExportTradeShareCardPreviews`
+    /// to write Bought/Sold PNGs under `docs/share-previews/`.
+    func testExportTradeShareCardPreviews() throws {
+        let outDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("docs/share-previews", isDirectory: true)
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+
+        let buy = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewBuy))
+        let sell = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewSell))
+        let buyData = try XCTUnwrap(Self.pngDataFlattened(buy))
+        let sellData = try XCTUnwrap(Self.pngDataFlattened(sell))
+        try buyData.write(to: outDir.appendingPathComponent("trade-share-bought.png"))
+        try sellData.write(to: outDir.appendingPathComponent("trade-share-sold.png"))
+    }
+
+    /// ImageRenderer sometimes yields a bitmap `pngData()` can't encode; flatten first.
+    private static func pngDataFlattened(_ image: UIImage) -> Data? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = true
+        let size = image.size
+        let flattened = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            UIColor.black.setFill()
+            UIRectFill(CGRect(origin: .zero, size: size))
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return flattened.pngData()
+    }
 }

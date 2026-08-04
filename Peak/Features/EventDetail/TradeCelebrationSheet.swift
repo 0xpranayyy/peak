@@ -6,7 +6,6 @@ struct TradeCelebrationSheet: View {
     let result: TradeCelebrationResult
     var onDone: () -> Void
 
-    @Environment(\.peakBrand) private var brand
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
@@ -14,8 +13,13 @@ struct TradeCelebrationSheet: View {
     @State private var checkScale: CGFloat = 0.4
     @State private var cardImage: UIImage?
 
+    /// Match share-card energy: buy = mint/win, sell = Peak teal (not traffic red).
     private var accent: Color {
-        result.side.accentIsBuy ? PeakTradeStyle.buy : PeakTradeStyle.sell
+        result.side.accentIsBuy ? PeakPostcard.winBright : PeakPostcard.tealBright
+    }
+
+    private var accentDeep: Color {
+        result.side.accentIsBuy ? PeakPostcard.win : PeakPostcard.teal
     }
 
     var body: some View {
@@ -74,19 +78,29 @@ struct TradeCelebrationSheet: View {
 
             ZStack {
                 Circle()
-                    .fill(accent.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accent.opacity(colorScheme == .dark ? 0.28 : 0.18),
+                                accentDeep.opacity(colorScheme == .dark ? 0.10 : 0.06),
+                            ],
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: 48
+                        )
+                    )
                     .frame(width: 88, height: 88)
                     .scaleEffect(appear ? 1 : 0.7)
 
                 Circle()
-                    .strokeBorder(accent.opacity(0.35), lineWidth: 1.5)
+                    .strokeBorder(accent.opacity(0.40), lineWidth: 1.5)
                     .frame(width: 88, height: 88)
                     .scaleEffect(appear ? 1.08 : 0.85)
                     .opacity(appear ? 1 : 0)
 
                 Image(systemName: "checkmark")
                     .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(accentDeep)
                     .scaleEffect(checkScale)
             }
             .accessibilityHidden(true)
@@ -100,7 +114,7 @@ struct TradeCelebrationSheet: View {
 
                 Text(result.outcomeLabel)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(accentDeep)
                     .multilineTextAlignment(.center)
                     .opacity(appear ? 1 : 0)
                     .offset(y: appear ? 0 : 8)
@@ -108,10 +122,13 @@ struct TradeCelebrationSheet: View {
                 if result.isPartial {
                     Text("Partial fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(accentDeep)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(PeakCanvas.inset, in: Capsule())
+                        .background(accent.opacity(0.12), in: Capsule())
+                        .overlay {
+                            Capsule().strokeBorder(accent.opacity(0.28), lineWidth: 1)
+                        }
                 }
             }
         }
@@ -136,7 +153,7 @@ struct TradeCelebrationSheet: View {
             }
 
             HStack(spacing: 0) {
-                summaryMetric(label: "Amount", value: PeakFormat.usd(result.usd))
+                summaryMetric(label: "Amount", value: PeakFormat.usd(result.usd), emphasize: true)
                 summaryDivider
                 summaryMetric(label: "Price", value: PeakFormat.cents(result.price))
                 summaryDivider
@@ -148,7 +165,7 @@ struct TradeCelebrationSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(PeakCanvas.elevated, in: PeakLayout.cardShape)
         .overlay {
-            PeakLayout.cardShape.strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+            PeakLayout.cardShape.strokeBorder(accent.opacity(0.22), lineWidth: 1)
         }
         .opacity(appear ? 1 : 0)
         .offset(y: appear ? 0 : 14)
@@ -161,7 +178,7 @@ struct TradeCelebrationSheet: View {
             .padding(.horizontal, 4)
     }
 
-    private func summaryMetric(label: String, value: String) -> some View {
+    private func summaryMetric(label: String, value: String, emphasize: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
                 .font(.caption2.weight(.semibold))
@@ -169,7 +186,7 @@ struct TradeCelebrationSheet: View {
                 .foregroundStyle(.tertiary)
             Text(value)
                 .font(.body.monospacedDigit().weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(emphasize ? accentDeep : Color.primary)
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
         }
@@ -200,7 +217,7 @@ struct TradeCelebrationSheet: View {
                     PeakPrimaryCTA(
                         title: "Share",
                         systemImage: "square.and.arrow.up",
-                        color: brand.mid
+                        color: accentDeep
                     )
                 }
                 .buttonStyle(.plain)
@@ -209,7 +226,7 @@ struct TradeCelebrationSheet: View {
                 PeakPrimaryCTA(
                     title: "Preparing…",
                     systemImage: "square.and.arrow.up",
-                    color: brand.mid,
+                    color: accentDeep,
                     isLoading: true,
                     isEnabled: false
                 )

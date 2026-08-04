@@ -17,6 +17,8 @@ enum PeakPostcard {
     /// Brighter teal for the odds bar and sparkline — `teal` is tuned for text
     /// on paper and reads muddy as a large filled shape.
     static let tealBright = Color(red: 0.16, green: 0.62, blue: 0.54)
+    /// Luminous mint for buy fills / share-card hero energy — pair with `win`.
+    static let winBright = Color(red: 0.22, green: 0.78, blue: 0.55)
     /// The trailing outcome. Warm slate rather than red: second place is not a
     /// loss, and a red bar reads as one.
     static let slate = Color(red: 0.58, green: 0.62, blue: 0.63)

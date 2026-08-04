@@ -72,25 +72,29 @@ struct TradeCelebrationResult: Equatable, Sendable {
     }
 }
 
-// MARK: - Trade postcard (Hero Signal)
+// MARK: - Trade postcard (Luminous Signal)
 
-/// Peak marketing postcard for a completed fill — one giant signal, not a receipt.
+/// Peak marketing postcard for a completed fill — luminous, asymmetric, not a receipt.
 ///
-/// Keeps the market/position postcard family (stage + paper + `PeakLogo` brand
-/// header) but elevates hierarchy: verb chip, hero USD, one compact stats line.
+/// Stage + paper + real `PeakLogo` brand chrome. Buy reads as mint/win energy;
+/// sell as Peak teal luminosity. Renders via `PeakTradeShareCardRenderer`.
 struct PeakTradeShareCard: View {
     let result: TradeCelebrationResult
     var icon: UIImage? = nil
 
-    /// Buy = win green; sell = Peak teal — postcard tokens, not traffic-light red.
+    /// Buy = vibrant mint; sell = Peak teal — postcard family, never traffic-light red.
     private var accent: Color {
         result.side.accentIsBuy ? PeakPostcard.win : PeakPostcard.teal
     }
 
     private var accentBright: Color {
+        result.side.accentIsBuy ? PeakPostcard.winBright : PeakPostcard.tealBright
+    }
+
+    private var accentDeep: Color {
         result.side.accentIsBuy
-            ? Color(red: 0.18, green: 0.62, blue: 0.46)
-            : PeakPostcard.tealBright
+            ? Color(red: 0.06, green: 0.36, blue: 0.26)
+            : Color(red: 0.06, green: 0.32, blue: 0.28)
     }
 
     var body: some View {
@@ -100,45 +104,48 @@ struct PeakTradeShareCard: View {
             VStack(spacing: 0) {
                 PeakShareBrandHeader()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 12)
 
-                ZStack {
-                    PeakPostcardPaper()
+                ZStack(alignment: .topLeading) {
+                    luminousPaper
 
-                    // Soft side wash — tinted by buy/sell without cluttering the paper.
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    // Soft accent rail — asymmetry without a heavy sidebar.
+                    Capsule(style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    accent.opacity(0.16),
-                                    accent.opacity(0.05),
-                                    Color.clear,
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: UnitPoint(x: 0.55, y: 0.55)
+                                colors: [accentBright, accent, accentDeep],
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
                         )
+                        .frame(width: 4)
+                        .padding(.vertical, 26)
+                        .padding(.leading, 16)
                         .allowsHitTesting(false)
 
                     VStack(alignment: .leading, spacing: 0) {
-                        marketRow
+                        signalRow
 
-                        sideChip
-                            .padding(.top, 16)
-
-                        heroAmount
+                        Text(result.displayTitle)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(PeakPostcard.ink)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 22)
 
-                        compactStats
-                            .padding(.top, 10)
-
-                        if result.isPartial {
-                            Text("Partial fill")
-                                .font(.caption.weight(.semibold))
-                                .tracking(0.4)
+                        if result.displayTitle != result.marketQuestion {
+                            Text(result.marketQuestion)
+                                .font(.subheadline.weight(.medium))
                                 .foregroundStyle(PeakPostcard.mute)
-                                .padding(.top, 12)
+                                .lineLimit(2)
+                                .padding(.top, 6)
                         }
+
+                        heroAmount
+                            .padding(.top, 26)
+
+                        metaLine
+                            .padding(.top, 14)
 
                         Spacer(minLength: 18)
 
@@ -151,11 +158,13 @@ struct PeakTradeShareCard: View {
                             PeakShareBrandFooter(trailing: nil, light: true)
                         }
                     }
-                    .padding(24)
+                    .padding(.leading, 30)
+                    .padding(.trailing, 24)
+                    .padding(.vertical, 26)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(22)
+            .padding(18)
         }
         .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.positionCardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -163,103 +172,223 @@ struct PeakTradeShareCard: View {
 
     // MARK: Atmosphere
 
-    /// Stage keyed to the fill side — same Peak depth language as market cards,
-    /// with a stronger buy/sell glow so the thumb nail reads instantly.
     private var tradeStage: some View {
         ZStack {
-            PeakPostcardStage()
+            Color(red: 0.02, green: 0.07, blue: 0.07)
 
-            RadialGradient(
-                colors: [accent.opacity(0.34), .clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 340
-            )
+            // Wide luminous blooms — readable at thumbnail size on X/IG.
+            Ellipse()
+                .fill(accentBright.opacity(0.55))
+                .frame(width: 340, height: 280)
+                .blur(radius: 70)
+                .offset(x: -110, y: -160)
 
-            RadialGradient(
-                colors: [accentBright.opacity(0.22), .clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 280
+            Ellipse()
+                .fill(accent.opacity(0.40))
+                .frame(width: 300, height: 260)
+                .blur(radius: 60)
+                .offset(x: 130, y: 180)
+
+            Ellipse()
+                .fill(accentDeep.opacity(0.50))
+                .frame(width: 220, height: 200)
+                .blur(radius: 50)
+                .offset(x: 140, y: -120)
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.15),
+                    Color.clear,
+                    Color.black.opacity(0.42),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
         }
+        .allowsHitTesting(false)
+    }
+
+    private var luminousPaper: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.99, green: 1.0, blue: 0.995),
+                        PeakPostcard.paper,
+                        Color(red: 0.94, green: 0.97, blue: 0.96),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                accentBright.opacity(0.22),
+                                accent.opacity(0.08),
+                                Color.clear,
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: UnitPoint(x: 0.75, y: 0.55)
+                        )
+                    )
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.90),
+                                accentBright.opacity(0.45),
+                                accent.opacity(0.20),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.35
+                    )
+            }
+            .shadow(color: accentBright.opacity(0.35), radius: 28, y: 10)
+            .shadow(color: Color.black.opacity(0.38), radius: 30, y: 18)
     }
 
     // MARK: Content
 
-    private var marketRow: some View {
-        HStack(alignment: .top, spacing: 14) {
-            PeakShareMarketIcon(image: icon, size: 56, corner: 13)
+    /// Polished market tile + luminous verb chip — chip never shares width with the title.
+    private var signalRow: some View {
+        HStack(alignment: .center, spacing: 14) {
+            polishedIcon
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(result.displayTitle)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(PeakPostcard.ink)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if result.displayTitle != result.marketQuestion {
-                    Text(result.marketQuestion)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(PeakPostcard.mute)
-                        .lineLimit(2)
+            VStack(alignment: .leading, spacing: 8) {
+                sideChip
+                if result.isPartial {
+                    partialBadge
                 }
             }
+
             Spacer(minLength: 0)
         }
     }
 
-    /// Strong verb + outcome — the glanceable “what happened” stamp.
+    private var polishedIcon: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(accentBright.opacity(0.18))
+                .frame(width: 72, height: 72)
+                .blur(radius: 8)
+
+            PeakShareMarketIcon(image: icon, size: 66, corner: 17)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.7), accentBright.opacity(0.55)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                }
+        }
+        .shadow(color: accent.opacity(0.32), radius: 14, y: 7)
+    }
+
     private var sideChip: some View {
         HStack(spacing: 7) {
             Text(result.side.pastTitle.uppercased())
-                .font(.caption.weight(.bold))
-                .tracking(1.2)
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(1.0)
             Text("·")
-                .font(.caption.weight(.bold))
+                .font(.system(size: 12, weight: .bold))
                 .opacity(0.55)
             Text(result.outcomeLabel.uppercased())
-                .font(.caption.weight(.bold))
-                .tracking(0.8)
-                .lineLimit(1)
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(0.5)
         }
         .foregroundStyle(Color.white)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 8)
         .background(
             Capsule(style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [accent, accentBright],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                        colors: [accentBright, accent, accentDeep],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
                 )
         )
         .overlay {
             Capsule(style: .continuous)
-                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(0.30), lineWidth: 1)
         }
+        .shadow(color: accentBright.opacity(0.55), radius: 12, y: 5)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(result.side.pastTitle) \(result.outcomeLabel)")
     }
 
+    private var partialBadge: some View {
+        Text("Partial fill")
+            .font(.system(size: 10, weight: .bold))
+            .tracking(0.7)
+            .textCase(.uppercase)
+            .foregroundStyle(accentDeep)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(accent.opacity(0.12))
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(accent.opacity(0.35), lineWidth: 1)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var heroAmount: some View {
         Text(PeakFormat.usd(result.usd))
-            .font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
-            .foregroundStyle(accent)
-            .minimumScaleFactor(0.55)
+            .font(.system(size: 64, weight: .bold, design: .rounded).monospacedDigit())
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [accentBright, accent, accentDeep],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .shadow(color: accentBright.opacity(0.28), radius: 16, y: 5)
+            .minimumScaleFactor(0.45)
             .lineLimit(1)
             .accessibilityLabel("Amount \(PeakFormat.usd(result.usd))")
     }
 
-    /// One quiet secondary line — shares + entry price, not four receipt rows.
-    private var compactStats: some View {
-        Text("\(Self.sharesLabel(result.shares)) shares · \(PeakFormat.cents(result.price))")
-            .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
-            .foregroundStyle(PeakPostcard.mute)
-            .lineLimit(1)
-            .minimumScaleFactor(0.85)
+    /// One refined meta line — elegant, not spreadsheet chips.
+    private var metaLine: some View {
+        HStack(spacing: 0) {
+            Text("\(Self.sharesLabel(result.shares)) shares")
+                .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+            Text("  ·  ")
+                .font(.system(size: 16, weight: .medium))
+                .opacity(0.45)
+            Text(PeakFormat.cents(result.price))
+                .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+        }
+        .foregroundStyle(PeakPostcard.mute)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            Capsule(style: .continuous)
+                .fill(accent.opacity(0.08))
+        )
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(accent.opacity(0.16), lineWidth: 1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private static func sharesLabel(_ value: Double) -> String {
@@ -335,9 +464,8 @@ struct PeakActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-#if DEBUG
 extension TradeCelebrationResult {
-    /// Canvas / DEBUG fixtures — mirrors a typical small fill.
+    /// Canvas / preview fixtures — mirrors a typical small fill.
     static let previewBuy = TradeCelebrationResult(
         side: .buy,
         outcomeLabel: "Yes",
@@ -367,6 +495,7 @@ extension TradeCelebrationResult {
     )
 }
 
+#if DEBUG
 #Preview("Trade card · Bought") {
     PeakTradeShareCard(result: .previewBuy)
         .padding(24)
