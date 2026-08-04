@@ -242,6 +242,32 @@ struct TradeStubSheet: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }
                     }
+                    #if DEBUG
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Preview share") {
+                            PeakHaptics.press()
+                            celebration = TradeCelebrationResult(
+                                side: action.celebrationSide,
+                                outcomeLabel: sideLabel,
+                                marketQuestion: market.question,
+                                eventTitle: market.eventTitle,
+                                price: price > 0 && price < 1 ? price : max(0.01, min(0.99, quotePrice)),
+                                shares: shareSize > 0 ? shareSize : 25,
+                                usd: {
+                                    let p = price > 0 && price < 1 ? price : max(0.01, min(0.99, quotePrice))
+                                    let s = shareSize > 0 ? shareSize : 25
+                                    return s * p
+                                }(),
+                                isPartial: false,
+                                fillMessage: "DEBUG preview",
+                                marketImageURL: market.imageURL,
+                                marketSlug: market.slug
+                            )
+                        }
+                        .font(.caption.weight(.semibold))
+                        .accessibilityLabel("Preview trade share card")
+                    }
+                    #endif
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
                         Button("Done") {

@@ -72,96 +72,75 @@ struct TradeCelebrationResult: Equatable, Sendable {
     }
 }
 
-// MARK: - Trade postcard
+// MARK: - Trade postcard (Hero Signal)
 
-/// Peak marketing postcard for a completed buy/sell — same paper chrome as market/position cards.
+/// Peak marketing postcard for a completed fill — one giant signal, not a receipt.
+///
+/// Keeps the market/position postcard family (stage + paper + `PeakLogo` brand
+/// header) but elevates hierarchy: verb chip, hero USD, one compact stats line.
 struct PeakTradeShareCard: View {
     let result: TradeCelebrationResult
     var icon: UIImage? = nil
 
+    /// Buy = win green; sell = Peak teal — postcard tokens, not traffic-light red.
     private var accent: Color {
         result.side.accentIsBuy ? PeakPostcard.win : PeakPostcard.teal
     }
 
+    private var accentBright: Color {
+        result.side.accentIsBuy
+            ? Color(red: 0.18, green: 0.62, blue: 0.46)
+            : PeakPostcard.tealBright
+    }
+
     var body: some View {
         ZStack {
-            PeakPostcardStage()
+            tradeStage
 
             VStack(spacing: 0) {
                 PeakShareBrandHeader()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 16)
 
                 ZStack {
                     PeakPostcardPaper()
 
+                    // Soft side wash — tinted by buy/sell without cluttering the paper.
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    accent.opacity(0.16),
+                                    accent.opacity(0.05),
+                                    Color.clear,
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: UnitPoint(x: 0.55, y: 0.55)
+                            )
+                        )
+                        .allowsHitTesting(false)
+
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(result.headline.uppercased())
-                            .font(.caption.weight(.bold))
-                            .tracking(1.4)
-                            .foregroundStyle(accent)
+                        marketRow
 
-                        HStack(alignment: .top, spacing: 14) {
-                            PeakShareMarketIcon(image: icon, size: 52, corner: 12)
+                        sideChip
+                            .padding(.top, 16)
 
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(result.displayTitle)
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(PeakPostcard.ink)
-                                    .lineLimit(3)
-                                    .fixedSize(horizontal: false, vertical: true)
+                        heroAmount
+                            .padding(.top, 22)
 
-                                if result.displayTitle != result.marketQuestion {
-                                    Text(result.marketQuestion)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(PeakPostcard.mute)
-                                        .lineLimit(2)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.top, 12)
-
-                        PeakPostcardRule()
-
-                        PeakPostcardStatRow(
-                            label: "Side",
-                            value: "\(result.side.pastTitle) \(result.outcomeLabel)",
-                            valueColor: accent,
-                            valueSize: 22
-                        )
-                        .padding(.bottom, 14)
-
-                        PeakPostcardStatRow(
-                            label: "Price",
-                            value: PeakFormat.cents(result.price),
-                            valueSize: 22
-                        )
-                        .padding(.bottom, 14)
-
-                        PeakPostcardStatRow(
-                            label: "Amount",
-                            value: PeakFormat.usd(result.usd),
-                            valueSize: 22
-                        )
-
-                        PeakPostcardRule()
-
-                        PeakPostcardStatRow(
-                            label: "Shares",
-                            value: Self.sharesLabel(result.shares),
-                            valueColor: PeakPostcard.teal,
-                            valueSize: 34
-                        )
+                        compactStats
+                            .padding(.top, 10)
 
                         if result.isPartial {
                             Text("Partial fill")
                                 .font(.caption.weight(.semibold))
+                                .tracking(0.4)
                                 .foregroundStyle(PeakPostcard.mute)
-                                .padding(.top, 10)
+                                .padding(.top, 12)
                         }
 
-                        Spacer(minLength: 16)
+                        Spacer(minLength: 18)
 
                         HStack(alignment: .center, spacing: 12) {
                             Text(PeakShareDate.stamp())
@@ -180,6 +159,107 @@ struct PeakTradeShareCard: View {
         }
         .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.positionCardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    // MARK: Atmosphere
+
+    /// Stage keyed to the fill side — same Peak depth language as market cards,
+    /// with a stronger buy/sell glow so the thumb nail reads instantly.
+    private var tradeStage: some View {
+        ZStack {
+            PeakPostcardStage()
+
+            RadialGradient(
+                colors: [accent.opacity(0.34), .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 340
+            )
+
+            RadialGradient(
+                colors: [accentBright.opacity(0.22), .clear],
+                center: .bottomTrailing,
+                startRadius: 0,
+                endRadius: 280
+            )
+        }
+    }
+
+    // MARK: Content
+
+    private var marketRow: some View {
+        HStack(alignment: .top, spacing: 14) {
+            PeakShareMarketIcon(image: icon, size: 56, corner: 13)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(result.displayTitle)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(PeakPostcard.ink)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if result.displayTitle != result.marketQuestion {
+                    Text(result.marketQuestion)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PeakPostcard.mute)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Strong verb + outcome — the glanceable “what happened” stamp.
+    private var sideChip: some View {
+        HStack(spacing: 7) {
+            Text(result.side.pastTitle.uppercased())
+                .font(.caption.weight(.bold))
+                .tracking(1.2)
+            Text("·")
+                .font(.caption.weight(.bold))
+                .opacity(0.55)
+            Text(result.outcomeLabel.uppercased())
+                .font(.caption.weight(.bold))
+                .tracking(0.8)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(
+            Capsule(style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [accent, accentBright],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+        )
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(result.side.pastTitle) \(result.outcomeLabel)")
+    }
+
+    private var heroAmount: some View {
+        Text(PeakFormat.usd(result.usd))
+            .font(.system(size: 56, weight: .bold, design: .rounded).monospacedDigit())
+            .foregroundStyle(accent)
+            .minimumScaleFactor(0.55)
+            .lineLimit(1)
+            .accessibilityLabel("Amount \(PeakFormat.usd(result.usd))")
+    }
+
+    /// One quiet secondary line — shares + entry price, not four receipt rows.
+    private var compactStats: some View {
+        Text("\(Self.sharesLabel(result.shares)) shares · \(PeakFormat.cents(result.price))")
+            .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+            .foregroundStyle(PeakPostcard.mute)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
     }
 
     private static func sharesLabel(_ value: Double) -> String {
@@ -254,3 +334,52 @@ struct PeakActivityShareSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+
+#if DEBUG
+extension TradeCelebrationResult {
+    /// Canvas / DEBUG fixtures — mirrors a typical small fill.
+    static let previewBuy = TradeCelebrationResult(
+        side: .buy,
+        outcomeLabel: "Yes",
+        marketQuestion: "Will BTC hit $150k in 2026?",
+        eventTitle: "Bitcoin above $150,000 by Dec 31?",
+        price: 0.42,
+        shares: 48,
+        usd: 20.16,
+        isPartial: false,
+        fillMessage: "Filled",
+        marketImageURL: nil,
+        marketSlug: "btc-150k-2026"
+    )
+
+    static let previewSell = TradeCelebrationResult(
+        side: .sell,
+        outcomeLabel: "No",
+        marketQuestion: "Fed cuts rates before September?",
+        eventTitle: nil,
+        price: 0.61,
+        shares: 15.5,
+        usd: 9.46,
+        isPartial: true,
+        fillMessage: "Partial fill",
+        marketImageURL: nil,
+        marketSlug: nil
+    )
+}
+
+#Preview("Trade card · Bought") {
+    PeakTradeShareCard(result: .previewBuy)
+        .padding(24)
+        .background(Color.black)
+}
+
+#Preview("Trade card · Sold") {
+    PeakTradeShareCard(result: .previewSell)
+        .padding(24)
+        .background(Color.black)
+}
+
+#Preview("Celebration · Bought") {
+    TradeCelebrationSheet(result: .previewBuy, onDone: {})
+}
+#endif
