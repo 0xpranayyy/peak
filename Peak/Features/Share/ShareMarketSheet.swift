@@ -3,7 +3,8 @@ import UIKit
 
 // MARK: - Shared postcard chrome (Peak-original — not a receipt clone)
 
-/// Soft Peak paper postcard — calm ink, teal accent, no perforated ticket motif.
+/// Soft Peak paper postcard chrome — calm ink, teal accent.
+/// Trade fill shares use a separate ticket motif in `PeakTradeShareCard`.
 enum PeakPostcard {
     static let paper = Color(red: 0.975, green: 0.978, blue: 0.972)
     static let ink = Color(red: 0.08, green: 0.10, blue: 0.11)
@@ -292,6 +293,13 @@ enum PeakShareDate {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("d MMM · HH:mm")
         return formatter.string(from: date)
+    }
+
+    /// Ultra-short day stamp for the trade-ticket stub.
+    static func compactDay(_ date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("d MMM")
+        return formatter.string(from: date).uppercased()
     }
 }
 

@@ -196,12 +196,29 @@ final class ShareCardRenderTests: XCTestCase {
             .appendingPathComponent("docs/share-previews", isDirectory: true)
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-        let buy = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewBuy))
-        let sell = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewSell))
+        // Synthetic market art so previews exercise the pre-blurred ticket field.
+        let swatch = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256)).image { ctx in
+            let colors = [
+                UIColor(red: 0.10, green: 0.55, blue: 0.42, alpha: 1),
+                UIColor(red: 0.06, green: 0.22, blue: 0.28, alpha: 1),
+                UIColor(red: 0.18, green: 0.72, blue: 0.48, alpha: 1),
+            ]
+            for (i, color) in colors.enumerated() {
+                color.setFill()
+                let inset = CGFloat(i) * 36
+                ctx.fill(CGRect(x: inset, y: inset, width: 256 - inset * 2, height: 256 - inset * 2))
+            }
+        }
+
+        let buy = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewBuy, icon: swatch))
+        let sell = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: .previewSell, icon: swatch))
         let buyData = try XCTUnwrap(Self.pngDataFlattened(buy))
         let sellData = try XCTUnwrap(Self.pngDataFlattened(sell))
         try buyData.write(to: outDir.appendingPathComponent("trade-share-bought.png"))
         try sellData.write(to: outDir.appendingPathComponent("trade-share-sold.png"))
+
+        XCTAssertGreaterThan(buyData.count, 80_000, "bought preview should not be a blank black frame")
+        XCTAssertGreaterThan(sellData.count, 80_000, "sold preview should not be a blank black frame")
     }
 
     /// ImageRenderer sometimes yields a bitmap `pngData()` can't encode; flatten first.

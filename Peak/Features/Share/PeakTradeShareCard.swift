@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 /// Snapshot of a completed fill — drives celebration UI and the share postcard.
 struct TradeCelebrationResult: Equatable, Sendable {
@@ -72,17 +74,25 @@ struct TradeCelebrationResult: Equatable, Sendable {
     }
 }
 
-// MARK: - Trade postcard (Luminous Signal)
+// MARK: - Trade ticket (boarding-pass share card)
 
-/// Peak marketing postcard for a completed fill — luminous, asymmetric, not a receipt.
+/// Peak marketing share card for a completed fill — train / transit ticket motif.
 ///
-/// Stage + paper + real `PeakLogo` brand chrome. Buy reads as mint/win energy;
-/// sell as Peak teal luminosity. Renders via `PeakTradeShareCardRenderer`.
+/// Market thumbnail is pre-blurred into a `UIImage` (Core Image) so
+/// `ImageRenderer` stays reliable; SwiftUI `blur` is not used for export.
+/// Buy reads mint; sell reads Peak teal. Renders via `PeakTradeShareCardRenderer`.
 struct PeakTradeShareCard: View {
     let result: TradeCelebrationResult
     var icon: UIImage? = nil
+    /// Pre-blurred market art for the ticket field. Prefer baking blur in UIKit /
+    /// Core Image — do not rely on SwiftUI `blur` inside `ImageRenderer`.
+    var blurredBackground: UIImage? = nil
 
-    /// Buy = vibrant mint; sell = Peak teal — postcard family, never traffic-light red.
+    private let stubWidth: CGFloat = 78
+    private let tearWidth: CGFloat = 18
+    private let ticketCorner: CGFloat = 18
+    private let notchRadius: CGFloat = 10
+
     private var accent: Color {
         result.side.accentIsBuy ? PeakPostcard.win : PeakPostcard.teal
     }
@@ -99,72 +109,12 @@ struct PeakTradeShareCard: View {
 
     var body: some View {
         ZStack {
-            tradeStage
+            stageAtmosphere
 
-            VStack(spacing: 0) {
-                PeakShareBrandHeader()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 12)
-
-                ZStack(alignment: .topLeading) {
-                    luminousPaper
-
-                    // Soft accent rail — asymmetry without a heavy sidebar.
-                    Capsule(style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [accentBright, accent, accentDeep],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 4)
-                        .padding(.vertical, 26)
-                        .padding(.leading, 16)
-                        .allowsHitTesting(false)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        signalRow
-
-                        Text(result.displayTitle)
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(PeakPostcard.ink)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 22)
-
-                        if result.displayTitle != result.marketQuestion {
-                            Text(result.marketQuestion)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                                .lineLimit(2)
-                                .padding(.top, 6)
-                        }
-
-                        heroAmount
-                            .padding(.top, 26)
-
-                        metaLine
-                            .padding(.top, 14)
-
-                        Spacer(minLength: 18)
-
-                        HStack(alignment: .center, spacing: 12) {
-                            Text(PeakShareDate.stamp())
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            PeakShareBrandFooter(trailing: nil, light: true)
-                        }
-                    }
-                    .padding(.leading, 30)
-                    .padding(.trailing, 24)
-                    .padding(.vertical, 26)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .padding(18)
+            ticket
+                .padding(16)
+                .shadow(color: accentBright.opacity(0.22), radius: 24, y: 12)
+                .shadow(color: Color.black.opacity(0.45), radius: 28, y: 16)
         }
         .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.positionCardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -172,34 +122,31 @@ struct PeakTradeShareCard: View {
 
     // MARK: Atmosphere
 
-    private var tradeStage: some View {
+    /// Soft stage without SwiftUI `blur` — ImageRenderer can flatten blurred
+    /// layers to black. Market art blur is pre-baked via `PeakShareImageBlur`.
+    private var stageAtmosphere: some View {
         ZStack {
             Color(red: 0.02, green: 0.07, blue: 0.07)
 
-            // Wide luminous blooms — readable at thumbnail size on X/IG.
-            Ellipse()
-                .fill(accentBright.opacity(0.55))
-                .frame(width: 340, height: 280)
-                .blur(radius: 70)
-                .offset(x: -110, y: -160)
+            RadialGradient(
+                colors: [accentBright.opacity(0.32), Color.clear],
+                center: UnitPoint(x: 0.15, y: 0.12),
+                startRadius: 10,
+                endRadius: 220
+            )
 
-            Ellipse()
-                .fill(accent.opacity(0.40))
-                .frame(width: 300, height: 260)
-                .blur(radius: 60)
-                .offset(x: 130, y: 180)
-
-            Ellipse()
-                .fill(accentDeep.opacity(0.50))
-                .frame(width: 220, height: 200)
-                .blur(radius: 50)
-                .offset(x: 140, y: -120)
+            RadialGradient(
+                colors: [accent.opacity(0.26), Color.clear],
+                center: UnitPoint(x: 0.88, y: 0.86),
+                startRadius: 8,
+                endRadius: 200
+            )
 
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.15),
+                    Color.black.opacity(0.12),
                     Color.clear,
-                    Color.black.opacity(0.42),
+                    Color.black.opacity(0.40),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -208,110 +155,228 @@ struct PeakTradeShareCard: View {
         .allowsHitTesting(false)
     }
 
-    private var luminousPaper: some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(
+    // MARK: Ticket
+
+    private var ticket: some View {
+        ZStack {
+            ticketField
+
+            HStack(spacing: 0) {
+                stubPanel
+                    .frame(width: stubWidth)
+
+                tearColumn
+                    .frame(width: tearWidth)
+
+                mainPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(.vertical, 2)
+        }
+        .clipShape(PeakTradeTicketShape(stubWidth: stubWidth, tearWidth: tearWidth, corner: ticketCorner, notchRadius: notchRadius))
+        .overlay {
+            PeakTradeTicketShape(stubWidth: stubWidth, tearWidth: tearWidth, corner: ticketCorner, notchRadius: notchRadius)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.28),
+                            accentBright.opacity(0.35),
+                            Color.white.opacity(0.12),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.15
+                )
+        }
+    }
+
+    /// Blurred market art (or Peak stage) as the ticket paper.
+    private var ticketField: some View {
+        ZStack {
+            if let blurredBackground {
+                Image(uiImage: blurredBackground)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
                 LinearGradient(
                     colors: [
-                        Color(red: 0.99, green: 1.0, blue: 0.995),
-                        PeakPostcard.paper,
-                        Color(red: 0.94, green: 0.97, blue: 0.96),
+                        accentDeep,
+                        PeakPostcard.stage,
+                        Color(red: 0.04, green: 0.12, blue: 0.11),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
+            }
+
+            // Heavy scrim — keeps boarding-pass type readable on any thumbnail.
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(blurredBackground == nil ? 0.28 : 0.55),
+                    Color(red: 0.02, green: 0.08, blue: 0.08).opacity(blurredBackground == nil ? 0.45 : 0.72),
+                    Color.black.opacity(blurredBackground == nil ? 0.55 : 0.82),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                accentBright.opacity(0.22),
-                                accent.opacity(0.08),
-                                Color.clear,
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: UnitPoint(x: 0.75, y: 0.55)
-                        )
-                    )
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.90),
-                                accentBright.opacity(0.45),
-                                accent.opacity(0.20),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.35
-                    )
-            }
-            .shadow(color: accentBright.opacity(0.35), radius: 28, y: 10)
-            .shadow(color: Color.black.opacity(0.38), radius: 30, y: 18)
+
+            LinearGradient(
+                colors: [accentBright.opacity(0.18), Color.clear, accent.opacity(0.12)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .allowsHitTesting(false)
     }
 
-    // MARK: Content
+    private var stubPanel: some View {
+        VStack(spacing: 0) {
+            Image("PeakLogo")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 28, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+                }
+                .padding(.top, 20)
 
-    /// Polished market tile + luminous verb chip — chip never shares width with the title.
-    private var signalRow: some View {
-        HStack(alignment: .center, spacing: 14) {
-            polishedIcon
+            Spacer(minLength: 12)
 
-            VStack(alignment: .leading, spacing: 8) {
-                sideChip
+            // Letter stack avoids `rotationEffect`, which is flaky in ImageRenderer.
+            VStack(spacing: 3) {
+                ForEach(Array(result.side.pastTitle.uppercased().enumerated()), id: \.offset) { _, ch in
+                    Text(String(ch))
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(accentBright)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(result.side.pastTitle)
+
+            Spacer(minLength: 12)
+
+            Text(PeakShareDate.compactDay())
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.6)
+                .foregroundStyle(Color.white.opacity(0.45))
+                .padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.18))
+    }
+
+    private var tearColumn: some View {
+        ZStack {
+            PeakTicketDashLine()
+                .stroke(
+                    style: StrokeStyle(lineWidth: 1.2, dash: [3.5, 4.5])
+                )
+                .foregroundStyle(Color.white.opacity(0.28))
+                .frame(width: 1)
+                .padding(.vertical, notchRadius + 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var mainPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 10) {
+                sideOutcomeChip
+
                 if result.isPartial {
                     partialBadge
                 }
+
+                Spacer(minLength: 0)
+
+                if let icon {
+                    PeakShareMarketIcon(image: icon, size: 44, corner: 11)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                        }
+                }
             }
 
-            Spacer(minLength: 0)
+            Text("MARKET")
+                .font(.system(size: 9, weight: .bold))
+                .tracking(1.4)
+                .foregroundStyle(Color.white.opacity(0.42))
+                .padding(.top, 22)
+
+            Text(result.displayTitle)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.96))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+
+            if result.displayTitle != result.marketQuestion {
+                Text(result.marketQuestion)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.48))
+                    .lineLimit(2)
+                    .padding(.top, 5)
+            }
+
+            Text(PeakFormat.usd(result.usd))
+                .font(.system(size: 52, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.white, accentBright],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .minimumScaleFactor(0.45)
+                .lineLimit(1)
+                .padding(.top, 22)
+                .accessibilityLabel("Amount \(PeakFormat.usd(result.usd))")
+
+            HStack(alignment: .top, spacing: 22) {
+                boardingStat(label: "Shares", value: Self.sharesLabel(result.shares))
+                boardingStat(label: "Price", value: PeakFormat.cents(result.price))
+            }
+            .padding(.top, 16)
+
+            Spacer(minLength: 14)
+
+            HStack(alignment: .center, spacing: 10) {
+                Text(PeakShareDate.stamp())
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.white.opacity(0.42))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                PeakShareBrandFooter(trailing: nil, light: false)
+            }
         }
+        .padding(.leading, 14)
+        .padding(.trailing, 20)
+        .padding(.vertical, 22)
     }
 
-    private var polishedIcon: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(accentBright.opacity(0.18))
-                .frame(width: 72, height: 72)
-                .blur(radius: 8)
-
-            PeakShareMarketIcon(image: icon, size: 66, corner: 17)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.7), accentBright.opacity(0.55)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.5
-                        )
-                }
-        }
-        .shadow(color: accent.opacity(0.32), radius: 14, y: 7)
-    }
-
-    private var sideChip: some View {
-        HStack(spacing: 7) {
+    private var sideOutcomeChip: some View {
+        HStack(spacing: 6) {
             Text(result.side.pastTitle.uppercased())
-                .font(.system(size: 12, weight: .heavy))
-                .tracking(1.0)
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(0.9)
             Text("·")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .opacity(0.55)
             Text(result.outcomeLabel.uppercased())
-                .font(.system(size: 12, weight: .heavy))
-                .tracking(0.5)
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(0.4)
         }
         .foregroundStyle(Color.white)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
         .background(
             Capsule(style: .continuous)
                 .fill(
@@ -324,71 +389,41 @@ struct PeakTradeShareCard: View {
         )
         .overlay {
             Capsule(style: .continuous)
-                .strokeBorder(Color.white.opacity(0.30), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
         }
-        .shadow(color: accentBright.opacity(0.55), radius: 12, y: 5)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(result.side.pastTitle) \(result.outcomeLabel)")
     }
 
     private var partialBadge: some View {
-        Text("Partial fill")
+        Text("Partial")
             .font(.system(size: 10, weight: .bold))
-            .tracking(0.7)
+            .tracking(0.6)
             .textCase(.uppercase)
-            .foregroundStyle(accentDeep)
-            .padding(.horizontal, 10)
+            .foregroundStyle(accentBright)
+            .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(
                 Capsule(style: .continuous)
-                    .fill(accent.opacity(0.12))
+                    .fill(Color.white.opacity(0.08))
             )
             .overlay {
                 Capsule(style: .continuous)
-                    .strokeBorder(accent.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(accentBright.opacity(0.45), lineWidth: 1)
             }
             .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var heroAmount: some View {
-        Text(PeakFormat.usd(result.usd))
-            .font(.system(size: 64, weight: .bold, design: .rounded).monospacedDigit())
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [accentBright, accent, accentDeep],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .shadow(color: accentBright.opacity(0.28), radius: 16, y: 5)
-            .minimumScaleFactor(0.45)
-            .lineLimit(1)
-            .accessibilityLabel("Amount \(PeakFormat.usd(result.usd))")
-    }
-
-    /// One refined meta line — elegant, not spreadsheet chips.
-    private var metaLine: some View {
-        HStack(spacing: 0) {
-            Text("\(Self.sharesLabel(result.shares)) shares")
-                .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
-            Text("  ·  ")
-                .font(.system(size: 16, weight: .medium))
-                .opacity(0.45)
-            Text(PeakFormat.cents(result.price))
-                .font(.system(size: 16, weight: .semibold, design: .rounded).monospacedDigit())
+    private func boardingStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(Color.white.opacity(0.40))
+            Text(value)
+                .font(.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(Color.white.opacity(0.90))
         }
-        .foregroundStyle(PeakPostcard.mute)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(accent.opacity(0.08))
-        )
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(accent.opacity(0.16), lineWidth: 1)
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private static func sharesLabel(_ value: Double) -> String {
@@ -400,12 +435,156 @@ struct PeakTradeShareCard: View {
     }
 }
 
+// MARK: - Ticket geometry
+
+/// Transit-ticket outline: rounded body + semicircle bites on the tear line.
+struct PeakTradeTicketShape: InsettableShape {
+    var stubWidth: CGFloat
+    var tearWidth: CGFloat
+    var corner: CGFloat
+    var notchRadius: CGFloat
+    var insetAmount: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        let c = max(0, corner - insetAmount * 0.35)
+        let notch = max(0, notchRadius - insetAmount * 0.25)
+        let tearX = r.minX + stubWidth + tearWidth * 0.5
+
+        var path = Path()
+        path.move(to: CGPoint(x: r.minX + c, y: r.minY))
+
+        // Top edge → left of notch
+        path.addLine(to: CGPoint(x: tearX - notch, y: r.minY))
+        path.addArc(
+            center: CGPoint(x: tearX, y: r.minY),
+            radius: notch,
+            startAngle: .degrees(180),
+            endAngle: .degrees(0),
+            clockwise: true
+        )
+
+        // Top-right corner
+        path.addLine(to: CGPoint(x: r.maxX - c, y: r.minY))
+        path.addArc(
+            center: CGPoint(x: r.maxX - c, y: r.minY + c),
+            radius: c,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+
+        // Right → bottom-right
+        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY - c))
+        path.addArc(
+            center: CGPoint(x: r.maxX - c, y: r.maxY - c),
+            radius: c,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+
+        // Bottom edge → right of notch
+        path.addLine(to: CGPoint(x: tearX + notch, y: r.maxY))
+        path.addArc(
+            center: CGPoint(x: tearX, y: r.maxY),
+            radius: notch,
+            startAngle: .degrees(0),
+            endAngle: .degrees(180),
+            clockwise: true
+        )
+
+        // Bottom-left corner
+        path.addLine(to: CGPoint(x: r.minX + c, y: r.maxY))
+        path.addArc(
+            center: CGPoint(x: r.minX + c, y: r.maxY - c),
+            radius: c,
+            startAngle: .degrees(90),
+            endAngle: .degrees(180),
+            clockwise: false
+        )
+
+        // Left → top-left
+        path.addLine(to: CGPoint(x: r.minX, y: r.minY + c))
+        path.addArc(
+            center: CGPoint(x: r.minX + c, y: r.minY + c),
+            radius: c,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+
+        path.closeSubpath()
+        return path
+    }
+
+    func inset(by amount: CGFloat) -> PeakTradeTicketShape {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
+}
+
+/// Vertical guide for the perforated tear.
+private struct PeakTicketDashLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        return path
+    }
+}
+
+// MARK: - Blur helper (ImageRenderer-safe)
+
+enum PeakShareImageBlur {
+    /// Gaussian-blur a thumbnail for share-card backgrounds. Crops back to the
+    /// source extent after clamping so edges don't go transparent.
+    static func blurred(_ image: UIImage, radius: CGFloat = 32) -> UIImage? {
+        guard let cgImage = image.cgImage else { return softFallbackBlur(image, radius: radius) }
+        let ciImage = CIImage(cgImage: cgImage)
+        let filter = CIFilter.gaussianBlur()
+        filter.inputImage = ciImage.clampedToExtent()
+        filter.radius = Float(radius)
+        guard let output = filter.outputImage?.cropped(to: ciImage.extent) else {
+            return softFallbackBlur(image, radius: radius)
+        }
+        let context = CIContext(options: [.useSoftwareRenderer: false])
+        guard let outCG = context.createCGImage(output, from: output.extent) else {
+            return softFallbackBlur(image, radius: radius)
+        }
+        return UIImage(cgImage: outCG, scale: image.scale, orientation: image.imageOrientation)
+    }
+
+    /// UIKit downscale fallback when Core Image is unavailable.
+    private static func softFallbackBlur(_ image: UIImage, radius: CGFloat) -> UIImage? {
+        let scale = max(0.08, min(0.28, 12 / max(radius, 1)))
+        let size = CGSize(
+            width: max(1, image.size.width * scale),
+            height: max(1, image.size.height * scale)
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let tiny = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        let fullFormat = UIGraphicsImageRendererFormat()
+        fullFormat.scale = image.scale
+        fullFormat.opaque = true
+        return UIGraphicsImageRenderer(size: image.size, format: fullFormat).image { _ in
+            tiny.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+    }
+}
+
 // MARK: - Renderer + X helpers
 
 enum PeakTradeShareCardRenderer {
     @MainActor
     static func image(result: TradeCelebrationResult, icon: UIImage? = nil) -> UIImage? {
-        let card = PeakTradeShareCard(result: result, icon: icon)
+        let blurred = icon.flatMap { PeakShareImageBlur.blurred($0, radius: 34) }
+        let card = PeakTradeShareCard(result: result, icon: icon, blurredBackground: blurred)
         let renderer = ImageRenderer(content: card)
         renderer.scale = 3
         renderer.isOpaque = true
