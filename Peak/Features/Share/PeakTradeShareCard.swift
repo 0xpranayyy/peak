@@ -124,29 +124,36 @@ struct PeakTradeShareCard: View {
     }
 
     var body: some View {
+        // Mirror `PeakPositionShareCard`: one sized ZStack, content padded inside.
+        // Nested clipShapes + unbound `scaledToFill` blurs made ImageRenderer
+        // center-crop the postcard (clipped badge / SPENT / footer).
         ZStack {
             stageAtmosphere
 
             cardSurface
-                .padding(18)
-                .shadow(color: accentBright.opacity(0.20), radius: 28, y: 14)
-                .shadow(color: Color.black.opacity(0.50), radius: 32, y: 18)
+                .padding(20)
         }
-        .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.positionCardHeight)
+        .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.tradeCardHeight)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     // MARK: Atmosphere
 
     private var stageAtmosphere: some View {
-        ZStack {
+        let w = PeakPostcard.cardWidth
+        let h = PeakPostcard.tradeCardHeight
+        return ZStack {
             Color(red: 0.02, green: 0.06, blue: 0.07)
 
             if let blurredBackground {
-                Image(uiImage: blurredBackground)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Explicit size — never let `scaledToFill` inflate ideal size.
+                Color.clear
+                    .overlay {
+                        Image(uiImage: blurredBackground)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .frame(width: w, height: h)
                     .clipped()
                     .opacity(0.38)
                     .allowsHitTesting(false)
@@ -186,6 +193,7 @@ struct PeakTradeShareCard: View {
                 endPoint: .bottom
             )
         }
+        .frame(width: w, height: h)
         .allowsHitTesting(false)
     }
 
@@ -196,19 +204,20 @@ struct PeakTradeShareCard: View {
             headerRow
 
             marketBlock
-                .padding(.top, 20)
+                .padding(.top, 18)
 
             statsGrid
-                .padding(.top, 22)
+                .padding(.top, 18)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 12)
 
             footerRow
+                .layoutPriority(1)
         }
-        .padding(22)
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -221,13 +230,13 @@ struct PeakTradeShareCard: View {
                     )
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(accentDeep.opacity(0.35))
                         .blendMode(.overlay)
                 }
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [
@@ -241,16 +250,16 @@ struct PeakTradeShareCard: View {
                     lineWidth: 1.15
                 )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var headerRow: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
             PeakShareBrandHeader()
+                .layoutPriority(0)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(alignment: .trailing, spacing: 5) {
                 sideOutcomeChip
                 if result.isPartial {
                     partialBadge
@@ -261,23 +270,22 @@ struct PeakTradeShareCard: View {
     }
 
     private var marketBlock: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             // Clear, visible thumbnail — not only ambient blur.
-            PeakShareMarketIcon(image: icon, size: 72, corner: 16)
+            PeakShareMarketIcon(image: icon, size: 64, corner: 14)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
                 }
-                .shadow(color: Color.black.opacity(0.35), radius: 10, y: 6)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text("MARKET")
                     .font(.system(size: 9, weight: .bold))
-                    .tracking(1.5)
+                    .tracking(1.2)
                     .foregroundStyle(Color.white.opacity(0.42))
 
                 Text(result.displayTitle)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.96))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -324,27 +332,30 @@ struct PeakTradeShareCard: View {
         emphasize: Bool = false,
         valueColor: Color? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(label.uppercased())
                 .font(.system(size: 9, weight: .bold))
-                .tracking(1.1)
+                .tracking(0.8)
                 .foregroundStyle(Color.white.opacity(0.42))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: true, vertical: false)
             Text(value)
                 .font(
                     .system(
-                        size: emphasize ? 22 : 17,
+                        size: emphasize ? 20 : 16,
                         weight: emphasize ? .bold : .semibold,
                         design: .rounded
                     )
                     .monospacedDigit()
                 )
                 .foregroundStyle(valueColor ?? Color.white.opacity(emphasize ? 0.98 : 0.90))
-                .minimumScaleFactor(0.55)
+                .minimumScaleFactor(0.6)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.white.opacity(0.07))
@@ -364,37 +375,41 @@ struct PeakTradeShareCard: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.45))
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 if let handle = result.shareHandle {
                     Text(handle)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.white.opacity(0.72))
                         .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 8)
 
             PeakShareBrandFooter(trailing: nil, light: false)
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
     private var sideOutcomeChip: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Text(result.side.pastTitle.uppercased())
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.8)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.5)
             Text("·")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .opacity(0.55)
             Text(result.outcomeLabel.uppercased())
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(0.3)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.2)
         }
         .foregroundStyle(Color.white)
         .lineLimit(1)
-        .minimumScaleFactor(0.75)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
         .background(
             Capsule(style: .continuous)
                 .fill(
@@ -492,6 +507,10 @@ enum PeakTradeShareCardRenderer {
         let blurred = icon.flatMap { PeakShareImageBlur.blurred($0, radius: 34) }
         let card = PeakTradeShareCard(result: result, icon: icon, blurredBackground: blurred)
         let renderer = ImageRenderer(content: card)
+        renderer.proposedSize = ProposedViewSize(
+            width: PeakPostcard.cardWidth,
+            height: PeakPostcard.tradeCardHeight
+        )
         renderer.scale = 3
         renderer.isOpaque = true
         return renderer.uiImage

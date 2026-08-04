@@ -164,7 +164,7 @@ final class ShareCardRenderTests: XCTestCase {
             )
             let image = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: result))
             XCTAssertEqual(image.size.width, PeakPostcard.cardWidth, accuracy: 1)
-            XCTAssertEqual(image.size.height, PeakPostcard.positionCardHeight, accuracy: 1)
+            XCTAssertEqual(image.size.height, PeakPostcard.tradeCardHeight, accuracy: 1)
             XCTAssertGreaterThan(image.scale, 1)
         }
     }

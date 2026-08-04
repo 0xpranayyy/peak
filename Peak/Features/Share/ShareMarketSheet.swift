@@ -31,6 +31,9 @@ enum PeakPostcard {
     /// The position card carries four numbers and no chart. At the market
     /// card's height it renders with a third of the paper empty.
     static let positionCardHeight: CGFloat = 520
+    /// Trade fill share — thumbnail + 2×2 stats + footer handle need a bit
+    /// more vertical room than the position postcard.
+    static let tradeCardHeight: CGFloat = 540
 }
 
 struct PeakShareBrandHeader: View {
