@@ -159,7 +159,8 @@ final class ShareCardRenderTests: XCTestCase {
                 isPartial: false,
                 fillMessage: "Filled",
                 marketImageURL: nil,
-                marketSlug: market.slug
+                marketSlug: market.slug,
+                username: "peaktrader"
             )
             let image = try XCTUnwrap(PeakTradeShareCardRenderer.image(result: result))
             XCTAssertEqual(image.size.width, PeakPostcard.cardWidth, accuracy: 1)
@@ -180,7 +181,8 @@ final class ShareCardRenderTests: XCTestCase {
             isPartial: false,
             fillMessage: "Filled",
             marketImageURL: nil,
-            marketSlug: nil
+            marketSlug: nil,
+            username: "peaktrader"
         )
         XCTAssertTrue(result.tweetText.lowercased().contains("bought"))
         XCTAssertTrue(result.tweetText.contains("Yes"))
@@ -196,7 +198,7 @@ final class ShareCardRenderTests: XCTestCase {
             .appendingPathComponent("docs/share-previews", isDirectory: true)
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-        // Synthetic market art so previews exercise the pre-blurred ticket field.
+        // Synthetic market art so previews exercise the visible tile + ambient blur.
         let swatch = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256)).image { ctx in
             let colors = [
                 UIColor(red: 0.10, green: 0.55, blue: 0.42, alpha: 1),

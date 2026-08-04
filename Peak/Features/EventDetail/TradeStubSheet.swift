@@ -8,6 +8,7 @@ struct TradeStubSheet: View {
     @EnvironmentObject private var auth: PrivyAuthService
     @EnvironmentObject private var tradingPath: TradingPathStore
     @EnvironmentObject private var region: TradingRegionStore
+    @EnvironmentObject private var peakProfile: PeakProfileStore
 
     let market: Market
     let isYes: Bool
@@ -109,6 +110,11 @@ struct TradeStubSheet: View {
 
     private var sideLabel: String {
         isYes ? market.yesLabel : market.noLabel
+    }
+
+    /// Gamma / Peak display name → email → short wallet for the share footer.
+    private var celebrationUsername: String {
+        peakProfile.displayName(fallbackAddress: auth.walletAddress, email: auth.email)
     }
 
     private var isSignedIn: Bool {
@@ -261,7 +267,8 @@ struct TradeStubSheet: View {
                                 isPartial: false,
                                 fillMessage: "DEBUG preview",
                                 marketImageURL: market.imageURL,
-                                marketSlug: market.slug
+                                marketSlug: market.slug,
+                                username: celebrationUsername
                             )
                         }
                         .font(.caption.weight(.semibold))
@@ -763,7 +770,8 @@ struct TradeStubSheet: View {
                 isPartial: fill.isPartial,
                 fillMessage: fill.message,
                 marketImageURL: market.imageURL,
-                marketSlug: market.slug
+                marketSlug: market.slug,
+                username: celebrationUsername
             )
 
             focusedField = nil
