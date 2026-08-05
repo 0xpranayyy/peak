@@ -8,7 +8,11 @@ struct TradeCelebrationSheet: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var appear = false
+    @State private var atmosphere = false
+    @State private var bloom = false
+    @State private var cardIn = false
+    @State private var actionsIn = false
+    @State private var confetti = false
     @State private var cardImage: UIImage?
     @State private var marketIcon: UIImage?
     @State private var avatarImage: UIImage?
@@ -27,38 +31,82 @@ struct TradeCelebrationSheet: View {
         ZStack {
             PeakCanvas.background.ignoresSafeArea()
 
-            PeakAtmosphereMesh(intensity: appear ? 0.85 : 0.35)
-                .opacity(0.9)
+            PeakAtmosphereMesh(intensity: atmosphere ? 1.0 : 0.28)
+                .opacity(atmosphere ? 0.95 : 0.55)
+                .animation(reduceMotion ? nil : PeakMotion.soft, value: atmosphere)
                 .allowsHitTesting(false)
 
-            PeakConfettiBurst(accent: accent, active: appear && !reduceMotion)
+            accentBloom
+                .allowsHitTesting(false)
+
+            PeakConfettiBurst(accent: accent, active: confetti && !reduceMotion)
                 .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 receiptHero
                     .padding(.horizontal, 20)
-                    .padding(.top, 12)
+                    .padding(.top, 10)
                     .frame(maxHeight: .infinity)
 
                 actionColumn
                     .padding(.horizontal, 24)
-                    .padding(.top, 14)
-                    .padding(.bottom, 28)
+                    .padding(.top, 12)
+                    .padding(.bottom, 26)
             }
         }
-        .onAppear {
-            PeakHaptics.success()
-            if reduceMotion {
-                appear = true
-            } else {
-                withAnimation(PeakMotion.appear) { appear = true }
-            }
-        }
+        .onAppear { runEntrance() }
         .task {
             await renderShareCard()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(result.headline) \(result.outcomeLabel). Trade receipt.")
+    }
+
+    // MARK: - Accent bloom
+
+    /// Soft radial wash behind the receipt — presence without clutter.
+    private var accentBloom: some View {
+        GeometryReader { geo in
+            let midY = geo.size.height * 0.38
+            ZStack {
+                Ellipse()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accent.opacity(bloom ? 0.34 : 0),
+                                accent.opacity(bloom ? 0.10 : 0),
+                                Color.clear,
+                            ],
+                            center: .center,
+                            startRadius: 12,
+                            endRadius: min(geo.size.width, geo.size.height) * 0.55
+                        )
+                    )
+                    .frame(width: geo.size.width * 1.15, height: geo.size.height * 0.62)
+                    .position(x: geo.size.width * 0.5, y: midY)
+                    .blur(radius: reduceMotion ? 0 : 28)
+                    .scaleEffect(bloom ? 1.0 : 0.72)
+
+                Ellipse()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                accentDeep.opacity(bloom ? 0.18 : 0),
+                                Color.clear,
+                            ],
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: 160
+                        )
+                    )
+                    .frame(width: geo.size.width * 0.7, height: geo.size.height * 0.36)
+                    .position(x: geo.size.width * 0.5, y: midY)
+                    .blur(radius: reduceMotion ? 0 : 18)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Receipt hero
@@ -93,11 +141,17 @@ struct TradeCelebrationSheet: View {
                     .frame(width: w, height: h)
                 }
             }
-            .shadow(color: Color.black.opacity(0.32), radius: 28, y: 14)
+            .shadow(color: accent.opacity(cardIn ? 0.28 : 0), radius: cardIn ? 36 : 8, y: 10)
+            .shadow(color: Color.black.opacity(cardIn ? 0.38 : 0.12), radius: 24, y: 14)
             .frame(width: geo.size.width, height: geo.size.height)
-            .opacity(appear ? 1 : 0)
-            .offset(y: appear ? 0 : 16)
-            .scaleEffect(appear ? 1 : 0.96)
+            .opacity(cardIn ? 1 : 0)
+            .offset(y: cardIn ? 0 : (reduceMotion ? 0 : 28))
+            .scaleEffect(cardIn ? 1 : (reduceMotion ? 1 : 0.92))
+            .rotation3DEffect(
+                .degrees(cardIn || reduceMotion ? 0 : 6),
+                axis: (x: 1, y: 0, z: 0),
+                perspective: 0.65
+            )
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -157,7 +211,10 @@ struct TradeCelebrationSheet: View {
                 .frame(minHeight: 50)
                 .background(PeakCanvas.elevated, in: PeakLayout.ctaShape)
                 .overlay {
-                    PeakLayout.ctaShape.strokeBorder(PeakCanvas.hairline, lineWidth: 1)
+                    PeakLayout.ctaShape.strokeBorder(
+                        accent.opacity(0.22),
+                        lineWidth: 1
+                    )
                 }
             }
             .peakPressable()
@@ -172,13 +229,48 @@ struct TradeCelebrationSheet: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, 12)
                     .frame(minHeight: PeakLayout.minTap)
             }
             .peakPressable(haptic: false)
         }
-        .opacity(appear ? 1 : 0)
-        .offset(y: appear ? 0 : 16)
+        .opacity(actionsIn ? 1 : 0)
+        .offset(y: actionsIn ? 0 : (reduceMotion ? 0 : 18))
+    }
+
+    // MARK: - Choreography
+
+    private func runEntrance() {
+        PeakHaptics.success()
+
+        if reduceMotion {
+            atmosphere = true
+            bloom = true
+            cardIn = true
+            actionsIn = true
+            confetti = false
+            return
+        }
+
+        withAnimation(PeakMotion.soft) {
+            atmosphere = true
+        }
+        withAnimation(PeakMotion.appear.delay(0.04)) {
+            bloom = true
+        }
+        withAnimation(
+            .spring(response: 0.58, dampingFraction: 0.78).delay(0.10)
+        ) {
+            cardIn = true
+        }
+        withAnimation(PeakMotion.soft.delay(0.36)) {
+            actionsIn = true
+        }
+        // Confetti after the card settles — not competing with the entrance.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            confetti = true
+        }
     }
 
     // MARK: - Share render
@@ -216,15 +308,16 @@ struct PeakConfettiBurst: View {
 
     /// Deterministic flecks — stable across redraws, no RNG in the view body.
     private var particles: [Particle] {
-        (0..<26).map { i in
+        (0..<22).map { i in
             let t = Double(i)
             return Particle(
                 id: i,
-                x: CGFloat(0.08 + ((t * 0.37).truncatingRemainder(dividingBy: 1)) * 0.84),
-                delay: t * 0.02,
-                drift: CGFloat(sin(t * 1.7) * 36),
-                size: CGFloat(4 + (i % 5)),
-                kind: i % 3
+                x: CGFloat(0.10 + ((t * 0.41).truncatingRemainder(dividingBy: 1)) * 0.80),
+                delay: t * 0.018,
+                drift: CGFloat(sin(t * 1.9) * 42),
+                size: CGFloat(3.5 + Double(i % 4) * 1.1),
+                kind: i % 4,
+                spin: CGFloat((i % 2 == 0 ? 1 : -1) * (12 + i % 7))
             )
         }
     }
@@ -234,26 +327,44 @@ struct PeakConfettiBurst: View {
             Canvas { context, size in
                 guard active, let startedAt else { return }
                 let t = timeline.date.timeIntervalSince(startedAt)
-                guard t < 2.0 else { return }
+                guard t < 2.15 else { return }
                 for p in particles {
                     let local = t - p.delay
-                    guard local > 0, local < 1.55 else { continue }
-                    let progress = local / 1.55
-                    let y = size.height * (0.18 + CGFloat(progress) * 0.7)
-                    let x = size.width * p.x + p.drift * CGFloat(progress)
-                    let opacity = Double(1 - progress) * 0.9
+                    guard local > 0, local < 1.65 else { continue }
+                    let progress = local / 1.65
+                    // Ease-out fall with a soft lift at the start.
+                    let lift = CGFloat(sin(min(progress, 0.35) / 0.35 * .pi)) * 18
+                    let y = size.height * (0.22 + CGFloat(progress) * 0.62) - lift
+                    let x = size.width * p.x + p.drift * CGFloat(progress) * (1 - progress * 0.25)
+                    let fade = Double(1 - progress)
+                    let opacity = fade * fade * 0.85
                     let rect = CGRect(
                         x: x - p.size / 2,
                         y: y - p.size / 2,
                         width: p.size,
-                        height: p.kind == 1 ? p.size * 0.45 : p.size
+                        height: p.kind == 1 ? p.size * 0.38 : p.size
                     )
                     var ctx = context
                     ctx.opacity = opacity
-                    ctx.fill(
-                        Path(roundedRect: rect, cornerRadius: p.kind == 2 ? p.size / 2 : 1.5),
-                        with: .color(color(for: p))
-                    )
+                    ctx.translateBy(x: x, y: y)
+                    ctx.rotate(by: .degrees(Double(p.spin) * progress))
+                    ctx.translateBy(x: -x, y: -y)
+
+                    if p.kind == 3 {
+                        // Soft disc — light particle, not a hard fleck.
+                        let glow = CGRect(
+                            x: x - p.size,
+                            y: y - p.size,
+                            width: p.size * 2,
+                            height: p.size * 2
+                        )
+                        ctx.fill(Path(ellipseIn: glow), with: .color(color(for: p).opacity(0.55)))
+                    } else {
+                        ctx.fill(
+                            Path(roundedRect: rect, cornerRadius: p.kind == 2 ? p.size / 2 : 1.2),
+                            with: .color(color(for: p))
+                        )
+                    }
                 }
             }
         }
@@ -272,7 +383,8 @@ struct PeakConfettiBurst: View {
         switch particle.kind {
         case 0: return brand.mid
         case 1: return accent
-        default: return brand.soft
+        case 2: return brand.soft
+        default: return accent.opacity(0.9)
         }
     }
 
@@ -283,5 +395,6 @@ struct PeakConfettiBurst: View {
         let drift: CGFloat
         let size: CGFloat
         let kind: Int
+        let spin: CGFloat
     }
 }
