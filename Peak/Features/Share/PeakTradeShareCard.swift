@@ -141,7 +141,7 @@ struct TradeCelebrationResult: Equatable, Sendable {
 
 // MARK: - Trade receipt share card
 
-/// Peak trade receipt — dark teal postcard, minimal and sharp.
+/// Peak trade receipt — near-black charcoal with multi-accent color (not teal soup).
 ///
 /// Clear market thumbnail + outcome/odds + hero profit + 3-column fill stats.
 /// Ambient blur / topographic wash is pre-baked so `ImageRenderer` stays reliable.
@@ -152,14 +152,17 @@ struct PeakTradeShareCard: View {
     /// Pre-blurred market art for subtle ambient wash only — not the hero tile.
     var blurredBackground: UIImage? = nil
 
-    private var accent: Color { PeakPostcard.teal }
-    private var accentBright: Color { PeakPostcard.tealBright }
-    /// Buy hero = luminous mint; sell hero = Peak teal.
+    /// Buy / profit → vivid mint; sell / proceeds → warm coral.
     private var heroColor: Color {
-        result.side.accentIsBuy ? PeakPostcard.winBright : PeakPostcard.tealBright
+        result.side.accentIsBuy ? PeakPostcard.winBright : PeakPostcard.sellBright
     }
-    private var heroMuted: Color {
-        result.side.accentIsBuy ? PeakPostcard.win : PeakPostcard.teal
+
+    /// YES → emerald; NO → soft rose; other labels → soft sky.
+    private var outcomePillColor: Color {
+        let label = result.outcomeLabel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if label == "yes" || label == "y" { return PeakPostcard.winBright }
+        if label == "no" || label == "n" { return PeakPostcard.noRose }
+        return PeakPostcard.sky
     }
 
     var body: some View {
@@ -177,8 +180,8 @@ struct PeakTradeShareCard: View {
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.20),
-                            accentBright.opacity(0.28),
+                            Color.white.opacity(0.22),
+                            Color.white.opacity(0.10),
                             Color.white.opacity(0.06),
                         ],
                         startPoint: .topLeading,
@@ -195,7 +198,7 @@ struct PeakTradeShareCard: View {
         let w = PeakPostcard.cardWidth
         let h = PeakPostcard.tradeCardHeight
         return ZStack {
-            Color(red: 0.035, green: 0.065, blue: 0.072)
+            PeakPostcard.charcoal
 
             if let blurredBackground {
                 Color.clear
@@ -206,42 +209,48 @@ struct PeakTradeShareCard: View {
                     }
                     .frame(width: w, height: h)
                     .clipped()
-                    .opacity(0.16)
+                    .opacity(0.10)
                     .allowsHitTesting(false)
 
                 LinearGradient(
                     colors: [
-                        Color(red: 0.03, green: 0.065, blue: 0.072).opacity(0.62),
-                        Color(red: 0.03, green: 0.065, blue: 0.072).opacity(0.92),
+                        PeakPostcard.charcoal.opacity(0.72),
+                        PeakPostcard.charcoal.opacity(0.94),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             }
 
-            // Quiet Peak ambience — one bloom, not a rainbow.
+            // Soft multi-accent blooms — mint/coral for the trade side, gold + sky depth.
             RadialGradient(
-                colors: [accentBright.opacity(0.22), Color.clear],
-                center: UnitPoint(x: 0.12, y: 0.04),
+                colors: [heroColor.opacity(0.16), Color.clear],
+                center: UnitPoint(x: 0.14, y: 0.06),
+                startRadius: 4,
+                endRadius: 200
+            )
+            RadialGradient(
+                colors: [PeakPostcard.gold.opacity(0.08), Color.clear],
+                center: UnitPoint(x: 0.88, y: 0.90),
                 startRadius: 4,
                 endRadius: 210
             )
             RadialGradient(
-                colors: [heroMuted.opacity(0.14), Color.clear],
-                center: UnitPoint(x: 0.88, y: 0.92),
-                startRadius: 4,
-                endRadius: 220
+                colors: [PeakPostcard.sky.opacity(0.06), Color.clear],
+                center: UnitPoint(x: 0.70, y: 0.22),
+                startRadius: 2,
+                endRadius: 160
             )
 
             topographicTexture
-                .opacity(0.28)
+                .opacity(0.55)
                 .allowsHitTesting(false)
 
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.04),
+                    Color.black.opacity(0.06),
                     Color.clear,
-                    Color.black.opacity(0.42),
+                    Color.black.opacity(0.46),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -251,10 +260,10 @@ struct PeakTradeShareCard: View {
         .allowsHitTesting(false)
     }
 
-    /// Sparse contour wash — atmosphere only, never competing with type.
+    /// Sparse contour wash — cool gray/white, never teal-on-teal.
     private var topographicTexture: some View {
         Canvas { context, size in
-            let stroke = Color(red: 0.22, green: 0.58, blue: 0.50).opacity(0.11)
+            let stroke = Color(red: 0.78, green: 0.82, blue: 0.88).opacity(0.07)
             let centers: [CGPoint] = [
                 CGPoint(x: size.width * 0.16, y: size.height * 0.18),
                 CGPoint(x: size.width * 0.82, y: size.height * 0.72),
@@ -336,12 +345,12 @@ struct PeakTradeShareCard: View {
             Text(result.isPartial ? "PARTIAL FILL" : "TRADE RECEIPT")
                 .font(.system(size: 9, weight: .semibold))
                 .tracking(1.4)
-                .foregroundStyle(Color.white.opacity(0.48))
+                .foregroundStyle(Color.white.opacity(0.82))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
                 .overlay {
                     Capsule(style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                        .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
                 }
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -370,18 +379,19 @@ struct PeakTradeShareCard: View {
             Text(result.outcomeLabel.uppercased())
                 .font(.system(size: 10, weight: .bold))
                 .tracking(0.9)
-                .foregroundStyle(accentBright)
+                .foregroundStyle(outcomePillColor)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
+                .background(outcomePillColor.opacity(0.12), in: Capsule(style: .continuous))
                 .overlay {
                     Capsule(style: .continuous)
-                        .strokeBorder(accentBright.opacity(0.65), lineWidth: 1)
+                        .strokeBorder(outcomePillColor.opacity(0.72), lineWidth: 1)
                 }
                 .accessibilityLabel(result.outcomeLabel)
 
             Text("\(result.impliedOdds)% implied odds")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.48))
+                .foregroundStyle(Color.white.opacity(0.52))
                 .lineLimit(1)
 
             Spacer(minLength: 0)
@@ -460,7 +470,7 @@ struct PeakTradeShareCard: View {
             Text(label)
                 .font(.system(size: 8.5, weight: .semibold))
                 .tracking(0.9)
-                .foregroundStyle(Color.white.opacity(0.38))
+                .foregroundStyle(Color.white.opacity(0.42))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -519,11 +529,11 @@ struct PeakTradeShareCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.displayName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.92))
+                    .foregroundStyle(Color.white.opacity(0.96))
                     .lineLimit(1)
                 Text(PeakShareDate.receiptStamp(result.tradedAt))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.40))
+                    .foregroundStyle(Color.white.opacity(0.44))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -533,7 +543,7 @@ struct PeakTradeShareCard: View {
 
             Text("View market →")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(accentBright.opacity(0.92))
+                .foregroundStyle(PeakPostcard.sky)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
         }
@@ -547,17 +557,17 @@ struct PeakTradeShareCard: View {
                     .scaledToFill()
             } else {
                 ZStack {
-                    accent.opacity(0.28)
+                    PeakPostcard.gold.opacity(0.22)
                     Text(Self.initials(result.displayName))
                         .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(accentBright)
+                        .foregroundStyle(PeakPostcard.gold)
                 }
             }
         }
         .frame(width: 30, height: 30)
         .clipShape(Circle())
         .overlay {
-            Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+            Circle().strokeBorder(PeakPostcard.gold.opacity(0.55), lineWidth: 1.2)
         }
         .accessibilityHidden(true)
     }

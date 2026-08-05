@@ -206,7 +206,7 @@ final class ShareCardRenderTests: XCTestCase {
     }
 
     /// Run with `-only-testing:PeakTests/ShareCardRenderTests/testExportTradeShareCardPreviews`
-    /// to write Bought/Sold PNGs under `docs/share-previews/`.
+    /// to write Bought/Sold (+ position) PNGs under `docs/share-previews/`.
     func testExportTradeShareCardPreviews() throws {
         let outDir = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -214,12 +214,12 @@ final class ShareCardRenderTests: XCTestCase {
             .appendingPathComponent("docs/share-previews", isDirectory: true)
         try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-        // Synthetic market art so previews exercise the visible tile + ambient blur.
+        // Synthetic market art for the postcard icon tile.
         let swatch = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256)).image { ctx in
             let colors = [
-                UIColor(red: 0.10, green: 0.55, blue: 0.42, alpha: 1),
-                UIColor(red: 0.06, green: 0.22, blue: 0.28, alpha: 1),
-                UIColor(red: 0.18, green: 0.72, blue: 0.48, alpha: 1),
+                UIColor(red: 0.22, green: 0.42, blue: 0.72, alpha: 1),
+                UIColor(red: 0.08, green: 0.09, blue: 0.12, alpha: 1),
+                UIColor(red: 0.92, green: 0.48, blue: 0.36, alpha: 1),
             ]
             for (i, color) in colors.enumerated() {
                 color.setFill()
@@ -235,8 +235,31 @@ final class ShareCardRenderTests: XCTestCase {
         try buyData.write(to: outDir.appendingPathComponent("trade-share-bought.png"))
         try sellData.write(to: outDir.appendingPathComponent("trade-share-sold.png"))
 
+        let position = PortfolioPosition(
+            id: "preview-pos",
+            title: "Strait of Hormuz traffic returns to normal by August 31?",
+            outcome: "Yes",
+            size: 5.56,
+            avgPrice: 0.18,
+            currentPrice: 0.18,
+            currentValue: 1.0,
+            cashPnl: -0.028,
+            percentPnl: -2.8,
+            curPrice: 0.18,
+            eventSlug: nil,
+            conditionId: nil,
+            asset: nil
+        )
+        let posRenderer = ImageRenderer(content: PeakPositionShareCard(position: position))
+        posRenderer.scale = 3
+        posRenderer.isOpaque = true
+        let posImage = try XCTUnwrap(posRenderer.uiImage)
+        let posData = try XCTUnwrap(Self.pngDataFlattened(posImage))
+        try posData.write(to: outDir.appendingPathComponent("position-share.png"))
+
         XCTAssertGreaterThan(buyData.count, 80_000, "bought preview should not be a blank black frame")
         XCTAssertGreaterThan(sellData.count, 80_000, "sold preview should not be a blank black frame")
+        XCTAssertGreaterThan(posData.count, 80_000, "position preview should not be a blank black frame")
     }
 
     /// ImageRenderer sometimes yields a bitmap `pngData()` can't encode; flatten first.

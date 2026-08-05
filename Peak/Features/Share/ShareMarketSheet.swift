@@ -1,67 +1,84 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Shared postcard chrome (Peak-original — not a receipt clone)
+// MARK: - Shared postcard chrome
 
-/// Soft Peak paper postcard chrome — calm ink, teal accent.
-/// Trade fill shares use the trade-receipt card in `PeakTradeShareCard`.
+/// Peak share postcard — dark shell + bright paper. High contrast, calm type,
+/// accent only where it earns it (to-win green, loss red, Peak teal sparingly).
 enum PeakPostcard {
-    static let paper = Color(red: 0.975, green: 0.978, blue: 0.972)
-    static let ink = Color(red: 0.08, green: 0.10, blue: 0.11)
-    static let mute = Color(red: 0.42, green: 0.46, blue: 0.48)
-    static let rule = Color(red: 0.82, green: 0.85, blue: 0.84)
-    static let teal = Color(red: 0.12, green: 0.48, blue: 0.42)
-    static let win = Color(red: 0.10, green: 0.52, blue: 0.38)
-    static let loss = Color(red: 0.72, green: 0.28, blue: 0.32)
-    static let stage = Color(red: 0.06, green: 0.18, blue: 0.17)
+    /// Bright paper — crisp against the dark shell.
+    static let paper = Color(red: 0.995, green: 0.996, blue: 0.993)
+    static let ink = Color(red: 0.06, green: 0.07, blue: 0.08)
+    static let mute = Color(red: 0.46, green: 0.49, blue: 0.51)
+    static let rule = Color(red: 0.88, green: 0.90, blue: 0.89)
+    static let teal = Color(red: 0.14, green: 0.50, blue: 0.44)
+    static let win = Color(red: 0.08, green: 0.58, blue: 0.40)
+    static let loss = Color(red: 0.78, green: 0.26, blue: 0.30)
+    /// Deep Peak shell — richer than flat muddy green.
+    static let stage = Color(red: 0.045, green: 0.12, blue: 0.115)
+    static let stageDeep = Color(red: 0.02, green: 0.055, blue: 0.052)
 
-    /// Brighter teal for the odds bar and sparkline — `teal` is tuned for text
-    /// on paper and reads muddy as a large filled shape.
-    static let tealBright = Color(red: 0.16, green: 0.62, blue: 0.54)
-    /// Luminous mint for buy fills / share-card hero energy — pair with `win`.
-    static let winBright = Color(red: 0.22, green: 0.78, blue: 0.55)
-    /// The trailing outcome. Warm slate rather than red: second place is not a
-    /// loss, and a red bar reads as one.
+    /// Brighter teal for odds bar / sparkline fills.
+    static let tealBright = Color(red: 0.18, green: 0.64, blue: 0.56)
+    /// Luminous mint for buy / profit heroes.
+    static let winBright = Color(red: 0.22, green: 0.82, blue: 0.52)
+    /// Warm coral for sell / proceeds heroes (not a red "error").
+    static let sell = Color(red: 0.88, green: 0.38, blue: 0.32)
+    static let sellBright = Color(red: 1.00, green: 0.52, blue: 0.36)
+    /// Soft sky for trade-receipt CTAs (not teal).
+    static let sky = Color(red: 0.48, green: 0.74, blue: 1.00)
+    /// Soft rose for NO outcome pills on dark receipts.
+    static let noRose = Color(red: 1.00, green: 0.48, blue: 0.55)
+    /// Subtle gold for avatar rings on dark receipts.
+    static let gold = Color(red: 0.92, green: 0.74, blue: 0.42)
+    /// Near-black charcoal stage for the trade receipt (not forest teal).
+    static let charcoal = Color(red: 0.055, green: 0.058, blue: 0.068)
+    /// Trailing outcome on odds bar — warm slate, not loss-red.
     static let slate = Color(red: 0.58, green: 0.62, blue: 0.63)
 
-    /// A card shared to a story sits in a 9:16 frame. The market card is
-    /// taller than it was so the odds bar and sparkline get room.
     static let cardWidth: CGFloat = 390
     static let cardHeight: CGFloat = 560
-    /// The position card carries four numbers and no chart. At the market
-    /// card's height it renders with a third of the paper empty.
-    static let positionCardHeight: CGFloat = 520
+    /// Position card — huge outcome + four numbers, no chart.
+    static let positionCardHeight: CGFloat = 540
     /// Trade receipt — header, market row, hero profit, 3-col stats, payout, footer.
     static let tradeCardHeight: CGFloat = 580
+
+    static let shellCorner: CGFloat = 28
+    static let paperCorner: CGFloat = 20
+    static let shellPadding: CGFloat = 20
+    static let paperPadding: CGFloat = 26
 }
+
+// MARK: - Brand
 
 struct PeakShareBrandHeader: View {
     var light: Bool = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             Image("PeakLogo")
                 .resizable()
                 .scaledToFill()
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: 34, height: 34)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .strokeBorder(
-                            light ? PeakPostcard.rule : Color.white.opacity(0.22),
+                            light ? PeakPostcard.rule : Color.white.opacity(0.28),
                             lineWidth: 1
                         )
                 )
+                .shadow(color: .black.opacity(light ? 0.06 : 0.35), radius: 6, y: 2)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Peak")
-                    .font(.system(size: 18, weight: .bold))
-                    .tracking(-0.3)
+                    .font(.system(size: 19, weight: .bold))
+                    .tracking(-0.35)
                 Text("Markets")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.6)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.4)
                     .textCase(.uppercase)
-                    .foregroundStyle(light ? PeakPostcard.mute : .white.opacity(0.5))
+                    .foregroundStyle(light ? PeakPostcard.mute : Color.white.opacity(0.42))
             }
         }
         .foregroundStyle(light ? PeakPostcard.ink : .white)
@@ -70,14 +87,33 @@ struct PeakShareBrandHeader: View {
     }
 }
 
+/// Compact ink pill — Peak mark + wordmark for paper footers.
+struct PeakShareMarkPill: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Image("PeakLogo")
+                .resizable()
+                .scaledToFill()
+                .frame(width: 14, height: 14)
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+
+            Text("peak")
+                .font(.system(size: 11, weight: .bold))
+                .tracking(0.6)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .foregroundStyle(Color.white.opacity(0.96))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(PeakPostcard.ink, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Peak")
+    }
+}
+
 struct PeakShareBrandFooter: View {
-    /// `nil` renders the wordmark alone, sized to its content.
-    ///
-    /// The card footer previously carried a date, the wordmark *and* a "Open in
-    /// Peak" call to action. Three items in one narrow row meant something
-    /// always wrapped — first the CTA, then the wordmark to "pea / k", then the
-    /// date. The CTA is the one to drop: it cannot be tapped in a static image,
-    /// and the header already brands the card.
+    /// `nil` renders the wordmark alone. Prefer `PeakShareMarkPill` on paper.
     var trailing: String? = "Trade on Peak"
     var light: Bool = false
 
@@ -117,8 +153,8 @@ struct PeakPostcardStatRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label.uppercased())
-                .font(.caption.weight(.semibold))
-                .tracking(1.1)
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(1.35)
                 .foregroundStyle(PeakPostcard.mute)
             Spacer(minLength: 12)
             Text(value)
@@ -130,45 +166,116 @@ struct PeakPostcardStatRow: View {
 }
 
 struct PeakPostcardRule: View {
+    var spacing: CGFloat = 18
+
     var body: some View {
         Rectangle()
             .fill(PeakPostcard.rule)
             .frame(height: 1)
-            .padding(.vertical, 16)
+            .padding(.vertical, spacing)
     }
 }
 
 struct PeakPostcardStage: View {
     var body: some View {
         ZStack {
-            PeakPostcard.stage
-
-            // Soft horizon — Peak depth, not a photo backdrop.
+            // Vertical depth — deep Peak green, not a flat mud block.
             LinearGradient(
                 colors: [
-                    PeakPostcard.teal.opacity(0.30),
+                    Color(red: 0.07, green: 0.18, blue: 0.165),
+                    PeakPostcard.stage,
+                    PeakPostcard.stageDeep,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Soft teal bloom — upper-left brand light.
+            RadialGradient(
+                colors: [
+                    PeakPostcard.tealBright.opacity(0.28),
                     Color.clear,
                 ],
-                startPoint: .topLeading,
-                endPoint: .center
+                center: UnitPoint(x: 0.12, y: 0.08),
+                startRadius: 4,
+                endRadius: 280
             )
 
-            // Warm counter-glow bottom-right, so the frame around the paper is
-            // not a flat block of one colour on the two edges that show most.
+            // Cool counter-glow bottom-right for edge separation.
             RadialGradient(
-                colors: [PeakPostcard.tealBright.opacity(0.24), .clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 320
+                colors: [
+                    Color(red: 0.10, green: 0.32, blue: 0.30).opacity(0.45),
+                    Color.clear,
+                ],
+                center: UnitPoint(x: 0.92, y: 0.88),
+                startRadius: 8,
+                endRadius: 300
             )
 
-            // Vignette to settle the corners.
+            // Soft vignette so paper floats.
             RadialGradient(
-                colors: [.clear, Color.black.opacity(0.30)],
+                colors: [.clear, Color.black.opacity(0.38)],
                 center: .center,
-                startRadius: 160,
-                endRadius: 420
+                startRadius: 140,
+                endRadius: 440
             )
+
+            // Hairline sheen across the top edge of the shell.
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.10),
+                    Color.clear,
+                ],
+                startPoint: .top,
+                endPoint: UnitPoint(x: 0.5, y: 0.18)
+            )
+        }
+    }
+}
+
+/// Bright paper insert with soft lift shadow.
+struct PeakPostcardPaper: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: PeakPostcard.paperCorner, style: .continuous)
+            .fill(PeakPostcard.paper)
+            .overlay {
+                RoundedRectangle(cornerRadius: PeakPostcard.paperCorner, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 10)
+            .shadow(color: .black.opacity(0.10), radius: 4, y: 2)
+    }
+}
+
+/// Shared dark-shell + white-paper chrome for all Peak share cards.
+struct PeakPostcardShell<Content: View>: View {
+    var height: CGFloat
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ZStack {
+            PeakPostcardStage()
+
+            VStack(spacing: 0) {
+                PeakShareBrandHeader()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 16)
+
+                ZStack {
+                    PeakPostcardPaper()
+
+                    content()
+                        .padding(PeakPostcard.paperPadding)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(PeakPostcard.shellPadding)
+        }
+        .frame(width: PeakPostcard.cardWidth, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: PeakPostcard.shellCorner, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: PeakPostcard.shellCorner, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
         }
     }
 }
@@ -186,7 +293,7 @@ struct PeakShareMarketIcon: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(PeakPostcard.teal.opacity(0.10))
+            .fill(PeakPostcard.teal.opacity(0.08))
             .frame(width: size, height: size)
             .overlay {
                 if let image {
@@ -196,9 +303,6 @@ struct PeakShareMarketIcon: View {
                         .frame(width: size, height: size)
                         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
                 } else {
-                    // Fallback when the market has no artwork or it failed to
-                    // load. The Peak mark is a deliberate stand-in, not an
-                    // error state — the card must still look finished.
                     Image("PeakLogo")
                         .resizable()
                         .scaledToFill()
@@ -215,10 +319,6 @@ struct PeakShareMarketIcon: View {
 }
 
 /// Two-outcome odds as a proportional bar.
-///
-/// Replaces a pair of label/value rows. The same two numbers, but the split is
-/// legible at a glance in a feed, which is the only place this card is ever
-/// seen — nobody reads a shared image carefully.
 private struct PeakPostcardOddsBar: View {
     let yes: Double
     let no: Double
@@ -232,13 +332,13 @@ private struct PeakPostcardOddsBar: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(yesLabel.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.0)
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.2)
                     .foregroundStyle(PeakPostcard.mute)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(PeakFormat.percent(yes, digits: 0))
-                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 36, weight: .bold, design: .rounded).monospacedDigit())
                     .foregroundStyle(PeakPostcard.teal)
             }
 
@@ -256,53 +356,45 @@ private struct PeakPostcardOddsBar: View {
                         )
                         .frame(width: usable * yesShare)
                     Capsule()
-                        .fill(PeakPostcard.slate.opacity(0.35))
+                        .fill(PeakPostcard.slate.opacity(0.28))
                 }
             }
-            .frame(height: 12)
+            .frame(height: 11)
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(noLabel.uppercased())
-                    .font(.caption.weight(.semibold))
-                    .tracking(1.0)
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.2)
                     .foregroundStyle(PeakPostcard.mute)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(PeakFormat.percent(no, digits: 0))
                     .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(PeakPostcard.ink.opacity(0.65))
+                    .foregroundStyle(PeakPostcard.ink.opacity(0.62))
             }
         }
     }
 }
 
-struct PeakPostcardPaper: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(PeakPostcard.paper)
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
-    }
-}
-
 enum PeakShareDate {
-    /// Deliberately compact. Odds move, so the time matters, but a full
-    /// "27 Jul 2026 at 11:09 AM" crowds the footer into wrapping.
+    /// Compact stamp for market cards.
     static func stamp(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("d MMM · HH:mm")
         return formatter.string(from: date)
     }
 
-    /// Trade receipt footer — matches the share prototype ("Aug 4 · 8:42 PM").
-    static func receiptStamp(_ date: Date = Date()) -> String {
+    /// Position / trade postcard footer — "Aug 5 at 11:55".
+    static func postcardStamp(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d · h:mm a"
+        formatter.dateFormat = "MMM d 'at' H:mm"
         return formatter.string(from: date)
+    }
+
+    /// Trade receipt footer — matches older prototype ("Aug 4 · 8:42 PM").
+    static func receiptStamp(_ date: Date = Date()) -> String {
+        postcardStamp(date)
     }
 
     /// Ultra-short day stamp for compact chrome.
@@ -329,92 +421,71 @@ struct PeakShareCard: View {
     private var question: String { market?.question ?? event.title }
 
     var body: some View {
-        ZStack {
-            PeakPostcardStage()
+        PeakPostcardShell(height: PeakPostcard.cardHeight) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 14) {
+                    PeakShareMarketIcon(image: icon)
 
-            VStack(spacing: 0) {
-                PeakShareBrandHeader()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 18)
-
-                ZStack {
-                    PeakPostcardPaper()
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Icon leads the row: it is the one element that makes a
-                        // shared card recognisable while scrolling past it.
-                        HStack(alignment: .top, spacing: 14) {
-                            PeakShareMarketIcon(image: icon)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                if let category {
-                                    Text(category.uppercased())
-                                        .font(.caption2.weight(.bold))
-                                        .tracking(1.2)
-                                        .foregroundStyle(PeakPostcard.teal)
-                                }
-                                Text(event.title)
-                                    .font(.system(size: 21, weight: .semibold))
-                                    .foregroundStyle(PeakPostcard.ink)
-                                    .lineLimit(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let category {
+                            Text(category.uppercased())
+                                .font(.system(size: 10, weight: .bold))
+                                .tracking(1.3)
+                                .foregroundStyle(PeakPostcard.teal)
                         }
-
-                        if market != nil, question != event.title {
-                            Text(question)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                                .lineLimit(2)
-                                .padding(.top, 10)
-                        }
-
-                        PeakPostcardRule()
-
-                        PeakPostcardOddsBar(
-                            yes: yes,
-                            no: no,
-                            yesLabel: market?.yesLabel ?? "Yes",
-                            noLabel: market?.noLabel ?? "No"
-                        )
-
-                        if history.count >= 2 {
-                            marketSparkline
-                                .frame(minHeight: 56, maxHeight: .infinity)
-                                .padding(.top, 18)
-                        }
-
-                        // Small when a chart is present (it takes the slack),
-                        // large when there is none (it pushes the footer down).
-                        Spacer(minLength: 12)
-
-                        PeakPostcardRule()
-
-                        PeakPostcardStatRow(
-                            label: "24h volume",
-                            value: PeakFormat.compactCurrency(event.volume24hr),
-                            valueSize: 18
-                        )
-
-                        HStack(alignment: .center, spacing: 12) {
-                            Text(PeakShareDate.stamp())
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            PeakShareBrandFooter(trailing: nil, light: true)
-                        }
-                        .padding(.top, 18)
+                        Text(event.title)
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(PeakPostcard.ink)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(24)
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if market != nil, question != event.title {
+                    Text(question)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(PeakPostcard.mute)
+                        .lineLimit(2)
+                        .padding(.top, 10)
+                }
+
+                PeakPostcardRule()
+
+                PeakPostcardOddsBar(
+                    yes: yes,
+                    no: no,
+                    yesLabel: market?.yesLabel ?? "Yes",
+                    noLabel: market?.noLabel ?? "No"
+                )
+
+                if history.count >= 2 {
+                    marketSparkline
+                        .frame(minHeight: 56, maxHeight: .infinity)
+                        .padding(.top, 18)
+                }
+
+                Spacer(minLength: 12)
+
+                PeakPostcardRule(spacing: 16)
+
+                PeakPostcardStatRow(
+                    label: "24h volume",
+                    value: PeakFormat.compactCurrency(event.volume24hr),
+                    valueSize: 18
+                )
+
+                HStack(alignment: .center, spacing: 12) {
+                    Text(PeakShareDate.postcardStamp())
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(PeakPostcard.mute)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    PeakShareMarkPill()
+                }
+                .padding(.top, 18)
             }
-            .padding(22)
         }
-        .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.cardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 
     private var marketSparkline: some View {
@@ -426,7 +497,6 @@ struct PeakShareCard: View {
         return GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            // Inset vertically so the extremes are not clipped by the stroke.
             let top: CGFloat = 3
             let usable = max(1, h - top * 2)
 
@@ -438,8 +508,6 @@ struct PeakShareCard: View {
             }
 
             ZStack {
-                // Filled area under the line — gives the chart weight at the
-                // small size a share card allows.
                 Path { path in
                     guard let first = points.first, let last = points.last else { return }
                     path.move(to: CGPoint(x: first.x, y: h))
@@ -450,7 +518,7 @@ struct PeakShareCard: View {
                 }
                 .fill(
                     LinearGradient(
-                        colors: [PeakPostcard.tealBright.opacity(0.28), PeakPostcard.tealBright.opacity(0.02)],
+                        colors: [PeakPostcard.tealBright.opacity(0.26), PeakPostcard.tealBright.opacity(0.02)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -470,7 +538,6 @@ struct PeakShareCard: View {
                     style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
                 )
 
-                // Marks where the line ends, so the eye lands on "now".
                 if let last = points.last {
                     Circle()
                         .fill(PeakPostcard.paper)
@@ -496,84 +563,71 @@ struct PeakPositionShareCard: View {
     private var isUp: Bool { position.percentPnl >= 0 }
 
     var body: some View {
-        ZStack {
-            PeakPostcardStage()
+        PeakPostcardShell(height: PeakPostcard.positionCardHeight) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(position.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(PeakPostcard.mute)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 0) {
-                PeakShareBrandHeader()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 18)
+                Text(position.outcome)
+                    .font(.system(size: 58, weight: .bold))
+                    .tracking(-1.2)
+                    .foregroundStyle(PeakPostcard.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.55)
+                    .padding(.top, 10)
 
-                ZStack {
-                    PeakPostcardPaper()
+                PeakPostcardRule()
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(position.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(PeakPostcard.mute)
-                            .lineLimit(2)
+                PeakPostcardStatRow(
+                    label: "Bought",
+                    value: PeakFormat.usd(boughtUSD),
+                    valueSize: 22
+                )
+                .padding(.bottom, 16)
 
-                        Text(position.outcome)
-                            .font(.system(size: 26, weight: .bold))
-                            .foregroundStyle(PeakPostcard.ink)
-                            .lineLimit(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 8)
+                PeakPostcardStatRow(
+                    label: "Chance",
+                    value: PeakFormat.percent(chance, digits: 0),
+                    valueSize: 22
+                )
 
-                        PeakPostcardRule()
+                PeakPostcardRule()
 
-                        PeakPostcardStatRow(
-                            label: "Bought",
-                            value: PeakFormat.usd(boughtUSD),
-                            valueSize: 22
-                        )
-                        .padding(.bottom, 14)
+                PeakPostcardStatRow(
+                    label: "To win",
+                    value: PeakFormat.usd(toWinUSD),
+                    valueColor: PeakPostcard.win,
+                    valueSize: 36
+                )
 
-                        PeakPostcardStatRow(
-                            label: "Chance",
-                            value: PeakFormat.percent(chance, digits: 0),
-                            valueSize: 22
-                        )
-
-                        PeakPostcardRule()
-
-                        PeakPostcardStatRow(
-                            label: "To win",
-                            value: PeakFormat.usd(toWinUSD),
-                            valueColor: PeakPostcard.win,
-                            valueSize: 34
-                        )
-
-                        HStack {
-                            Text(isUp ? "Up \(String(format: "%.1f%%", position.percentPnl))" : "Down \(String(format: "%.1f%%", abs(position.percentPnl)))")
-                                .font(.subheadline.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(isUp ? PeakPostcard.win : PeakPostcard.loss)
-                            Spacer()
-                            Text("Now \(PeakFormat.cents(position.currentPrice))")
-                                .font(.caption.monospacedDigit().weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                        }
-                        .padding(.top, 12)
-
-                        Spacer(minLength: 16)
-
-                        HStack(alignment: .center, spacing: 12) {
-                            Text(PeakShareDate.stamp())
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(PeakPostcard.mute)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            PeakShareBrandFooter(trailing: nil, light: true)
-                        }
-                    }
-                    .padding(24)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(isUp
+                         ? "Up \(String(format: "%.1f%%", position.percentPnl))"
+                         : "Down \(String(format: "%.1f%%", abs(position.percentPnl)))")
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isUp ? PeakPostcard.win : PeakPostcard.loss)
+                    Spacer()
+                    Text("Now \(PeakFormat.cents(position.currentPrice))")
+                        .font(.system(size: 13, weight: .medium).monospacedDigit())
+                        .foregroundStyle(PeakPostcard.mute)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 14)
+
+                Spacer(minLength: 18)
+
+                HStack(alignment: .center, spacing: 12) {
+                    Text(PeakShareDate.postcardStamp())
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(PeakPostcard.mute)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    PeakShareMarkPill()
+                }
             }
-            .padding(22)
         }
-        .frame(width: PeakPostcard.cardWidth, height: PeakPostcard.positionCardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 }
 
@@ -606,8 +660,6 @@ enum PeakShareCardRenderer {
     static func loadIcon(for event: PeakEvent, market: Market?) async -> UIImage? {
         guard let url = market?.imageURL ?? event.imageURL else { return nil }
         var request = URLRequest(url: url)
-        // Browsing the list already populated the shared cache in the common
-        // case, so this is usually free.
         request.cachePolicy = .returnCacheDataElseLoad
         request.timeoutInterval = 6
         guard let (data, response) = try? await URLSession.shared.data(for: request) else { return nil }
