@@ -20,7 +20,14 @@ import {
 import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolvePolymarketAccount } from "./polymarketAccount.mjs";
-import { loadSessions, getSession, setSession, sessions, sessionStorePath } from "./sessionStore.mjs";
+import {
+  loadSessions,
+  getSession,
+  setSession,
+  deleteSession,
+  sessions,
+  sessionStorePath,
+} from "./sessionStore.mjs";
 import {
   deployOrLinkDepositWallet,
   createUserClobClient,
@@ -79,6 +86,9 @@ const {
   RATE_LIMIT_WINDOW_MS = "60000",
   RATE_LIMIT_MAX = "120",
   PEAK_EDGE_SECRET,
+  PEAK_SIGNING_SECRET,
+  SECRET_RATE_LIMIT_WINDOW_MS = "900000",
+  SECRET_RATE_LIMIT_MAX = "10",
 } = process.env;
 
 const HOST = "https://clob.polymarket.com";
@@ -95,6 +105,16 @@ const relayerConfigured = Boolean(RELAYER_API_KEY && RELAYER_API_KEY_ADDRESS);
 
 if (!legacyEnabled && !privyEnabled) {
   console.error("Configure either legacy APP_TOKEN/PRIVATE_KEY/FUNDER_ADDRESS or PRIVY_APP_ID/PRIVY_APP_SECRET");
+  process.exit(1);
+}
+
+// Refuse to boot without wrapping material. Failing here is far better than
+// failing at a user's first wallet import, or silently wrapping with a default.
+if (!String(PEAK_SIGNING_SECRET || PRIVY_APP_SECRET || APP_TOKEN || "").trim()) {
+  console.error(
+    "Refusing to start: no PEAK_SIGNING_SECRET / PRIVY_APP_SECRET / APP_TOKEN set. " +
+      "Imported wallet keys would otherwise be wrapped with a predictable value."
+  );
   process.exit(1);
 }
 
@@ -210,6 +230,21 @@ app.use(
   })
 );
 
+// Endpoints that accept a raw private key or seed phrase get their own, much
+// tighter budget. The global limiter above is sized for trading traffic; a key
+// import is a once-in-a-while action, so anything approaching that rate is
+// either a mistake or someone probing. Applied before the routes are declared.
+const secretWindowMs = Math.max(1000, Number(SECRET_RATE_LIMIT_WINDOW_MS) || 15 * 60_000);
+const secretMaxReqs = Math.max(1, Number(SECRET_RATE_LIMIT_MAX) || 10);
+const secretLimiter = rateLimit({
+  windowMs: secretWindowMs,
+  max: secretMaxReqs,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many wallet import attempts. Wait a few minutes and try again." },
+});
+app.use(["/auth/import-wallet", "/auth/resolve-secret", "/auth/sign-siwe"], secretLimiter);
+
 // Request logging — method/path/status/duration only (never Authorization or bodies)
 app.use((req, res, next) => {
   const start = Date.now();
@@ -250,11 +285,39 @@ function privySignOpts(req) {
  * Peak already receives the key at import; local signing avoids Privy user_jwts
  * (SIWE access tokens are rejected by /v1/wallets/authenticate with Invalid JWT).
  */
+/**
+ * Key material for wrapping imported signing keys.
+ *
+ * There is deliberately NO constant fallback. A literal default would mean every
+ * user's key is wrapped with a value published in this repo, so anyone who got
+ * hold of sessions.json could unwrap all of them offline. Prefer a dedicated
+ * PEAK_SIGNING_SECRET so rotating Privy credentials does not orphan every
+ * imported wallet.
+ */
+function signingKeyCandidates() {
+  const seen = new Set();
+  const out = [];
+  for (const raw of [PEAK_SIGNING_SECRET, PRIVY_APP_SECRET, APP_TOKEN]) {
+    const material = String(raw || "").trim();
+    if (!material || seen.has(material)) continue;
+    seen.add(material);
+    out.push(crypto.createHash("sha256").update(`peak-import-signer:${material}`).digest());
+  }
+  if (!out.length) {
+    throw new Error(
+      "No signing-key secret configured. Set PEAK_SIGNING_SECRET (or PRIVY_APP_SECRET / APP_TOKEN)."
+    );
+  }
+  return out;
+}
+
+/** Wrapping always uses the preferred (first) secret. */
+function signingKeyMaterial() {
+  return signingKeyCandidates()[0];
+}
+
 function encryptSigningKey(privateKeyHex) {
-  const secret = crypto
-    .createHash("sha256")
-    .update(`peak-import-signer:${PRIVY_APP_SECRET || APP_TOKEN || "peak"}`)
-    .digest();
+  const secret = signingKeyMaterial();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", secret, iv);
   const enc = Buffer.concat([cipher.update(String(privateKeyHex), "utf8"), cipher.final()]);
@@ -269,13 +332,21 @@ function decryptSigningKey(blob) {
   const iv = raw.subarray(0, 12);
   const tag = raw.subarray(12, 28);
   const data = raw.subarray(28);
-  const secret = crypto
-    .createHash("sha256")
-    .update(`peak-import-signer:${PRIVY_APP_SECRET || APP_TOKEN || "peak"}`)
-    .digest();
-  const decipher = crypto.createDecipheriv("aes-256-gcm", secret, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+  // Try every configured secret, newest first. Without this, adding
+  // PEAK_SIGNING_SECRET to an existing deployment would make every blob written
+  // under PRIVY_APP_SECRET undecryptable and force all users to re-import.
+  // GCM authentication means a wrong key fails cleanly rather than returning junk.
+  let lastError;
+  for (const secret of signingKeyCandidates()) {
+    try {
+      const decipher = crypto.createDecipheriv("aes-256-gcm", secret, iv);
+      decipher.setAuthTag(tag);
+      return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError ?? new Error("Invalid encSigningKey");
 }
 
 /** Resolve a Privy-backed viem wallet client for the session. */
@@ -291,7 +362,8 @@ async function walletClientForSession(session, { userJwt } = {}) {
       err.code = "import_wallet_required";
       err.httpStatus = 400;
       err.safeMessage =
-        "Import the private key or seed for this Polymarket wallet to enable trading.";
+        "Your trading session ended on Peak's servers. Your funds and positions are " +
+        "untouched — re-import this wallet under Account to keep trading.";
       throw err;
     }
   }
@@ -302,7 +374,7 @@ async function walletClientForSession(session, { userJwt } = {}) {
     err.code = "import_wallet_required";
     err.httpStatus = 400;
     err.safeMessage =
-      "Import the private key or seed for this Polymarket wallet to enable trading.";
+      "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.";
     err.publicFields = {
       needsDeploy: false,
       syncReady: Boolean(session.accountWallet),
@@ -340,7 +412,7 @@ async function walletClientForSession(session, { userJwt } = {}) {
           err.code = "import_wallet_required";
           err.httpStatus = 400;
           err.safeMessage =
-            "Import the private key or seed for this Polymarket wallet to enable trading.";
+            "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.";
           err.publicFields = {
             needsDeploy: false,
             syncReady: Boolean(session.accountWallet),
@@ -366,7 +438,7 @@ async function walletClientForSession(session, { userJwt } = {}) {
         err.code = "import_wallet_required";
         err.httpStatus = 400;
         err.safeMessage =
-          "Import the private key or seed for this Polymarket wallet to enable trading.";
+          "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.";
         err.publicFields = {
           needsDeploy: false,
           syncReady: Boolean(session.accountWallet),
@@ -418,7 +490,8 @@ async function walletClientForSession(session, { userJwt } = {}) {
       err.code = "import_wallet_required";
       err.httpStatus = 400;
       err.safeMessage =
-        "Import the private key or seed for this Polymarket wallet to enable trading.";
+        "Your trading session ended on Peak's servers. Your funds and positions are " +
+        "untouched — re-import this wallet under Account to keep trading.";
       err.publicFields = {
         needsDeploy: false,
         syncReady: Boolean(session.accountWallet),
@@ -1250,6 +1323,24 @@ app.post("/auth/session", wrap(async (req, res) => {
 /**
  * Re-resolve account wallet / type without changing path.
  */
+/**
+ * Forget this user's server-side trading session, including the encrypted
+ * signing key from an imported wallet.
+ *
+ * The privacy policy promises deletion on request; this makes that operational
+ * rather than a manual support task. Funds are untouched — only Peak's ability
+ * to sign on the user's behalf goes away, and re-importing restores it.
+ */
+app.post("/auth/forget-wallet", wrap(async (req, res) => {
+  if (req.auth.mode !== "privy") {
+    return res.status(400).json({ error: "Sign in first.", code: "not_authenticated" });
+  }
+  const existed = Boolean(getSession(req.auth.userId));
+  deleteSession(req.auth.userId);
+  console.log(`auth/forget-wallet: cleared session (existed=${existed})`);
+  res.json({ ok: true, cleared: existed });
+}));
+
 app.post("/trading/resolve", wrap(async (req, res) => {
   if (req.auth.mode !== "privy") {
     return res.status(400).json({ error: "Privy session required" });
@@ -1500,10 +1591,10 @@ app.post("/trading/setup", wrap(async (req, res) => {
             code: "import_wallet_required",
             error:
               e.safeMessage ||
-              "Import the private key or seed for this Polymarket wallet to enable trading.",
+              "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.",
             message:
               e.safeMessage ||
-              "Import the private key or seed for this Polymarket wallet to enable trading.",
+              "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.",
             status: "linked_needs_import",
           });
         }

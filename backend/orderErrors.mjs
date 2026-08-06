@@ -20,7 +20,7 @@ export function mapOrderError(raw, { balanceUSD = null, code: hintCode = null } 
     lower.includes("import your wallet")
   ) {
     return {
-      error: "Import the private key or seed for this Polymarket wallet to enable trading.",
+      error: "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.",
       code: "import_wallet_required",
       status: 400,
     };
@@ -149,7 +149,7 @@ export function isImportWalletError(err) {
 export function mapCashError(err) {
   if (isImportWalletError(err)) {
     return {
-      cashError: "Import the private key or seed for this Polymarket wallet to enable trading.",
+      cashError: "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading.",
       cashErrorCode: "import_wallet_required",
       needsImport: true,
     };

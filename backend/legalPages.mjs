@@ -2,16 +2,16 @@
  * Redirects only. The actual Privacy Policy, Terms of Use, and Support pages
  * live on Cloudflare Pages (static HTML) — see website/legal/.
  *
- * Temporary origin: peak-website-88n.pages.dev while apex peakapp.site SSL
- * returns Cloudflare 525. After the custom domain SSL is fixed in Cloudflare,
- * set WEBSITE_ORIGIN back to https://peakapp.site (and match Info.plist).
+ * Origin is the apex domain. (The earlier peak-website-88n.pages.dev workaround
+ * for a Cloudflare 525 on peakapp.site is no longer needed — the apex serves
+ * both the legal pages and the AASA file correctly.)
  *
  * Why redirects (not inlined HTML): a copy fix must not require redeploying
  * the same backend that places live orders. Kept so anything that cached
  * api.peakapp.site/legal/* — including Apple review bookmarks — still resolves.
  */
 
-const WEBSITE_ORIGIN = "https://peak-website-88n.pages.dev";
+const WEBSITE_ORIGIN = "https://peakapp.site";
 
 /**
  * @param {import("express").Express} app

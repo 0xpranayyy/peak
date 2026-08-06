@@ -47,10 +47,19 @@ const PERSIST_KEYS = [
   "needsDeploy",
   "imported",
   "walletId",
-  // AES-GCM blob of the imported ethereum key (server already received it at import).
-  // Used for local viem signing — Privy user_jwts exchange rejects SIWE access tokens.
-  "encSigningKey",
 ];
+
+// Deliberately NOT persisted: `encSigningKey`, the wrapped signing key for an
+// imported wallet.
+//
+// It stays in the in-memory map for the life of the process and is never written
+// to disk, so sessions.json holds nothing worth stealing — no ciphertext to carry
+// off in a stolen volume, backup, or snapshot. The cost is that a restart or
+// deploy drops it and those users re-import; `walletClientForSession` already
+// handles `imported && !encSigningKey` by asking for exactly that.
+//
+// If you ever add it back here, you are re-introducing an at-rest copy of every
+// user's key. Don't do it for convenience.
 
 function toPersistable(session) {
   const out = {};
@@ -91,7 +100,14 @@ function persist() {
     for (const [k, v] of memory.entries()) {
       obj[k] = toPersistable(v);
     }
-    fs.writeFileSync(STORE_PATH, JSON.stringify(obj, null, 2));
+    // 0600: this file holds wrapped signing keys. Default umask would leave it
+    // world-readable to anything else running on the host.
+    fs.writeFileSync(STORE_PATH, JSON.stringify(obj, null, 2), { mode: 0o600 });
+    try {
+      fs.chmodSync(STORE_PATH, 0o600);
+    } catch {
+      // Some mounted volumes reject chmod — the write above is still correct.
+    }
   } catch (e) {
     console.warn("Session store save failed:", e?.message ?? e);
   }

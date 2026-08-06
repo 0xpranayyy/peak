@@ -46,14 +46,14 @@ Legal / support: API routes **301-redirect** to Cloudflare Pages (`website/legal
 
 ```bash
 curl -sI http://127.0.0.1:8080/legal/privacy   # → 301 to Pages
-curl -sL -o /dev/null -w '%{http_code}\n' https://peak-website-88n.pages.dev/legal/privacy/
+curl -sL -o /dev/null -w '%{http_code}\n' https://peakapp.site/legal/privacy/
 ```
 
 | After Pages is live | Info.plist key |
 | --- | --- |
-| `https://peak-website-88n.pages.dev/legal/privacy` (temp while apex SSL broken) | `PEAK_PRIVACY_URL` |
-| `https://peak-website-88n.pages.dev/legal/terms` | `PEAK_TERMS_URL` |
-| `https://peak-website-88n.pages.dev/legal/support` | `PEAK_SUPPORT_URL` |
+| `https://peakapp.site/legal/privacy` | `PEAK_PRIVACY_URL` |
+| `https://peakapp.site/legal/terms` | `PEAK_TERMS_URL` |
+| `https://peakapp.site/legal/support` | `PEAK_SUPPORT_URL` |
 
 ### Device smoke in 5 steps
 
