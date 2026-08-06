@@ -84,10 +84,23 @@ export function loadSessions() {
       return;
     }
     const raw = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
+    let legacyWrappedKeys = 0;
     for (const [k, v] of Object.entries(raw)) {
+      if (v && v.encSigningKey) legacyWrappedKeys += 1;
       memory.set(k, v);
     }
     console.log(`Loaded ${memory.size} trading session(s) from ${STORE_PATH}`);
+
+    // Files written before signing keys became memory-only still carry wrapped
+    // keys on disk. Not writing new ones is not enough — the old blobs are the
+    // exact at-rest copy this change exists to remove. Keep them in memory so
+    // live sessions survive this boot, and rewrite the file without them now.
+    if (legacyWrappedKeys > 0) {
+      persist();
+      console.log(
+        `Scrubbed ${legacyWrappedKeys} wrapped signing key(s) from ${STORE_PATH}`
+      );
+    }
   } catch (e) {
     console.warn("Session store load failed:", e?.message ?? e);
   }
