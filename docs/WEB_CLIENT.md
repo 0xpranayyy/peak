@@ -46,14 +46,34 @@ Out of scope for day one: native web parity with every iOS polish, admin tools, 
 
 Prefer same brand domain; apex for landing, `app` for the client, `api` already live.
 
-| Host | Role | Hosting (planned) |
+| Host | Role | Hosting |
 | --- | --- | --- |
-| `peakapp.site` | Landing + legal (`/legal/*`) | Cloudflare Pages (`website/`) |
+| `peakapp.site` | Landing + legal (`/legal/*`) + AASA + invites | Cloudflare Pages (`website/` → `peak-website`) |
 | `www.peakapp.site` | Redirect → apex | Cloudflare |
-| `app.peakapp.site` | Web client (SPA) | Pages / static + CDN (TBD) |
+| `app.peakapp.site` | Web trading client (Next.js) | Cloudflare Pages (`web/` → `peak-web`) |
 | `api.peakapp.site` | Existing trading / auth API | Railway (unchanged) |
 
-**Apex is live.** `https://peakapp.site` serves marketing, `/legal/*`, and the AASA file; `WEBSITE_ORIGIN` and the plist URLs already point there. A browser client will additionally need `CORS_ORIGINS` set on the API — it is `off` today, which correctly rejects all cross-origin browser calls.
+**Apex is live and stays on `peak-website`.** Do not attach `peakapp.site` to
+`peak-web` — that would replace the marketing homepage. The web client lives
+only on `app.peakapp.site`. Browser→API CORS can stay off; the Next app proxies
+via `/api/peak/*`. If you ever call the API from the browser directly, set
+`CORS_ORIGINS=https://app.peakapp.site`.
+
+## Deploy (web beside landing)
+
+1. `npx wrangler pages deploy website --project-name peak-website` — refresh
+   landing CTAs (“Launch app” → `https://app.peakapp.site`).
+2. `cd web && npm run pages:deploy` — create/update `peak-web` (build with
+   `NEXT_PUBLIC_PRIVY_APP_ID` in the environment).
+3. Pages → `peak-web` → add compatibility flag **`nodejs_compat`** (Production +
+   Preview).
+4. Pages → `peak-web` → Custom domains → **`app.peakapp.site`**.
+5. Privy Dashboard → Allowed origins:
+   `https://app.peakapp.site`, `http://localhost:3000`, and the Pages preview
+   host.
+
+Step-by-step + verify table: [WEB_DEPLOY_PROMPT.md](WEB_DEPLOY_PROMPT.md).
+
 
 ## Architecture
 
@@ -104,15 +124,17 @@ Do **not** put Builder keys, Relayer keys, `PRIVY_APP_SECRET`, or `PEAK_PRIVY_AU
 
 ### 1 — Browse (read-only web) — **done in `web/`**
 
-Live at the Next app under `web/`: markets list, event detail with SSR metadata,
-search, invite route, legal + AASA. Reads Worker only (`edge.peakapp.site`).
+Next app under `web/`: markets list, event detail with SSR metadata, search,
+invite route, legal mirrors. Reads Worker (`edge.peakapp.site`). Production host
+is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 
 ### 2 — Auth — **in progress (`web/`)**
 
-1. Privy Dashboard: add web origins (`https://peakapp.site`, Pages preview,
+1. Privy Dashboard: add web origins (`https://app.peakapp.site`, Pages preview,
    `http://localhost:3000`).
-2. Optional: set host `CORS_ORIGINS` for direct browser→API. The web app
-   proxies via `/api/peak/*` so CORS is not required for the Next client.
+2. Optional: set host `CORS_ORIGINS=https://app.peakapp.site` for direct
+   browser→API. The web app proxies via `/api/peak/*` so CORS is not required
+   for the Next client.
 3. Email / Google / Apple / wallet SIWE via Privy Web; API verifies Privy JWT.
 
 ### 3 — Trade — **in progress (`web/`)**
@@ -124,7 +146,8 @@ search, invite route, legal + AASA. Reads Worker only (`edge.peakapp.site`).
 
 ### 4 — Polish
 
-1. Mobile web layout; deep links from landing → app subdomain.
+1. Landing “Launch app” → `https://app.peakapp.site`; iOS share/QR market links
+   use the same base.
 2. Align error copy with iOS (“backend not configured”, geo messages).
 3. Monitoring (optional Sentry browser); document deploy next to RELEASE.md cadence.
 

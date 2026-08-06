@@ -7,7 +7,7 @@ export const runtime = "edge";
 // `next build` from needing live market data just to produce a bundle.
 export const dynamic = "force-dynamic";
 
-const SITE = "https://peakapp.site";
+const SITE = "https://app.peakapp.site";
 
 /**
  * Sitemap of live markets. This is the mechanism that turns server rendering

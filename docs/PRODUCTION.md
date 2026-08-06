@@ -78,9 +78,12 @@ Privy Dashboard:
 | --- | --- | --- |
 | Local / iOS Debug | unset / empty | **CORS off** — correct default; native apps send no `Origin` |
 | Production (iOS only) | unset / empty | Same — keep off |
+| Production + Peak web client | `https://app.peakapp.site` | Optional — Next proxies via `/api/peak/*`, so leave empty unless something calls the API from the browser directly |
 | Production + browser admin | `https://admin.example.com` | Allow-list only; `*` and non-local `http://` rejected |
 
-Recommended when HTTPS API is live and you need a browser tool: `CORS_ORIGINS=https://your-admin.example.com` (comma-separate multiple). For local browser tooling only: `http://localhost:3000` is allowed; prefer leaving empty otherwise.
+Recommended when a browser hits the API without a same-origin proxy:
+`CORS_ORIGINS=https://app.peakapp.site` (comma-separate multiple). For local
+browser tooling: `http://localhost:3000`. Prefer leaving empty for iOS-only.
 
 ## Device smoke in 5 steps (Debug, local API)
 

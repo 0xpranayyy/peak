@@ -1082,7 +1082,7 @@ extension PeakReceiptData {
         self.timestamp = Date()
         self.referenceLabel = "SHARES"
         self.referenceValue = TradeCelebrationResult.formatShares(position.size)
-        self.qrPayload = position.eventSlug.map { "https://polymarket.com/event/\($0)" }
+        self.qrPayload = position.eventSlug.map { "https://app.peakapp.site/event/\($0)" }
         self.isPositiveOutcome = positive
         self.isExit = false
         self.exitProfitable = nil

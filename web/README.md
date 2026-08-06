@@ -1,20 +1,22 @@
 # Peak web
 
-Landing, market browsing, and Privy-authenticated trading on one Next.js app
-(Cloudflare Pages). Same Peak backend as iOS (`api.peakapp.site`), same public
-edge Worker for Gamma/CLOB/geo (`edge.peakapp.site`).
+Browse markets and trade via Privy on **`app.peakapp.site`** (Next.js →
+Cloudflare Pages project `peak-web`). Marketing landing stays on the apex
+(`peakapp.site` → Pages project `peak-website` / `website/`). Same Peak backend
+as iOS (`api.peakapp.site`), same public edge Worker for Gamma/CLOB/geo
+(`edge.peakapp.site`).
 
 | Route | What it is |
 | --- | --- |
-| `/` | Landing — pitch, live trending strip, CTAs |
+| `/` | Web client home — pitch + trending markets |
 | `/markets` | Full feed, with sort and category filters |
 | `/event/[slug]` | Market detail + trade ticket (SSR metadata) |
 | `/portfolio` | Cash, deposit wallet, positions (auth) |
 | `/search` | Search (`noindex`) |
-| `/invite/[code]` | Referral landing |
-| `/legal/*` | Privacy, Terms, Support (static) |
+| `/invite/[code]` | Referral landing (apex `/invite/*` remains canonical for Universal Links) |
+| `/legal/*` | Privacy, Terms, Support mirrors (canonical copy on apex) |
 | `/api/peak/*` | Same-origin proxy → Peak trading API |
-| `/.well-known/apple-app-site-association` | Universal links |
+| `/.well-known/apple-app-site-association` | Mirror only — live Universal Links stay on apex |
 
 ## Auth and trading
 
@@ -29,9 +31,8 @@ edge Worker for Gamma/CLOB/geo (`edge.peakapp.site`).
   `blocked` or `close_only`.
 
 Authenticated API calls go through `/api/peak/*` so local and Pages deploys
-work without setting Railway `CORS_ORIGINS`. You can still allow-list
-`https://peakapp.site` / `http://localhost:3000` on the API later if you want
-direct browser calls.
+work without setting Railway `CORS_ORIGINS`. Optional allow-list later:
+`https://app.peakapp.site` / `http://localhost:3000`.
 
 ## Develop
 
@@ -56,37 +57,40 @@ Optional env:
 
 Without `NEXT_PUBLIC_PRIVY_APP_ID`, browse still works; Sign in explains the missing env.
 
-## Deploy — verify before switching the domain
+## Deploy
 
-Do **not** point `peakapp.site` at this on the first deploy. Ship it to its own
-project, check the three items below on the `pages.dev` URL, then move the domain.
+Full runbook: [`docs/WEB_CLIENT.md`](../docs/WEB_CLIENT.md) § Deploy.
 
 ```bash
+# From web/, with NEXT_PUBLIC_* set in the shell or .env.local (build-time).
 npm run pages:deploy          # creates/updates the `peak-web` Pages project
 ```
 
-Then, on the deployment's `*.pages.dev` URL:
+Then:
+
+1. Cloudflare Pages → `peak-web` → Settings → Compatibility flags → add
+   **`nodejs_compat`** (Production + Preview). Without it routes 500.
+2. Custom domains → add **`app.peakapp.site`** (do **not** move apex off
+   `peak-website`).
+3. Privy Dashboard → Allowed origins → add `https://app.peakapp.site`,
+   `http://localhost:3000`, and the `*.pages.dev` preview host.
+
+Smoke on the deployment URL (then on `https://app.peakapp.site`):
 
 ```bash
-curl -sI  https://<deployment>.pages.dev/.well-known/apple-app-site-association | grep -i content-type
-curl -so /dev/null -w '%{http_code}\n' https://<deployment>.pages.dev/legal/privacy
-curl -so /dev/null -w '%{http_code}\n' https://<deployment>.pages.dev/invite/TESTCODE
+curl -so /dev/null -w '%{http_code}\n' https://app.peakapp.site/markets
+curl -so /dev/null -w '%{http_code}\n' https://peakapp.site/   # still marketing
+curl -sI  https://peakapp.site/.well-known/apple-app-site-association | grep -i content-type
 ```
 
-Expect `application/json`, `200`, `200`. Only then add the custom domain
-`peakapp.site` to `peak-web` in the Cloudflare dashboard.
+**Rollback:** leave `peak-website` on apex. Remove `app.peakapp.site` from
+`peak-web` or redeploy a known-good Pages deployment.
 
-Also add the Pages origin (and `https://peakapp.site` once cut over) in Privy
-Dashboard → allowed origins.
+## Three things that must not break (apex)
 
-**Rollback:** the previous site is untouched in `website/` and still deployable
-as the `peak-website` project.
-
-## Three things that must not break
-
-1. **`/.well-known/apple-app-site-association`** — universal links.
-2. **`/legal/*`** — App Store review points at these URLs.
-3. **`/invite/[code]`** — Next route; do not re-add `web/functions/`.
+1. **`/.well-known/apple-app-site-association`** on `peakapp.site` — Universal Links.
+2. **`/legal/*`** on `peakapp.site` — App Store review URLs.
+3. **`/invite/[code]`** on `peakapp.site` — Pages Function in `website/functions/`.
 
 ## Gamma quirks
 

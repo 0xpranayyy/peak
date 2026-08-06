@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
       // worth crawling.
       disallow: "/search",
     },
-    sitemap: "https://peakapp.site/sitemap.xml",
+    sitemap: "https://app.peakapp.site/sitemap.xml",
   };
 }

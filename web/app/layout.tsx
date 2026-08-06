@@ -4,7 +4,8 @@ import { Providers } from "./providers";
 import { AuthButton, GeoBanner } from "@/components/AuthButton";
 import "./globals.css";
 
-const SITE = "https://peakapp.site";
+const SITE = "https://app.peakapp.site";
+const LANDING = "https://peakapp.site";
 
 const sans = DM_Sans({
   subsets: ["latin"],
@@ -50,7 +51,7 @@ export default function RootLayout({
           <GeoBanner />
           <header className="masthead">
             <div className="shell masthead__row">
-              <a href="/" className="wordmark" aria-label="Peak home">
+              <a href="/" className="wordmark" aria-label="Peak markets home">
                 <PeakMark />
                 PEAK
               </a>
@@ -58,12 +59,8 @@ export default function RootLayout({
                 <a href="/markets">Markets</a>
                 <a href="/portfolio">Portfolio</a>
                 <AuthButton />
-                <a
-                  className="cta cta--ghost"
-                  href="https://apps.apple.com/app/id0000000000"
-                  rel="noopener"
-                >
-                  iOS app
+                <a className="cta cta--ghost" href={LANDING} rel="noopener">
+                  About Peak
                 </a>
               </nav>
             </div>
@@ -77,9 +74,9 @@ export default function RootLayout({
                 Peak is an independent client. Not affiliated with Polymarket, Inc.
               </span>
               <nav style={{ display: "flex", gap: 18 }}>
-                <a href="/legal/privacy">Privacy</a>
-                <a href="/legal/terms">Terms</a>
-                <a href="/legal/support">Support</a>
+                <a href={`${LANDING}/legal/privacy`}>Privacy</a>
+                <a href={`${LANDING}/legal/terms`}>Terms</a>
+                <a href={`${LANDING}/legal/support`}>Support</a>
               </nav>
             </div>
           </footer>

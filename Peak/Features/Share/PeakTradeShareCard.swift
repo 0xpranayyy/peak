@@ -107,7 +107,7 @@ struct TradeCelebrationResult: Equatable, Sendable {
         guard let slug = marketSlug?.trimmingCharacters(in: .whitespacesAndNewlines), !slug.isEmpty else {
             return nil
         }
-        return URL(string: "https://polymarket.com/event/\(slug)")
+        return URL(string: "https://app.peakapp.site/event/\(slug)")
     }
 
     /// Plain display name for the receipt footer (no forced `@`).

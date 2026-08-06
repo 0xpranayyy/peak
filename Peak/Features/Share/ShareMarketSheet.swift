@@ -687,7 +687,8 @@ enum PeakShareCardRenderer {
 
     static func polymarketURL(for event: PeakEvent) -> URL? {
         guard let slug = event.slug, !slug.isEmpty else { return nil }
-        return URL(string: "https://polymarket.com/event/\(slug)")
+        // Peak web client (share / “open on web”); Polymarket remains the venue.
+        return URL(string: "https://app.peakapp.site/event/\(slug)")
     }
 }
 
