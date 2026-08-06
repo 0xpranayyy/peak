@@ -126,12 +126,16 @@ export function SettingsClient() {
         <div className="settings-row">
           <div>
             <div className="settings-row__label">Region</div>
-            <div className="settings-row__hint">From Peak edge geo check</div>
+            <div className="settings-row__hint">
+              Detected from your connection (orders still checked on submit)
+            </div>
           </div>
           <div className="settings-row__value">
-            {geo
-              ? `${geo.country ?? "Unknown"} · ${geo.status}`
-              : "Checking…"}
+            {!geo
+              ? "Checking…"
+              : geo.status === "unknown"
+                ? "—"
+                : geo.country ?? "—"}
           </div>
         </div>
 

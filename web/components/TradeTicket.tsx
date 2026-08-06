@@ -129,8 +129,8 @@ export function TradeTicket({
     return side === "SELL" ? "FAK" : "FOK";
   }, [orderKind, side]);
 
-  // Only hard-block when edge definitively says blocked / close-only.
-  // Unknown / still-loading geo stays open — API + CLOB enforce on submit.
+  // Geo is submit-time only — never grey out the ticket. Unknown / loading
+  // stays open; API + CLOB still enforce. Matches “no geo theater” on browse.
   const geoBlocksBuy = geo?.status === "blocked" || geo?.status === "close_only";
   const geoBlocksSell = geo?.status === "blocked";
   const geoBlocked = (side === "BUY" && geoBlocksBuy) || (side === "SELL" && geoBlocksSell);
@@ -244,10 +244,6 @@ export function TradeTicket({
     <form className="ticket" onSubmit={onSubmit}>
       <div className="ticket__head">
         <h2>Trade</h2>
-        <p className="ticket__hint">
-          Peak signs on the server; your browser posts to CLOB so eligibility
-          follows your IP.
-        </p>
       </div>
 
       <div className="ticket__sides" role="group" aria-label="Side">
@@ -401,7 +397,7 @@ export function TradeTicket({
         <button
           type="submit"
           className="btn btn--primary ticket__submit"
-          disabled={busy || syncing || geoBlocked || !tokenID || marketNeedsBook}
+          disabled={busy || syncing || !tokenID || marketNeedsBook}
         >
           {busy ? "Submitting…" : `${side === "BUY" ? "Buy" : "Sell"} ${outcome}`}
         </button>
@@ -410,6 +406,7 @@ export function TradeTicket({
       {marketNeedsBook ? (
         <p className="ticket__status ticket__status--warn">
           Waiting for a live {side === "BUY" ? "ask" : "bid"} before market orders.
+          Switch to Limit to place without a quote.
         </p>
       ) : null}
       {error ? <p className="ticket__status ticket__status--err">{error}</p> : null}

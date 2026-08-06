@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  DEFAULT_SORT,
   fetchEvents,
   fetchTags,
   type PeakEvent,
@@ -33,7 +34,7 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
   const activeTag = tag?.trim() || undefined;
   const activeSort: SortKey = SORTS.includes(sort as SortKey)
     ? (sort as SortKey)
-    : "volume24hr";
+    : DEFAULT_SORT;
   const page = Math.max(1, Number(pageRaw) || 1);
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -153,7 +154,7 @@ function pageHref(opts: {
 }): string {
   const params = new URLSearchParams();
   if (opts.tag) params.set("tag", opts.tag);
-  if (opts.sort !== "volume24hr") params.set("sort", opts.sort);
+  if (opts.sort !== DEFAULT_SORT) params.set("sort", opts.sort);
   if (opts.page > 1) params.set("page", String(opts.page));
   const q = params.toString();
   return q ? `/markets?${q}` : "/markets";

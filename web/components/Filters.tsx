@@ -1,8 +1,8 @@
-import type { Tag, SortKey } from "@/lib/gamma";
+import { DEFAULT_SORT, type Tag, type SortKey } from "@/lib/gamma";
 
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: "volume24hr", label: "Trending" },
   { key: "volume", label: "Volume" },
+  { key: "volume24hr", label: "Trending" },
   { key: "liquidity", label: "Liquidity" },
   { key: "endDate", label: "Ending" },
 ];
@@ -22,7 +22,7 @@ export function Filters({
   const href = (tag?: string, sort?: SortKey) => {
     const params = new URLSearchParams();
     if (tag) params.set("tag", tag);
-    if (sort && sort !== "volume24hr") params.set("sort", sort);
+    if (sort && sort !== DEFAULT_SORT) params.set("sort", sort);
     const query = params.toString();
     return query ? `/markets?${query}` : "/markets";
   };

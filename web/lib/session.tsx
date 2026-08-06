@@ -78,7 +78,7 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Couldn’t get a Privy session token.");
-      const next = await syncSession(token, eoa, "new");
+      const next = await syncSession(token, eoa);
       setSession(next);
       if (next.needsDeploy) {
         try {

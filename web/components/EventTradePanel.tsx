@@ -21,9 +21,13 @@ export function EventTradePanel({ markets }: { markets: Market[] }) {
       const byToken = markets.findIndex((m) => m.clobTokenIds.includes(preferredAsset));
       if (byToken >= 0) return byToken;
     }
-    if (!preferredOutcome) return 0;
-    const idx = markets.findIndex((m) => m.outcomes.includes(preferredOutcome));
-    return idx >= 0 ? idx : 0;
+    if (preferredOutcome) {
+      const idx = markets.findIndex((m) => m.outcomes.includes(preferredOutcome));
+      if (idx >= 0) return idx;
+    }
+    // Prefer a live market so multi-outcome sports don't open on a resolved child.
+    const live = markets.findIndex((m) => m.active && !m.closed && m.clobTokenIds.length > 0);
+    return live >= 0 ? live : 0;
   }, [markets, preferredAsset, preferredOutcome]);
 
   const [index, setIndex] = useState(preferredIndex);

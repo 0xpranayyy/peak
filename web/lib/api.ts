@@ -94,7 +94,7 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
     case "clob_unreachable":
       return (
         raw ||
-        "Couldn’t reach Polymarket’s order book from this network. Use an allowed region (or VPN) and retry, or trade in the Peak iOS app."
+        "Couldn’t reach the order book from this network. Try again on an allowed connection, or use the Peak iOS app."
       );
     default:
       break;
@@ -247,12 +247,16 @@ export type TradingSession = {
 export async function syncSession(
   token: string,
   eoa: string,
-  path: "new" | "existing" = "new"
+  path?: "new" | "existing"
 ): Promise<TradingSession> {
+  const body: Record<string, unknown> = { eoa };
+  // Omit path so the backend keeps an existing linked path (iOS import /
+  // returning users). First-time sessions still default to "new" server-side.
+  if (path) body.path = path;
   const root = await peakFetch("auth/session", {
     method: "POST",
     token,
-    body: { eoa, path },
+    body,
   });
   return mapSession(root);
 }
@@ -476,7 +480,7 @@ export async function submitPreparedOrder(
     });
   } catch {
     throw new PeakApiError(
-      "Couldn’t reach Polymarket’s order book from this network. Try again on an unblocked connection, or use the Peak iOS app.",
+      "Couldn’t reach the order book from this network. Try again on an allowed connection, or use the Peak iOS app.",
       0,
       "clob_unreachable",
       {}

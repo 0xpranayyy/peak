@@ -194,6 +194,12 @@ function isListEligible(raw: Record<string, unknown>): boolean {
   if (raw.archived === true) return false;
   if (raw.closed === true) return false;
   if (raw.active === false) return false;
+  // Gamma often leaves sports events `active` hours after tip-off with a past
+  // endDate. Those dominate volume24hr and open into a dead trade ticket.
+  if (typeof raw.endDate === "string" && raw.endDate.trim()) {
+    const end = Date.parse(raw.endDate);
+    if (Number.isFinite(end) && end < Date.now() - 30 * 60_000) return false;
+  }
   return true;
 }
 
@@ -229,6 +235,9 @@ const SHOWCASE = { active: "true", closed: "false", archived: "false" } as const
 
 export type SortKey = "volume24hr" | "volume" | "liquidity" | "endDate";
 
+/** Default browse sort — all-time volume surfaces markets with live books. */
+export const DEFAULT_SORT: SortKey = "volume";
+
 /** Paginated live events for the browse feed. */
 export async function fetchEvents(options?: {
   limit?: number;
@@ -241,7 +250,7 @@ export async function fetchEvents(options?: {
     {
       limit: options?.limit ?? 24,
       offset: options?.offset ?? 0,
-      order: options?.sort ?? "volume24hr",
+      order: options?.sort ?? DEFAULT_SORT,
       ascending: "false",
       tag_slug: options?.tagSlug,
       ...SHOWCASE,

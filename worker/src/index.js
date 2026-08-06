@@ -497,6 +497,22 @@ export default {
     }
 
     if (url.pathname === "/geo") {
+      // Browser (app.peakapp.site) reads this for soft ticket copy / Settings.
+      // Same public CORS as Gamma/CLOB reads — no credentials, country only.
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET, HEAD, OPTIONS",
+            "access-control-allow-headers": "accept, content-type",
+            "access-control-max-age": "86400",
+          },
+        });
+      }
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return json({ error: "Method not allowed", code: "method_not_allowed" }, 405);
+      }
       const country = request.cf?.country ?? null;
       const blocked = country != null && REGION_BLOCKED.has(country);
       const closeOnly = country != null && REGION_CLOSE_ONLY.has(country);
@@ -512,6 +528,7 @@ export default {
             "content-type": "application/json; charset=utf-8",
             // Per-user answer — must never be shared between viewers.
             "cache-control": "no-store",
+            "access-control-allow-origin": "*",
           },
         }
       );
