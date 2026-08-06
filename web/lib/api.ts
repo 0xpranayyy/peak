@@ -465,7 +465,7 @@ function mapSession(root: Record<string, unknown>): TradingSession {
     walletTypeName: typeof root.walletTypeName === "string" ? root.walletTypeName : null,
     path: typeof root.path === "string" ? root.path : null,
     ready: root.ready === true,
-    syncReady: root.syncReady === true || Boolean(root.accountWallet),
+    syncReady: root.syncReady === true,
     needsDeploy: root.needsDeploy === true,
     builderConfigured: root.builderConfigured === true,
     message: typeof root.message === "string" ? root.message : null,

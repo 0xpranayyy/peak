@@ -22,15 +22,20 @@ export function WatchlistClient() {
     setLoading(true);
     setError(null);
     (async () => {
-      const loaded: PeakEvent[] = [];
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetchEventById(id)
+            .then((event) => ({ id, event }))
+            .catch(() => ({ id, event: null as PeakEvent | null }))
+        )
+      );
+      if (cancelled) return;
       let failures = 0;
-      for (const id of ids) {
-        const event = await fetchEventById(id).catch(() => null);
-        if (event) loaded.push(event);
+      const map = new Map<string, PeakEvent>();
+      for (const row of results) {
+        if (row.event) map.set(row.id, row.event);
         else failures += 1;
       }
-      if (cancelled) return;
-      const map = new Map(loaded.map((e) => [e.id, e]));
       const ordered = ids
         .map((id) => map.get(id))
         .filter((e): e is PeakEvent => Boolean(e));
@@ -78,16 +83,26 @@ export function WatchlistClient() {
           {events.map((event) => {
             const probability = event.displayProbability;
             const ends = endsIn(event.endDate);
-            const href = event.slug ? `/event/${event.slug}` : "#";
+            const href = event.slug ? `/event/${event.slug}` : null;
             return (
               <div key={event.id} className="market-row market-row--watch">
-                <a href={href} className="market-row__main">
-                  <div className="market-row__title">{event.title}</div>
-                  <div className="market-row__meta">
-                    <span>{compactUsd(event.volume24hr)} 24h</span>
-                    {ends ? <span>{ends}</span> : null}
+                {href ? (
+                  <a href={href} className="market-row__main">
+                    <div className="market-row__title">{event.title}</div>
+                    <div className="market-row__meta">
+                      <span>{compactUsd(event.volume24hr)} 24h</span>
+                      {ends ? <span>{ends}</span> : null}
+                    </div>
+                  </a>
+                ) : (
+                  <div className="market-row__main">
+                    <div className="market-row__title">{event.title}</div>
+                    <div className="market-row__meta">
+                      <span>{compactUsd(event.volume24hr)} 24h</span>
+                      {ends ? <span>{ends}</span> : null}
+                    </div>
                   </div>
-                </a>
+                )}
                 <div className="market-row__price">
                   {event.markets.length > 1 ? (
                     <>

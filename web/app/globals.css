@@ -207,6 +207,15 @@ select {
   cursor: not-allowed;
 }
 
+.btn:focus-visible,
+.cta:focus-visible,
+.seg:focus-visible,
+.chip:focus-visible,
+.auth-addr:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);

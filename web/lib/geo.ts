@@ -16,7 +16,9 @@ export async function fetchGeo(): Promise<GeoStatus> {
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
-      return { country: null, canTrade: true, canClose: true, status: "unknown" };
+      // Fail closed for new buys when /geo is unreachable; sells stay open
+      // until backend/CLOB refuse — matches close-only posture.
+      return { country: null, canTrade: false, canClose: true, status: "unknown" };
     }
     const json = (await response.json()) as Record<string, unknown>;
     const statusRaw = String(json.status || "unknown");
@@ -26,12 +28,13 @@ export async function fetchGeo(): Promise<GeoStatus> {
         : "unknown";
     return {
       country: typeof json.country === "string" ? json.country : null,
-      canTrade: json.canTrade !== false && status !== "blocked" && status !== "close_only",
+      canTrade:
+        status === "allowed" &&
+        json.canTrade !== false,
       canClose: json.canClose !== false && status !== "blocked",
       status,
     };
   } catch {
-    // Fail open in the UI — CLOB / backend remain authoritative.
-    return { country: null, canTrade: true, canClose: true, status: "unknown" };
+    return { country: null, canTrade: false, canClose: true, status: "unknown" };
   }
 }

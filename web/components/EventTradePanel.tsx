@@ -8,6 +8,8 @@ import { TradeTicket } from "@/components/TradeTicket";
 export function EventTradePanel({ markets }: { markets: Market[] }) {
   const searchParams = useSearchParams();
   const preferredOutcome = searchParams.get("outcome") ?? undefined;
+  const preferredAsset =
+    searchParams.get("asset") ?? searchParams.get("tokenID") ?? undefined;
   const initialSide =
     searchParams.get("side")?.toUpperCase() === "SELL" ? ("SELL" as const) : ("BUY" as const);
   const sharesParam = Number(searchParams.get("shares"));
@@ -15,10 +17,14 @@ export function EventTradePanel({ markets }: { markets: Market[] }) {
     Number.isFinite(sharesParam) && sharesParam > 0 ? sharesParam : undefined;
 
   const preferredIndex = useMemo(() => {
+    if (preferredAsset) {
+      const byToken = markets.findIndex((m) => m.clobTokenIds.includes(preferredAsset));
+      if (byToken >= 0) return byToken;
+    }
     if (!preferredOutcome) return 0;
     const idx = markets.findIndex((m) => m.outcomes.includes(preferredOutcome));
     return idx >= 0 ? idx : 0;
-  }, [markets, preferredOutcome]);
+  }, [markets, preferredAsset, preferredOutcome]);
 
   const [index, setIndex] = useState(preferredIndex);
   const market = markets[Math.min(index, markets.length - 1)];
@@ -42,9 +48,10 @@ export function EventTradePanel({ markets }: { markets: Market[] }) {
         </label>
       ) : null}
       <TradeTicket
-        key={`${market.id}-${initialSide}-${preferredOutcome ?? ""}`}
+        key={`${market.id}-${initialSide}-${preferredAsset ?? preferredOutcome ?? ""}`}
         market={market}
         preferredOutcome={preferredOutcome}
+        preferredTokenID={preferredAsset}
         initialSide={initialSide}
         initialShares={initialShares}
       />

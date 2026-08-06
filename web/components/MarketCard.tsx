@@ -6,10 +6,8 @@ export function MarketCard({ event }: { event: PeakEvent }) {
   const probability = event.displayProbability;
   const isMulti = event.markets.length > 1;
   const ends = endsIn(event.endDate);
-  const href = event.slug ? `/event/${event.slug}` : "#";
-
-  return (
-    <a className="market-row" href={href}>
+  const body = (
+    <>
       <div className="market-row__main">
         <div className="market-row__title">{event.title}</div>
         <div className="market-row__meta">
@@ -35,6 +33,20 @@ export function MarketCard({ event }: { event: PeakEvent }) {
           <span>—</span>
         )}
       </div>
+    </>
+  );
+
+  if (!event.slug) {
+    return (
+      <div className="market-row market-row--disabled" aria-disabled="true">
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <a className="market-row" href={`/event/${event.slug}`}>
+      {body}
     </a>
   );
 }

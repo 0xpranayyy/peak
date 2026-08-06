@@ -293,7 +293,11 @@ export function PositionsClient() {
                 className="position"
                 href={
                   p.eventSlug
-                    ? `/event/${p.eventSlug}?side=SELL&outcome=${encodeURIComponent(p.outcome)}&shares=${p.size}`
+                    ? `/event/${p.eventSlug}?side=SELL&shares=${p.size}${
+                        p.asset
+                          ? `&asset=${encodeURIComponent(p.asset)}`
+                          : `&outcome=${encodeURIComponent(p.outcome)}`
+                      }`
                     : "/markets"
                 }
               >

@@ -12,6 +12,10 @@
  * Pages fetch (colo IP), not the trader. When `PEAK_WEB_PROXY_SECRET` matches
  * the Worker secret, we forward the browser's CF country as
  * `x-peak-client-country` so the region gate stays honest.
+ *
+ * Path allowlist: only routes the web client needs. Blocks key-handling
+ * endpoints (`/auth/resolve-secret`, `/auth/sign-siwe`, `/auth/import-wallet`)
+ * from the app origin even if XSS ever lands here.
  */
 
 export const runtime = "edge";
@@ -32,6 +36,19 @@ const HOP_BY_HOP = new Set([
   "content-length",
 ]);
 
+/** Exact paths + order-id cancel. Methods enforced per route. */
+const ALLOWED: { pattern: RegExp; methods: ReadonlySet<string> }[] = [
+  { pattern: /^health$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^auth\/session$/, methods: new Set(["POST"]) },
+  { pattern: /^trading\/setup$/, methods: new Set(["POST"]) },
+  { pattern: /^portfolio$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^activity$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^orders$/, methods: new Set(["GET", "HEAD", "POST"]) },
+  { pattern: /^orders\/prepare$/, methods: new Set(["POST"]) },
+  { pattern: /^orders\/[^/]+$/, methods: new Set(["DELETE"]) },
+  { pattern: /^deposit-address$/, methods: new Set(["POST"]) },
+];
+
 type Ctx = { params: Promise<{ path: string[] }> };
 
 function clientCountry(request: Request): string | null {
@@ -46,14 +63,53 @@ function clientCountry(request: Request): string | null {
   return null;
 }
 
+function isAllowedPath(joined: string, method: string): boolean {
+  for (const rule of ALLOWED) {
+    if (rule.pattern.test(joined) && rule.methods.has(method)) return true;
+  }
+  return false;
+}
+
+function upstreamLooksUnsafe(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    // Region / edge-secret gates live on the Worker in front of api.peakapp.site.
+    // Hitting Railway origin directly skips those stamps.
+    return host.endsWith(".up.railway.app") || host.endsWith(".railway.app");
+  } catch {
+    return true;
+  }
+}
+
 async function forward(request: Request, ctx: Ctx): Promise<Response> {
   const { path } = await ctx.params;
   if (!path?.length) {
     return Response.json({ error: "Missing path" }, { status: 400 });
   }
 
+  const joined = path.map(encodeURIComponent).join("/");
+  const method = request.method.toUpperCase();
+
+  if (!isAllowedPath(joined, method)) {
+    return Response.json(
+      { error: "Not found", code: "proxy_path_denied" },
+      { status: 404 }
+    );
+  }
+
+  if (upstreamLooksUnsafe(UPSTREAM)) {
+    return Response.json(
+      {
+        error:
+          "PEAK_API_URL must point at the Worker-fronted API host (api.peakapp.site), not Railway origin.",
+        code: "upstream_misconfigured",
+      },
+      { status: 500 }
+    );
+  }
+
   const incoming = new URL(request.url);
-  const target = new URL(path.map(encodeURIComponent).join("/"), `${UPSTREAM}/`);
+  const target = new URL(joined, `${UPSTREAM.replace(/\/$/, "")}/`);
   target.search = incoming.search;
 
   const headers = new Headers();
@@ -81,7 +137,6 @@ async function forward(request: Request, ctx: Ctx): Promise<Response> {
     headers.set("x-peak-web-proxy-secret", WEB_PROXY_SECRET);
   }
 
-  const method = request.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "HEAD";
 
   let upstream: Response;

@@ -31,10 +31,17 @@ export async function fetchTopOfBook(tokenID: string): Promise<TopOfBook> {
     const json = (await response.json()) as Record<string, unknown>;
     const bids = Array.isArray(json.bids) ? json.bids : [];
     const asks = Array.isArray(json.asks) ? json.asks : [];
-    const bestBid = bids[0] as Record<string, unknown> | undefined;
-    const bestAsk = asks[0] as Record<string, unknown> | undefined;
-    const bid = num(bestBid?.price);
-    const ask = num(bestAsk?.price);
+    // CLOB may return unsorted levels — always pick best bid (max) / ask (min).
+    let bid: number | null = null;
+    for (const level of bids) {
+      const p = num((level as Record<string, unknown>)?.price);
+      if (p != null && (bid == null || p > bid)) bid = p;
+    }
+    let ask: number | null = null;
+    for (const level of asks) {
+      const p = num((level as Record<string, unknown>)?.price);
+      if (p != null && (ask == null || p < ask)) ask = p;
+    }
     const mid = bid != null && ask != null ? Math.round(((bid + ask) / 2) * 1000) / 1000 : null;
     const spread =
       bid != null && ask != null ? Math.round((ask - bid) * 1000) / 1000 : null;

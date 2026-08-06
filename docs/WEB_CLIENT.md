@@ -249,9 +249,14 @@ older references.
    recent activity from `GET /activity`.
 4. Watchlist: real event IDs in `localStorage`, keyed by Privy user id (or
    `anon` when signed out). No default fake markets.
-5. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
+5. Geo gate from Worker `/geo` disables buy/sell in the ticket UI. When `/geo`
+   fails or returns `unknown`, **new buys are paused** (fail closed); sells
+   still attempt until backend/CLOB refuse.
 6. `/api/peak/*` can forward browser CF country when `PEAK_WEB_PROXY_SECRET`
    matches on Pages + Worker (otherwise API region gate may see the colo).
+   The proxy **allowlists** web trading paths only — key-handling routes
+   (`/auth/resolve-secret`, `/auth/sign-siwe`, `/auth/import-wallet`) are not
+   reachable via the app origin.
 7. Smoke in allowed regions still required before marketing web trading.
 
 ### 4 — Polish
@@ -276,14 +281,18 @@ Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 5. **Deposit** — Positions shows deposit wallet; Copy address works.
 6. **Limit buy** — small GTC buy prepare → submit → success or clear CLOB/
    balance error (never silent 404→Railway fallback except missing prepare).
-7. **Market sell** — from a position link (`?side=SELL&shares=…`) or ticket;
-   order type shows FAK.
+7. **Market sell** — from a position link (`?side=SELL&asset=…&shares=…`) or
+   ticket; order type shows FAK. Market orders wait for a live bid/ask (no
+   invented 50¢ fallback).
 8. **Orders** — open GTC appears under Open orders; Cancel removes it;
    Recent activity reflects Polymarket fills when available.
 9. **Geo** — in a blocked region, buy disabled with clear copy; close-only
-   allows sell only.
+   allows sell only. If `/geo` is unreachable, buys stay paused (banner shows
+   unknown).
 10. **Landing intact** — `https://peakapp.site/` still marketing; Launch app →
     `app.peakapp.site`.
+11. **Proxy** — `GET /api/peak/health` OK; `POST /api/peak/auth/resolve-secret`
+    returns 404 from the app origin (allowlist).
 
 ## Remaining ops (not code)
 
@@ -291,10 +300,11 @@ Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 | --- | --- | --- |
 | Privy origins: `app.peakapp.site` + `peak-web-dq7.pages.dev` + localhost | Privy Dashboard | User: `app.` done; still add pages.dev + localhost if missing |
 | DNS CNAME `app` → `peak-web-dq7.pages.dev` (proxied) | Cloudflare DNS | **Done** — Pages domain Active; set `CLOUDFLARE_API_TOKEN` with Zone DNS Edit for future CLI |
-| Pages `nodejs_compat` + env (`PRIVY`, `PEAK_API_URL`, proxy secret) | Pages | Set on project; redeploy after `NEXT_PUBLIC_*` changes |
+| Pages `nodejs_compat` + env (`PRIVY`, `PEAK_API_URL=https://api.peakapp.site`, proxy secret) | Pages | Never set `PEAK_API_URL` to `*.railway.app` — proxy rejects it |
 | Worker `PEAK_WEB_PROXY_SECRET` (same value as Pages) | Wrangler | Required for honest geo on `/api/peak/*` |
 | Live order submit smoke | Human | From an **allowed** region (India/`IN` is blocked — use VPN / allowed ISP). Browse + sign-in still work while blocked. |
 | App Store public URL once listed | Replace landing CTA | |
+| Transitive npm audit highs (Privy/Next → axios/ws/elliptic/postcss/sharp) | Defer | Safe fixes need Privy 3 / Next 16 — do not force-upgrade in this ship |
 
 ## CORS / Privy / geo (Peak-specific)
 

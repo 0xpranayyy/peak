@@ -11,9 +11,11 @@ export function AuthButton() {
     usePeakSession();
 
   if (!ready) {
-    return <span className="auth-muted" aria-hidden="true">
-      ···
-    </span>;
+    return (
+      <span className="auth-muted" role="status" aria-label="Loading account">
+        ···
+      </span>
+    );
   }
 
   if (!authenticated) {
@@ -49,12 +51,14 @@ export function AuthButton() {
 
 export function GeoBanner() {
   const { geo } = usePeakSession();
-  if (!geo || geo.status === "allowed" || geo.status === "unknown") return null;
+  if (!geo || geo.status === "allowed") return null;
 
   const copy =
     geo.status === "close_only"
       ? `New positions aren’t available in ${geo.country ?? "your region"}. You can still close positions you already hold.`
-      : `Trading isn’t available in ${geo.country ?? "your region"}. Browse and sign-in still work; order submit needs an allowed region.`;
+      : geo.status === "unknown"
+        ? "Couldn’t confirm your region. New buys are paused until geo loads; browsing still works."
+        : `Trading isn’t available in ${geo.country ?? "your region"}. Browse and sign-in still work; order submit needs an allowed region.`;
 
   return (
     <div className="geo-banner" role="status">

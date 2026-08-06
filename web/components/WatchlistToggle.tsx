@@ -2,13 +2,7 @@
 
 import { useWatchlist } from "@/lib/watchlist-hook";
 
-export function WatchlistToggle({
-  eventId,
-  compact = false,
-}: {
-  eventId: string;
-  compact?: boolean;
-}) {
+export function WatchlistToggle({ eventId }: { eventId: string }) {
   const { contains, toggle } = useWatchlist();
   const on = contains(eventId);
 
@@ -20,7 +14,7 @@ export function WatchlistToggle({
       onClick={() => toggle(eventId)}
       title={on ? "Remove from watchlist" : "Add to watchlist"}
     >
-      {compact ? (on ? "Watching" : "Watch") : on ? "Watching" : "Watch"}
+      {on ? "Watching" : "Watch"}
     </button>
   );
 }

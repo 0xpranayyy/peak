@@ -21,6 +21,8 @@ type Props = {
   market: Market;
   /** Prefer a specific outcome label when multi-outcome. */
   preferredOutcome?: string;
+  /** Prefer a CLOB token id (from position deep-link). */
+  preferredTokenID?: string;
   /** Pre-fill sell size when opening from a portfolio position. */
   initialShares?: number;
   /** Force sell when closing a position. */
@@ -30,6 +32,7 @@ type Props = {
 export function TradeTicket({
   market,
   preferredOutcome,
+  preferredTokenID,
   initialShares,
   initialSide = "BUY",
 }: Props) {
@@ -37,10 +40,16 @@ export function TradeTicket({
     usePeakSession();
 
   const outcomes = market.outcomes.length ? market.outcomes : ["Yes", "No"];
-  const initialOutcome =
-    preferredOutcome && outcomes.includes(preferredOutcome)
-      ? preferredOutcome
-      : outcomes[0];
+  const initialOutcome = (() => {
+    if (preferredTokenID) {
+      const idx = market.clobTokenIds.indexOf(preferredTokenID);
+      if (idx >= 0 && outcomes[idx]) return outcomes[idx];
+    }
+    if (preferredOutcome && outcomes.includes(preferredOutcome)) {
+      return preferredOutcome;
+    }
+    return outcomes[0];
+  })();
 
   const [outcome, setOutcome] = useState(initialOutcome);
   const [side, setSide] = useState<Side>(initialSide);
@@ -71,14 +80,20 @@ export function TradeTicket({
     }
     let cancelled = false;
     const load = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       const next = await fetchTopOfBook(tokenID);
       if (!cancelled) setBook(next);
     };
     void load();
     const timer = window.setInterval(() => void load(), 8_000);
+    const onVisibility = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [tokenID, market.closed, market.active]);
 
@@ -89,14 +104,12 @@ export function TradeTicket({
       const p = n / 100;
       return p > 0 && p < 1 ? Math.round(p * 1000) / 1000 : null;
     }
-    // Market: buy at ask, sell at bid; fall back to mid / last SSR price.
-    const idx = outcomes.indexOf(outcome);
-    const last = market.outcomePrices[idx] ?? market.yesPrice ?? 0.5;
-    if (side === "BUY") {
-      return book?.ask ?? book?.mid ?? (last > 0 && last < 1 ? last : 0.5);
-    }
-    return book?.bid ?? book?.mid ?? (last > 0 && last < 1 ? last : 0.5);
-  }, [orderKind, limitCents, side, book, outcomes, outcome, market.outcomePrices, market.yesPrice]);
+    // Market: require a live top-of-book quote — never invent 0.5.
+    if (side === "BUY") return book?.ask ?? null;
+    return book?.bid ?? null;
+  }, [orderKind, limitCents, side, book]);
+
+  const marketNeedsBook = orderKind === "market" && quotePrice == null;
 
   const size = useMemo(() => {
     if (!quotePrice) return null;
@@ -116,7 +129,12 @@ export function TradeTicket({
     return side === "SELL" ? "FAK" : "FOK";
   }, [orderKind, side]);
 
-  const geoBlocksBuy = geo?.status === "blocked" || geo?.status === "close_only";
+  // Unknown / missing geo: block new buys (fail closed); sells stay until CLOB refuses.
+  const geoBlocksBuy =
+    geo == null ||
+    geo.status === "blocked" ||
+    geo.status === "close_only" ||
+    geo.status === "unknown";
   const geoBlocksSell = geo?.status === "blocked";
   const geoBlocked = (side === "BUY" && geoBlocksBuy) || (side === "SELL" && geoBlocksSell);
 
@@ -138,6 +156,10 @@ export function TradeTicket({
       setError("This market has no tradeable token ids yet.");
       return;
     }
+    if (marketNeedsBook) {
+      setError("Waiting for a live bid/ask. Try again in a moment.");
+      return;
+    }
     if (!quotePrice || !size) {
       setError(
         side === "SELL"
@@ -150,7 +172,9 @@ export function TradeTicket({
       setError(
         geo?.status === "close_only"
           ? "New positions aren’t available in your region."
-          : "Trading isn’t available in your region."
+          : geo?.status === "unknown"
+            ? "Couldn’t confirm your region yet. New buys are paused until geo loads."
+            : "Trading isn’t available in your region."
       );
       return;
     }
@@ -382,7 +406,7 @@ export function TradeTicket({
         <button
           type="submit"
           className="btn btn--primary ticket__submit"
-          disabled={busy || syncing || geoBlocked || !tokenID}
+          disabled={busy || syncing || geoBlocked || !tokenID || marketNeedsBook}
         >
           {busy ? "Submitting…" : `${side === "BUY" ? "Buy" : "Sell"} ${outcome}`}
         </button>
@@ -390,9 +414,18 @@ export function TradeTicket({
 
       {geoBlocked ? (
         <p className="ticket__status ticket__status--warn">
-          {geo?.status === "close_only"
-            ? "New buys are blocked in your region. You can still sell to close."
-            : "Trading is blocked in your region. You can still browse markets."}
+          {geo == null
+            ? "Checking your region…"
+            : geo.status === "close_only"
+              ? "New buys are blocked in your region. You can still sell to close."
+              : geo.status === "unknown"
+                ? "Couldn’t confirm your region. New buys are paused; sells may still work."
+                : "Trading is blocked in your region. You can still browse markets."}
+        </p>
+      ) : null}
+      {marketNeedsBook && !geoBlocked ? (
+        <p className="ticket__status ticket__status--warn">
+          Waiting for a live {side === "BUY" ? "ask" : "bid"} before market orders.
         </p>
       ) : null}
       {error ? <p className="ticket__status ticket__status--err">{error}</p> : null}
