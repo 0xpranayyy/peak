@@ -292,7 +292,9 @@ final class PrivyAuthService: ObservableObject {
         // an imported wallet) while the access token is still valid. Best-effort:
         // a failure here must never leave the user stuck signed in, and they can
         // still remove it explicitly from Account.
-        try? await TradingProxyClient.forgetWallet()
+        // `try?` wraps the (already discardable) Bool in an Optional, so the
+        // explicit discard is what silences the unused-result warning.
+        _ = try? await TradingProxyClient.forgetWallet()
 
         if let user = await privy?.getUser() {
             await user.logout()
