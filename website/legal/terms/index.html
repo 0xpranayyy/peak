@@ -128,9 +128,18 @@
 
     <h2 id="account">5. Your wallet and account</h2>
     <ul>
-      <li>Peak is non-custodial. You are solely responsible for the security of
-        your device, your sign-in credentials, and any wallet — embedded or
-        external — connected to Peak.</li>
+      <li>Peak never takes ownership of your funds, and has no account of its own.
+        You are solely responsible for the security of your device, your sign-in
+        credentials, and any wallet connected to Peak.</li>
+      <li>If you sign in with an embedded wallet through Privy, Peak does not
+        receive your private key.</li>
+      <li>If you instead import a wallet by providing its private key or seed
+        phrase, Peak's servers store that key in encrypted form and sign
+        transactions with it on your instruction. That key is capable of
+        authorizing transfers from that wallet. Peak uses it only to carry out
+        instructions you send from the app, but you accept the risk of entrusting
+        it to a hosted service. Do not import a wallet holding more than you are
+        prepared to trade.</li>
       <li>If you use an embedded wallet created through Privy, losing access to
         your sign-in method may mean losing access to funds in that wallet. Peak
         cannot recover keys it never held.</li>
@@ -217,7 +226,7 @@
       <a href="/legal/terms">Terms</a>
       <a href="/legal/support">Support</a>
     </nav>
-    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-07-27</p>
+    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-08-05</p>
   </main>
 </body>
 </html>

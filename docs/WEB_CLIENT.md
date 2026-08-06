@@ -26,7 +26,7 @@ Prefer same brand domain; apex for landing, `app` for the client, `api` already 
 | `app.peakapp.site` | Web client (SPA) | Pages / static + CDN (TBD) |
 | `api.peakapp.site` | Existing trading / auth API | Railway (unchanged) |
 
-**Blocker first:** apex SSL is Cloudflare **525** today. Legal temporarily uses `peak-website-88n.pages.dev` — see PRODUCTION.md. Fix custom-domain SSL, then retarget `WEBSITE_ORIGIN` / plist URLs to `https://peakapp.site` before leaning on apex marketing.
+**Apex is live.** `https://peakapp.site` serves marketing, `/legal/*`, and the AASA file; `WEBSITE_ORIGIN` and the plist URLs already point there. A browser client will additionally need `CORS_ORIGINS` set on the API — it is `off` today, which correctly rejects all cross-origin browser calls.
 
 ## Architecture
 

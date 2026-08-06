@@ -19,7 +19,7 @@ Markets · Search · Portfolio · Watchlist · Settings
 | Magic / social Polymarket (no key) | View-only | Paste profile address — no live trading without a key |
 | Live buy / sell / cancel (per user) | Works where permitted | Verified against production Builder + Relayer; blocked regions are gated client-side (see Regions) |
 | Deposit wallet deploy | Credentials live | Builder / Relayer / RPC configured on the hosted API |
-| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; legal URLs point at Pages (`peak-website-88n.pages.dev`) while apex SSL is 525 |
+| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; legal URLs point at `peakapp.site/legal/*` |
 | App Store packaging | Ready to archive | Paid team `49BZ7S974W`; see [docs/APP_STORE.md](docs/APP_STORE.md). Device E2E / TestFlight upload still required |
 
 **Not claimed live yet:** an end-to-end MetaMask / social *order* has not been placed from this repo. Sign-in, wallet import, account linking, portfolio and live balance are verified against production.

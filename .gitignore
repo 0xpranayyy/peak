@@ -44,3 +44,9 @@ sentry.properties
 website/.wrangler/
 Peak [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
 *.ipa
+
+# Agent / editor scratch
+.claude/
+
+# Marketing animation scratch project (not shipped)
+pulse-marketing-animation/

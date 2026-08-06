@@ -10,7 +10,7 @@ Related: [PRODUCTION.md](PRODUCTION.md) (credentials, hosting, E2E A/B/C) · [RE
 | --- | --- |
 | Development Team | Paid team `49BZ7S974W` (signing configured; archive/export path documented in README) |
 | `Peak/Info.plist` `PEAK_BACKEND_URL` | Set → `https://api.peakapp.site` |
-| `PEAK_PRIVACY_URL` / `PEAK_TERMS_URL` / `PEAK_SUPPORT_URL` | Set → Cloudflare Pages (`https://peak-website-88n.pages.dev/legal/*`) while apex `peakapp.site` SSL is broken (525) |
+| `PEAK_PRIVACY_URL` / `PEAK_TERMS_URL` / `PEAK_SUPPORT_URL` | Set → `https://peakapp.site/legal/*` |
 | `PrivacyInfo.xcprivacy` | Present (see Nutrition Labels below) |
 | `ITSAppUsesNonExemptEncryption` | `false` in Info.plist (+ Xcode `INFOPLIST_KEY_*`) — confirm with counsel |
 | Sign in with Apple entitlement | **Still omitted** from `Peak/Peak.entitlements`. Re-add on the paid team before relying on native SIWA (below) |
@@ -124,7 +124,7 @@ Prepare in Connect (assets live outside this repo):
   - Auth: Privy (email / social) and **WalletConnect SIWE** (MetaMask, Rainbow, etc.).
   - Trading goes through Peak’s hosted HTTPS API (`api.peakapp.site`); no localhost in Release.
   - Demo account / test wallet instructions if you provide them for review.
-  - Privacy / Terms / Support URLs are the Cloudflare Pages `/legal/*` pages (currently `peak-website-88n.pages.dev` while apex SSL is fixed).
+  - Privacy / Terms / Support URLs are `https://peakapp.site/legal/*`, served from Cloudflare Pages.
 
 Do **not** invent a fake submission ID or “already submitted” status in docs or chat.
 

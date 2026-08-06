@@ -55,14 +55,14 @@ Do not put Privy or Reown secrets in tracked `Info.plist`. Backend / legal URLs 
 Canonical consumer pages are static HTML under `website/legal/*` on Cloudflare Pages.
 `api.peakapp.site/legal/*` only **301-redirects** to that origin (`backend/legalPages.mjs`).
 
-**SSL note (2026-07-28):** apex `https://peakapp.site` and `www` return Cloudflare **525** (origin/cert misconfigured). Until that is fixed in the Cloudflare dashboard, Info.plist and API redirects use the working Pages hostname `peak-website-88n.pages.dev`. Marketing home on the custom domain stays broken until SSL is fixed; legal links in the app do not depend on it.
+**SSL note (resolved 2026-08-05):** the earlier Cloudflare **525** on apex `https://peakapp.site` is fixed. The apex now serves the marketing home, `/legal/*`, and `/.well-known/apple-app-site-association`. Info.plist and API redirects point at the apex again; the `peak-website-88n.pages.dev` workaround is retired.
 
 | Info.plist key | Current value |
 | --- | --- |
 | `PEAK_BACKEND_URL` | `https://api.peakapp.site` |
-| `PEAK_PRIVACY_URL` | `https://peak-website-88n.pages.dev/legal/privacy` |
-| `PEAK_TERMS_URL` | `https://peak-website-88n.pages.dev/legal/terms` |
-| `PEAK_SUPPORT_URL` | `https://peak-website-88n.pages.dev/legal/support` |
+| `PEAK_PRIVACY_URL` | `https://peakapp.site/legal/privacy` |
+| `PEAK_TERMS_URL` | `https://peakapp.site/legal/terms` |
+| `PEAK_SUPPORT_URL` | `https://peakapp.site/legal/support` |
 
 Support contact on those pages: `support@peakapp.site` (provision mailbox/MX when ready). Settings hides legal links only if a key is blank.
 
@@ -92,7 +92,7 @@ Use this once `PrivySecrets.local.plist` and `backend/.env` (Privy + Builder + R
 4. **Run Debug** — open `Peak.xcodeproj`, select your device, Development Team, ⌘R (Debug injects `NSAllowsLocalNetworking`).
 5. **Smoke** — Connect wallet (MetaMask SIWE) **or** Email/Apple/Google → choose new/existing path → confirm `/health` still up and Portfolio / setup does not show “backend not configured”. Full buy/sell is checklist A/B below.
 
-Optional local legal check: `curl -sI http://127.0.0.1:8080/legal/privacy` → `301` to Pages. Live Pages: `curl -sL -o /dev/null -w '%{http_code}\n' https://peak-website-88n.pages.dev/legal/privacy/` → `200`.
+Optional local legal check: `curl -sI http://127.0.0.1:8080/legal/privacy` → `301` to Pages. Live Pages: `curl -sL -o /dev/null -w '%{http_code}\n' https://peakapp.site/legal/privacy` → `200`.
 
 ## E2E paths (run when secrets + HTTPS backend are live)
 
@@ -148,7 +148,7 @@ Code path: paste profile address on sign-in or trading-path sheet. App must **no
 - [x] Deploy `backend/` with HTTPS (Railway production host live; `backend/Dockerfile` + `backend/fly.toml` template also present)
 - [ ] Set secrets in the host env (from `.env.example`; never commit `.env`) — include `APP_TOKEN` if using legacy mode, and `PEAK_PRIVY_AUTH_KEY` when Privy requires it
 - [x] `PEAK_BACKEND_URL` in `Peak/Info.plist` → `https://api.peakapp.site`
-- [x] Legal URLs → working Pages `/legal/*` (temporarily `peak-website-88n.pages.dev`; apex SSL still broken)
+- [x] Legal URLs → `https://peakapp.site/legal/*` (apex SSL fixed; AASA also served there)
 - [ ] Cloudflare: fix custom-domain SSL for `peakapp.site` / `www`, then point plist + `WEBSITE_ORIGIN` back at the apex
 - [ ] Confirm Release build does not use `127.0.0.1` / `localhost` / plain HTTP
   - `TradingConfigStore` accepts only non-local `https://` outside DEBUG

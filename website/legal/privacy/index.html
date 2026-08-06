@@ -73,11 +73,22 @@
     <ul>
       <li><strong>Wallet identifiers.</strong> When you sign in, Peak receives a
         wallet address and, if you chose email sign-in, your email — both via
-        Privy, our authentication provider. Peak never sees or stores a private key.</li>
+        Privy, our authentication provider.</li>
+      <li><strong>An imported private key or seed phrase, only if you choose to
+        import one.</strong> Peak offers two ways to trade. If you sign in with an
+        embedded wallet through Privy, Peak never receives your private key. If you
+        instead import an existing Polymarket wallet by pasting its private key or
+        seed phrase, that secret is sent over HTTPS to Peak's backend, which
+        derives your wallet address and signs your orders on your instruction. It
+        is never written to your device. On Peak's servers it is held encrypted
+        (AES-256-GCM) so that your trading session survives a restart. See
+        <a href="#custody">Custody</a> for what this means for control of your
+        funds.</li>
       <li><strong>Trading instructions you send.</strong> Orders you place (token,
         side, size, price) pass through Peak's backend so an order can be
-        constructed and signed, then submitted from your device to Polymarket's
-        exchange. Peak's backend does not execute trades on its own initiative.</li>
+        constructed and signed, then submitted to Polymarket's exchange. Peak's
+        backend does not execute trades on its own initiative — it only acts on an
+        instruction you send from the app.</li>
       <li><strong>Portfolio and activity data.</strong> To show your positions and
         history, Peak reads them from Polymarket's systems using your wallet
         address. This is requested live and is not built into a separate profile.</li>
@@ -124,22 +135,38 @@
         identifiers, positions, or balances.</li>
       <li><strong>Cloudflare</strong> — routes some network requests at the edge
         so the app can reach Polymarket reliably from more regions.</li>
-      <li><strong>Railway</strong> — hosts Peak's backend server.</li>
+      <li><strong>Railway</strong> — hosts Peak's backend server, including the
+        encrypted store that holds imported signing keys.</li>
     </ul>
 
-    <h2 id="custody">4. Peak does not hold your funds</h2>
-    <p>Peak is non-custodial. Your funds sit in your own wallet — either one you
-      already control, or an embedded wallet created for you via Privy that only
-      you can authorize transactions from. Peak's backend holds exchange
-      credentials used to help construct and sign order requests on your
-      instruction; it does not hold, control, or have independent authority to
-      move your money.</p>
+    <h2 id="custody">4. Custody — please read this one</h2>
+    <p>Your funds always sit in your own wallet. Peak has no account of its own
+      and never takes ownership of your money. But how much control Peak's servers
+      have depends on which sign-in you choose, and the two are genuinely
+      different:</p>
+    <ul>
+      <li><strong>Embedded wallet via Privy (non-custodial).</strong> Key management
+        is handled by Privy. Peak never receives your private key and cannot sign
+        anything without you. This is the path we recommend.</li>
+      <li><strong>Imported wallet (Peak's servers hold a signing key).</strong> If
+        you paste a private key or seed phrase to trade an existing Polymarket
+        wallet, Peak's backend stores that key in encrypted form and signs with it
+        on your behalf. That key is technically capable of authorizing transactions
+        from that wallet. Peak only ever uses it to carry out instructions you send
+        from the app, and never moves funds on its own initiative — but you are
+        trusting Peak's infrastructure with it, in the same way you would trust any
+        hosted service. If you are not comfortable with that, use the embedded
+        wallet instead, or import a wallet holding only what you intend to trade.</li>
+    </ul>
 
     <h2 id="retention">5. Retention and deletion</h2>
     <p>On-device data is deleted when you delete the app. For data Peak's backend
       touches in the course of relaying a trade, it is kept only as long as
       needed to operate the service and meet any applicable recordkeeping
-      obligation, then deleted or anonymized. To ask about or request deletion of
+      obligation, then deleted or anonymized. If you imported a private key or
+      seed phrase, the encrypted signing key is kept for as long as that trading
+      session is active so you do not have to re-import on every restart; ask us
+      and we will delete it. To ask about or request deletion of
       data associated with your account, see <a href="#contact">Contact</a>.</p>
 
     <h2 id="kids">6. Age</h2>
@@ -186,7 +213,7 @@
       <a href="/legal/terms">Terms</a>
       <a href="/legal/support">Support</a>
     </nav>
-    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-07-27</p>
+    <p class="muted" style="margin-top:1.5rem">Last updated: 2026-08-05</p>
   </main>
 </body>
 </html>

@@ -32,7 +32,7 @@ In `Peak.xcodeproj` (app + widget targets stay in sync):
 | Setting | Current | When to bump |
 | --- | --- | --- |
 | `MARKETING_VERSION` | `1.1` | User-visible release (what Settings shows as the version). |
-| `CURRENT_PROJECT_VERSION` | `2` | **Every** TestFlight / App Store upload. Connect rejects a build number it already accepted. |
+| `CURRENT_PROJECT_VERSION` | `3` | **Every** TestFlight / App Store upload. Connect rejects a build number it already accepted. |
 
 `ExportOptions.plist` sets `manageAppVersionAndBuildNumber` = **false** so export does not rewrite the git number. Bump in the project first.
 
