@@ -65,7 +65,7 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
 | `https://peakapp.site/.well-known/apple-app-site-association` | `Content-Type: application/json` |
 | `https://app.peakapp.site/markets` | 200, live markets |
 | `https://app.peakapp.site/event/<slug>` | 200, trade UI with bid/ask |
-| `https://app.peakapp.site/portfolio` | Sign-in → cash / orders / positions |
+| `https://app.peakapp.site/positions` | Sign-in → cash / orders / positions / activity |
 
 Full trading smoke: [WEB_CLIENT.md § Smoke test](WEB_CLIENT.md#smoke-test-checklist-web).
 

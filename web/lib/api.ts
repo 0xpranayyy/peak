@@ -263,6 +263,57 @@ export async function fetchOpenOrders(token: string): Promise<OpenOrder[]> {
   return rows.map(mapOpenOrder).filter((o): o is OpenOrder => o !== null);
 }
 
+export type ActivityItem = {
+  id: string;
+  title: string;
+  outcome: string | null;
+  type: string;
+  side: string | null;
+  size: number;
+  price: number;
+  usdcSize: number;
+  timestamp: number | null;
+  eventSlug: string | null;
+};
+
+/** Polymarket activity feed for the linked account wallet (real fills / redeems). */
+export async function fetchActivity(
+  token: string,
+  limit = 25
+): Promise<ActivityItem[]> {
+  const url = new URL("/api/peak/activity", window.location.origin);
+  url.searchParams.set("limit", String(limit));
+  const response = await fetch(url.toString(), {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${token}`,
+      "x-peak-auth": "privy",
+    },
+    cache: "no-store",
+  });
+  const text = await response.text();
+  let parsed: unknown = [];
+  try {
+    parsed = text ? JSON.parse(text) : [];
+  } catch {
+    parsed = [];
+  }
+  if (!response.ok) {
+    const body =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    throw new PeakApiError(
+      friendlyApiMessage(body, response.status),
+      response.status,
+      typeof body.code === "string" ? body.code : null,
+      body
+    );
+  }
+  const rows = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
+  return rows.map(mapActivity).filter((a): a is ActivityItem => a !== null);
+}
+
 export async function cancelOrder(token: string, orderId: string): Promise<void> {
   await peakFetch(`orders/${encodeURIComponent(orderId)}`, {
     method: "DELETE",
@@ -442,6 +493,34 @@ function mapPosition(row: Record<string, unknown>): Position | null {
       (typeof row.tokenId === "string" && row.tokenId) ||
       (typeof row.tokenID === "string" && row.tokenID) ||
       null,
+  };
+}
+
+function mapActivity(row: Record<string, unknown>): ActivityItem | null {
+  const title = typeof row.title === "string" ? row.title : null;
+  if (!title) return null;
+  const type = typeof row.type === "string" ? row.type : "ACTIVITY";
+  const timestamp = numOrNull(row.timestamp);
+  const id = [
+    typeof row.transactionHash === "string" ? row.transactionHash : null,
+    typeof row.conditionId === "string" ? row.conditionId : null,
+    type,
+    timestamp != null ? String(timestamp) : null,
+    typeof row.outcome === "string" ? row.outcome : null,
+  ]
+    .filter(Boolean)
+    .join("|");
+  return {
+    id: id || `${title}-${type}-${timestamp ?? 0}`,
+    title,
+    outcome: typeof row.outcome === "string" ? row.outcome : null,
+    type,
+    side: typeof row.side === "string" ? row.side : null,
+    size: numOrNull(row.size) ?? 0,
+    price: numOrNull(row.price) ?? 0,
+    usdcSize: numOrNull(row.usdcSize) ?? 0,
+    timestamp,
+    eventSlug: typeof row.slug === "string" ? row.slug : null,
   };
 }
 

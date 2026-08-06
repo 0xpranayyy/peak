@@ -21,14 +21,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     {
-      url: SITE,
-      changeFrequency: "daily",
-      priority: 1,
-    },
-    {
       url: `${SITE}/markets`,
       changeFrequency: "hourly",
-      priority: 0.9,
+      priority: 1,
     },
     ...events
       .filter((event) => event.slug)

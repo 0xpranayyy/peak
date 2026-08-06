@@ -4,15 +4,30 @@ import { useCallback, useEffect, useState } from "react";
 import { usePeakSession } from "@/lib/session";
 import {
   cancelOrder,
+  fetchActivity,
   fetchDepositAddress,
   fetchOpenOrders,
   fetchPortfolio,
+  type ActivityItem,
   type OpenOrder,
   type PortfolioSnapshot,
 } from "@/lib/api";
 import { cents } from "@/lib/format";
 
-export function PortfolioClient() {
+function formatActivityWhen(ts: number | null): string {
+  if (ts == null) return "";
+  const ms = ts > 1_000_000_000_000 ? ts : ts * 1000;
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function PositionsClient() {
   const {
     ready,
     authenticated,
@@ -27,6 +42,7 @@ export function PortfolioClient() {
   } = usePeakSession();
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
   const [orders, setOrders] = useState<OpenOrder[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [depositAddress, setDepositAddress] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,6 +54,7 @@ export function PortfolioClient() {
     if (!authenticated) {
       setPortfolio(null);
       setOrders([]);
+      setActivity([]);
       setDepositAddress(null);
       return;
     }
@@ -46,18 +63,20 @@ export function PortfolioClient() {
     try {
       const token = await getToken();
       if (!token) throw new Error("Sign in again.");
-      const [snap, open, deposit] = await Promise.all([
+      const [snap, open, deposit, act] = await Promise.all([
         fetchPortfolio(token),
         fetchOpenOrders(token).catch(() => [] as OpenOrder[]),
         fetchDepositAddress(token).catch(() => null),
+        fetchActivity(token, 25).catch(() => [] as ActivityItem[]),
       ]);
       setPortfolio(snap);
       setOrders(open);
+      setActivity(act);
       setDepositAddress(
         deposit || snap.accountWallet || session?.accountWallet || null
       );
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Couldn’t load portfolio.");
+      setLoadError(err instanceof Error ? err.message : "Couldn’t load positions.");
     } finally {
       setLoading(false);
     }
@@ -102,8 +121,11 @@ export function PortfolioClient() {
   if (!authenticated) {
     return (
       <div className="portfolio-empty">
-        <h1>Portfolio</h1>
-        <p>Sign in with Privy to see cash, positions, open orders, and your deposit wallet.</p>
+        <h1>Positions</h1>
+        <p>
+          Sign in to see your Polymarket cash, open positions, orders, and recent
+          activity — synced through Peak to your real account.
+        </p>
         <button type="button" className="btn btn--primary" onClick={login}>
           Sign in
         </button>
@@ -118,8 +140,10 @@ export function PortfolioClient() {
     <div className="portfolio">
       <header className="portfolio__head">
         <div>
-          <h1>Portfolio</h1>
-          <p className="lede" style={{ marginTop: 8 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>
+            Positions
+          </h1>
+          <p style={{ marginTop: 6, color: "var(--text-3)", fontSize: 13 }}>
             {eoa ? (
               <>
                 Signer <span className="mono">{eoa}</span>
@@ -160,6 +184,7 @@ export function PortfolioClient() {
               ? "ticket__status ticket__status--ok"
               : "ticket__status ticket__status--err"
           }
+          style={{ marginTop: 12 }}
         >
           {error || loadError || actionMsg}
         </p>
@@ -178,7 +203,7 @@ export function PortfolioClient() {
           {portfolio?.cashError ? <small>{portfolio.cashError}</small> : null}
         </div>
         <div className="stat">
-          <span>Deposit wallet</span>
+          <span>Deposit</span>
           <b className="mono" title={displayWallet ?? undefined}>
             {displayWallet
               ? `${displayWallet.slice(0, 8)}…${displayWallet.slice(-4)}`
@@ -189,7 +214,7 @@ export function PortfolioClient() {
               {copied ? "Copied" : "Copy address"}
             </button>
           ) : null}
-          <small>Send USDC on Polygon to this address.</small>
+          <small>USDC on Polygon</small>
         </div>
         <div className="stat">
           <span>Status</span>
@@ -208,12 +233,11 @@ export function PortfolioClient() {
       {portfolio?.needsImport ? (
         <p className="notice">
           <b>Existing Polymarket wallets</b> that need a key import can only be
-          linked in the Peak iOS app. Web sign-in is Privy-only — Peak never asks
-          for a seed phrase in the browser.
+          linked in the Peak iOS app. Web sign-in is Privy-only.
         </p>
       ) : null}
 
-      <section className="section" style={{ paddingTop: 28 }}>
+      <section className="section">
         <div className="section__head">
           <h2>Open orders</h2>
         </div>
@@ -238,7 +262,7 @@ export function PortfolioClient() {
                   </div>
                   <button
                     type="button"
-                    className="btn"
+                    className="btn btn--danger"
                     disabled={cancelling === o.id}
                     onClick={() => void onCancel(o.id)}
                   >
@@ -251,14 +275,19 @@ export function PortfolioClient() {
         )}
       </section>
 
-      <section className="section" style={{ paddingTop: 12 }}>
+      <section className="section">
         <div className="section__head">
           <h2>Positions</h2>
         </div>
         {loading && !portfolio ? (
           <p className="empty">Loading positions…</p>
         ) : !portfolio?.positions.length ? (
-          <p className="empty">No open positions yet. Browse markets to trade.</p>
+          <p className="empty">
+            No open positions.{" "}
+            <a href="/markets" style={{ color: "var(--accent)" }}>
+              Browse markets
+            </a>
+          </p>
         ) : (
           <div className="positions">
             {portfolio.positions.map((p, i) => (
@@ -289,6 +318,55 @@ export function PortfolioClient() {
                 </div>
               </a>
             ))}
+          </div>
+        )}
+      </section>
+
+      <section className="section" style={{ paddingBottom: 48 }}>
+        <div className="section__head">
+          <h2>Recent activity</h2>
+        </div>
+        {loading && !activity.length && !portfolio ? (
+          <p className="empty">Loading activity…</p>
+        ) : !activity.length ? (
+          <p className="empty">No recent activity.</p>
+        ) : (
+          <div className="positions">
+            {activity.map((a) => {
+              const inner = (
+                <>
+                  <div>
+                    <div className="position__title">{a.title}</div>
+                    <div className="position__sub">
+                      {[a.type, a.side, a.outcome]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      {a.size > 0 ? ` · ${a.size.toFixed(2)} sh` : ""}
+                      {a.price > 0 ? ` @ ${cents(a.price)}` : ""}
+                      {formatActivityWhen(a.timestamp)
+                        ? ` · ${formatActivityWhen(a.timestamp)}`
+                        : ""}
+                    </div>
+                  </div>
+                  <div className="position__right">
+                    {a.usdcSize > 0 ? (
+                      <b style={{ color: "var(--text)" }}>
+                        ${a.usdcSize.toFixed(2)}
+                      </b>
+                    ) : null}
+                  </div>
+                </>
+              );
+              return a.eventSlug ? (
+                <a key={a.id} className="position" href={`/event/${a.eventSlug}`}>
+                  {inner}
+                </a>
+              ) : (
+                <div key={a.id} className="position">
+                  {inner}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

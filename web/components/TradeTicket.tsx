@@ -226,9 +226,8 @@ export function TradeTicket({
       <div className="ticket__head">
         <h2>Trade</h2>
         <p className="ticket__hint">
-          Peak signs the order on the server; your browser posts it to CLOB so
-          eligibility follows your IP. External wallets only need Polygon for
-          sign-in — not for each trade.
+          Peak signs on the server; your browser posts to CLOB so eligibility
+          follows your IP.
         </p>
       </div>
 
@@ -400,8 +399,8 @@ export function TradeTicket({
       {message ? (
         <p className="ticket__status ticket__status--ok">
           {message}{" "}
-          <a href="/portfolio" style={{ color: "inherit", textDecoration: "underline" }}>
-            View portfolio
+          <a href="/positions" style={{ color: "inherit", textDecoration: "underline" }}>
+            View positions
           </a>
         </p>
       ) : null}

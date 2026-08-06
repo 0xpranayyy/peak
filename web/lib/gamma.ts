@@ -324,3 +324,18 @@ export async function fetchEventBySlug(slug: string): Promise<PeakEvent | null> 
   if (!Array.isArray(raw) || raw.length === 0) return null;
   return mapEvent(raw[0]);
 }
+
+/** One event by Gamma id — used by the local watchlist. */
+export async function fetchEventById(id: string): Promise<PeakEvent | null> {
+  const trimmed = id.trim();
+  if (!trimmed) return null;
+  const url = new URL(`${EDGE}/gamma/events/${encodeURIComponent(trimmed)}`);
+  const response = await fetch(url.toString(), {
+    headers: { accept: "application/json" },
+    // Browser watchlist loads; avoid Next-only `next.revalidate` here.
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+  const raw = (await response.json()) as Record<string, unknown>;
+  return mapEvent(raw);
+}

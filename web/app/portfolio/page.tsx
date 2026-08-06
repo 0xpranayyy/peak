@@ -1,17 +1,8 @@
-import { PortfolioClient } from "@/components/PortfolioClient";
+import { redirect } from "next/navigation";
 
 export const runtime = "edge";
-export const dynamic = "force-dynamic";
 
-export const metadata = {
-  title: "Portfolio",
-  robots: { index: false, follow: false },
-};
-
-export default function PortfolioPage() {
-  return (
-    <div className="shell detail">
-      <PortfolioClient />
-    </div>
-  );
+/** Legacy path — Positions is the canonical route. */
+export default function PortfolioRedirect() {
+  redirect("/positions");
 }

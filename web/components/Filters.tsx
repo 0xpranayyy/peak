@@ -8,9 +8,7 @@ const SORTS: { key: SortKey; label: string }[] = [
 ];
 
 /**
- * Filters are plain links, not client state. Every combination is a real URL,
- * which is the point of server rendering: `/markets?tag=politics&sort=volume` is
- * shareable and indexable, and the page works with JS disabled.
+ * Filters are plain links. Every combination is a shareable URL.
  */
 export function Filters({
   tags,
@@ -31,11 +29,11 @@ export function Filters({
 
   return (
     <div className="filters">
-      <nav className="chips" aria-label="Sort markets">
+      <nav className="tabs" aria-label="Sort markets">
         {SORTS.map((sort) => (
           <a
             key={sort.key}
-            className={`chip${sort.key === activeSort ? " chip--on" : ""}`}
+            className={sort.key === activeSort ? "is-on" : undefined}
             href={href(activeTag, sort.key)}
           >
             {sort.label}

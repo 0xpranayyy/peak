@@ -220,6 +220,11 @@ Next app under `web/`: markets list, event detail with SSR metadata, search,
 invite route, legal mirrors. Reads Worker (`edge.peakapp.site`). Production host
 is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 
+**IA (exchange, not marketing):** Markets · Positions · Watchlist · Settings.
+`/` redirects to `/markets`. **No fake/mock/demo trading data** — empty states
+when the API has nothing; omit UI for capabilities the Polymarket/Peak API
+does not expose.
+
 ### 2 — Auth — **done in `web/`**
 
 1. Privy Dashboard: add web origins (`https://app.peakapp.site`, Pages preview,
@@ -232,14 +237,17 @@ is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 
 ### 3 — Trade — **done in `web/` (ops still required)**
 
-1. Portfolio, setup, prepare/submit order path wired in `web/` (Privy path
-   `new` only — no seed import).
+1. Positions (portfolio), setup, prepare/submit order path wired in `web/`
+   (Privy path `new` only — no seed import).
 2. Market (FOK/FAK) + limit (GTC) ticket; live bid/ask/spread from edge CLOB.
-3. Open orders + cancel; deposit address copy; position → sell deep-link.
-4. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
-5. `/api/peak/*` can forward browser CF country when `PEAK_WEB_PROXY_SECRET`
+3. Open orders + cancel; deposit address copy; position → sell deep-link;
+   recent activity from `GET /activity`.
+4. Watchlist: real event IDs in `localStorage`, keyed by Privy user id (or
+   `anon` when signed out). No default fake markets.
+5. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
+6. `/api/peak/*` can forward browser CF country when `PEAK_WEB_PROXY_SECRET`
    matches on Pages + Worker (otherwise API region gate may see the colo).
-6. Smoke in allowed regions still required before marketing web trading.
+7. Smoke in allowed regions still required before marketing web trading.
 
 ### 4 — Polish
 
@@ -253,18 +261,20 @@ is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 **allowed** region. Skip live order submit if geo-blocked.
 
-1. **Browse** — `/markets` loads cards; category + sort change URL; pagination
+1. **Browse** — `/markets` loads live rows; category + sort change URL; pagination
    works; search returns events.
-2. **Detail** — open an event; bid/ask/spread refresh on the ticket.
-3. **Auth** — Sign in (email or Google); portfolio shows signer; geo banner
+2. **Detail** — open an event; bid/ask/spread refresh on the ticket; Watch adds
+   a real event id to the local watchlist.
+3. **Auth** — Sign in (email or Google); Positions shows signer; geo banner
    matches `/geo` if restricted.
 4. **Setup** — if “Needs setup”, Finish setup succeeds (Builder/Relayer live).
-5. **Deposit** — Portfolio shows deposit wallet; Copy address works.
+5. **Deposit** — Positions shows deposit wallet; Copy address works.
 6. **Limit buy** — small GTC buy prepare → submit → success or clear CLOB/
    balance error (never silent 404→Railway fallback except missing prepare).
 7. **Market sell** — from a position link (`?side=SELL&shares=…`) or ticket;
    order type shows FAK.
-8. **Orders** — open GTC appears under Open orders; Cancel removes it.
+8. **Orders** — open GTC appears under Open orders; Cancel removes it;
+   Recent activity reflects Polymarket fills when available.
 9. **Geo** — in a blocked region, buy disabled with clear copy; close-only
    allows sell only.
 10. **Landing intact** — `https://peakapp.site/` still marketing; Launch app →

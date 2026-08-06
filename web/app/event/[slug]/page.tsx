@@ -4,17 +4,13 @@ import { notFound } from "next/navigation";
 import { fetchEventBySlug } from "@/lib/gamma";
 import { cents, compactUsd, endsIn, percent } from "@/lib/format";
 import { EventTradePanel } from "@/components/EventTradePanel";
+import { WatchlistToggle } from "@/components/WatchlistToggle";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }> };
 
-/**
- * Per-market metadata is the whole reason this app is server-rendered. A share
- * of a market link should preview the actual question and the current odds,
- * and search should be able to index them.
- */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const event = await fetchEventBySlug(slug).catch(() => null);
@@ -24,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const odds = probability !== null ? ` — ${percent(probability)} chance` : "";
   const description =
     event.description?.slice(0, 180) ??
-    `Live odds, volume and resolution date for ${event.title}.`;
+    `Live odds and volume for ${event.title}.`;
 
   return {
     title: event.title,
@@ -48,7 +44,7 @@ export default async function EventPage({ params }: Props) {
   return (
     <div className="shell detail">
       <a className="detail__back" href="/markets">
-        ← All markets
+        ← Markets
       </a>
 
       <div className="detail__layout">
@@ -64,6 +60,9 @@ export default async function EventPage({ params }: Props) {
                 <span>{compactUsd(event.volume)} volume</span>
                 <span>{compactUsd(event.liquidity)} liquidity</span>
                 {ends ? <span>{ends}</span> : null}
+              </div>
+              <div className="detail__tools">
+                <WatchlistToggle eventId={event.id} />
               </div>
             </div>
           </div>
@@ -103,13 +102,18 @@ export default async function EventPage({ params }: Props) {
           </div>
 
           <p className="notice">
-            <b>Prices are live, not advice.</b> An outcome trading at 70¢ means the
-            market prices it near a 70% chance — it is not a prediction of what will
-            happen, and it moves.
+            <b>Prices are live, not advice.</b> An outcome at 70¢ prices a ~70%
+            chance — it is not a prediction of what will happen, and it moves.
           </p>
         </div>
 
-        <Suspense fallback={<div className="detail__aside"><p className="empty">Loading ticket…</p></div>}>
+        <Suspense
+          fallback={
+            <div className="detail__aside">
+              <p className="empty">Loading ticket…</p>
+            </div>
+          }
+        >
           <EventTradePanel markets={event.markets} />
         </Suspense>
       </div>

@@ -20,6 +20,8 @@ type PeakSessionValue = {
   ready: boolean;
   authenticated: boolean;
   privyConfigured: boolean;
+  /** Privy DID when signed in — used to key local watchlist storage. */
+  userId: string | null;
   eoa: string | null;
   session: TradingSession | null;
   geo: GeoStatus | null;
@@ -145,6 +147,7 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
     ready,
     authenticated,
     privyConfigured: true,
+    userId: user?.id ?? null,
     eoa,
     session,
     geo,
@@ -182,6 +185,7 @@ function PeakSessionFallback({ children }: { children: React.ReactNode }) {
     ready: true,
     authenticated: false,
     privyConfigured: false,
+    userId: null,
     eoa: null,
     session: null,
     geo,

@@ -10,8 +10,6 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const { q } = await searchParams;
   return {
     title: q ? `“${q}”` : "Search",
-    // Search result pages are thin and infinite; keeping them out of the index
-    // protects the market pages, which are the content worth ranking.
     robots: { index: false, follow: true },
   };
 }
@@ -25,17 +23,23 @@ export default async function SearchPage({ searchParams }: Props) {
     : [];
 
   return (
-    <div className="shell detail">
-      <form className="search search--page" action="/search" role="search">
-        <input
-          type="search"
-          name="q"
-          defaultValue={query}
-          placeholder="Search markets"
-          aria-label="Search markets"
-        />
-        <button type="submit">Search</button>
-      </form>
+    <div className="shell page-body">
+      <div className="page-head">
+        <div>
+          <h1>Search</h1>
+          <p>Find live markets by title or topic.</p>
+        </div>
+        <form className="search" action="/search" role="search">
+          <input
+            type="search"
+            name="q"
+            defaultValue={query}
+            placeholder="Search markets"
+            aria-label="Search markets"
+          />
+          <button type="submit">Search</button>
+        </form>
+      </div>
 
       {!query ? (
         <p className="empty">Type something to search live markets.</p>
@@ -45,12 +49,12 @@ export default async function SearchPage({ searchParams }: Props) {
         </p>
       ) : (
         <>
-          <p className="detail__meta" style={{ marginTop: 24 }}>
+          <p className="detail__meta" style={{ marginTop: 8, marginBottom: 8 }}>
             <span>
               {events.length} market{events.length === 1 ? "" : "s"} for “{query}”
             </span>
           </p>
-          <div className="grid">
+          <div className="market-list">
             {events.map((event) => (
               <MarketCard key={event.id} event={event} />
             ))}

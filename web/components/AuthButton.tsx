@@ -7,11 +7,11 @@ function shortAddress(address: string): string {
 }
 
 export function AuthButton() {
-  const { ready, authenticated, eoa, login, logout, syncing, privyConfigured } =
+  const { ready, authenticated, eoa, login, syncing, privyConfigured } =
     usePeakSession();
 
   if (!ready) {
-    return <span className="auth-pill auth-pill--muted">…</span>;
+    return <span className="auth-muted">…</span>;
   }
 
   if (!authenticated) {
@@ -34,12 +34,13 @@ export function AuthButton() {
 
   return (
     <div className="auth-cluster">
-      <a className="auth-pill" href="/portfolio" title={eoa ?? undefined}>
+      <a
+        className="auth-addr mono"
+        href="/settings"
+        title={eoa ?? undefined}
+      >
         {syncing ? "Syncing…" : eoa ? shortAddress(eoa) : "Account"}
       </a>
-      <button type="button" className="auth-link" onClick={() => void logout()}>
-        Sign out
-      </button>
     </div>
   );
 }
@@ -51,7 +52,7 @@ export function GeoBanner() {
   const copy =
     geo.status === "close_only"
       ? `New positions aren’t available in ${geo.country ?? "your region"}. You can still close positions you already hold.`
-      : `Trading isn’t available in ${geo.country ?? "your region"}. You can still browse and sign in; live order submit needs an allowed region (VPN if you’re geo-blocked).`;
+      : `Trading isn’t available in ${geo.country ?? "your region"}. Browse and sign-in still work; order submit needs an allowed region.`;
 
   return (
     <div className="geo-banner" role="status">
