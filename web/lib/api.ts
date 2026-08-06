@@ -1,10 +1,24 @@
 /**
  * Peak trading API client (browser).
  *
- * All authenticated calls go through `/api/peak/*` (Next edge proxy) so we do
- * not depend on Railway `CORS_ORIGINS`. Market data stays on the public edge
- * Worker via `lib/gamma.ts` / `lib/clob.ts`.
+ * Authenticated calls go to the Worker-fronted API host (`api.peakapp.site`)
+ * with CORS. That skips Cloudflare Pages Functions (`/api/peak/*`), which
+ * intermittently return raw CF 502s under load. Market data stays on
+ * `edge.peakapp.site` via `lib/gamma.ts` / `lib/clob.ts`.
+ *
+ * Secrets (edge / Builder / Relayer) stay on the Worker + Railway — the
+ * browser only sends the Privy JWT.
  */
+
+const PEAK_API_BASE = (
+  process.env.NEXT_PUBLIC_PEAK_API_URL ?? "https://api.peakapp.site"
+).replace(/\/$/, "");
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export class PeakApiError extends Error {
   status: number;
@@ -23,6 +37,12 @@ export class PeakApiError extends Error {
     this.code = code;
     this.body = body;
   }
+}
+
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof PeakApiError) return RETRYABLE_STATUS.has(err.status);
+  // fetch() network failures are TypeError in browsers.
+  return err instanceof TypeError;
 }
 
 async function parseJson(response: Response): Promise<Record<string, unknown>> {
@@ -80,6 +100,10 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
       break;
   }
 
+  if (status === 502 || status === 503 || status === 504) {
+    return "Couldn’t reach Peak. Retry";
+  }
+
   if (raw) {
     const lower = raw.toLowerCase();
     if (
@@ -97,6 +121,10 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
       lower.includes("switch to polygon")
     ) {
       return "Switch your wallet to Polygon (chain id 137), then try again.";
+    }
+    // Cloudflare Pages / Worker plain-text bodies like "error code: 502".
+    if (/error code:\s*50[234]/i.test(lower) || lower === "bad gateway") {
+      return "Couldn’t reach Peak. Retry";
     }
   }
 
@@ -132,16 +160,16 @@ export function friendlyClientError(err: unknown): string {
   return raw || "Something went wrong.";
 }
 
-export async function peakFetch(
+async function peakFetchOnce(
   path: string,
   options: {
     method?: string;
     token?: string | null;
     body?: Record<string, unknown>;
     query?: Record<string, string | number | undefined>;
-  } = {}
+  }
 ): Promise<Record<string, unknown>> {
-  const url = new URL(`/api/peak/${path.replace(/^\//, "")}`, window.location.origin);
+  const url = new URL(path.replace(/^\//, ""), `${PEAK_API_BASE}/`);
   if (options.query) {
     for (const [key, value] of Object.entries(options.query)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -155,12 +183,17 @@ export async function peakFetch(
   }
   if (options.body) headers["content-type"] = "application/json";
 
-  const response = await fetch(url.toString(), {
-    method: options.method ?? (options.body ? "POST" : "GET"),
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: options.method ?? (options.body ? "POST" : "GET"),
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: "no-store",
+    });
+  } catch {
+    throw new PeakApiError("Couldn’t reach Peak. Retry", 503, "network_error");
+  }
 
   const json = await parseJson(response);
   if (!response.ok) {
@@ -172,6 +205,30 @@ export async function peakFetch(
     );
   }
   return json;
+}
+
+/** Silent retries on transient gateway / network failures (1–2 extras). */
+export async function peakFetch(
+  path: string,
+  options: {
+    method?: string;
+    token?: string | null;
+    body?: Record<string, unknown>;
+    query?: Record<string, string | number | undefined>;
+  } = {}
+): Promise<Record<string, unknown>> {
+  const attempts = 3;
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await peakFetchOnce(path, options);
+    } catch (err) {
+      last = err;
+      if (!isRetryableError(err) || i === attempts - 1) throw err;
+      await sleep(300 * (i + 1));
+    }
+  }
+  throw last;
 }
 
 export type TradingSession = {
@@ -285,37 +342,53 @@ export async function fetchActivity(
   token: string,
   limit = 25
 ): Promise<ActivityItem[]> {
-  const url = new URL("/api/peak/activity", window.location.origin);
-  url.searchParams.set("limit", String(limit));
-  const response = await fetch(url.toString(), {
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-      "x-peak-auth": "privy",
-    },
-    cache: "no-store",
-  });
-  const text = await response.text();
-  let parsed: unknown = [];
-  try {
-    parsed = text ? JSON.parse(text) : [];
-  } catch {
-    parsed = [];
+  const attempts = 3;
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const url = new URL("activity", `${PEAK_API_BASE}/`);
+      url.searchParams.set("limit", String(limit));
+      let response: Response;
+      try {
+        response = await fetch(url.toString(), {
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${token}`,
+            "x-peak-auth": "privy",
+          },
+          cache: "no-store",
+        });
+      } catch {
+        throw new PeakApiError("Couldn’t reach Peak. Retry", 503, "network_error");
+      }
+      const text = await response.text();
+      let parsed: unknown = [];
+      try {
+        parsed = text ? JSON.parse(text) : [];
+      } catch {
+        parsed = [];
+      }
+      if (!response.ok) {
+        const body =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : {};
+        throw new PeakApiError(
+          friendlyApiMessage(body, response.status),
+          response.status,
+          typeof body.code === "string" ? body.code : null,
+          body
+        );
+      }
+      const rows = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
+      return rows.map(mapActivity).filter((a): a is ActivityItem => a !== null);
+    } catch (err) {
+      last = err;
+      if (!isRetryableError(err) || i === attempts - 1) throw err;
+      await sleep(300 * (i + 1));
+    }
   }
-  if (!response.ok) {
-    const body =
-      parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed as Record<string, unknown>)
-        : {};
-    throw new PeakApiError(
-      friendlyApiMessage(body, response.status),
-      response.status,
-      typeof body.code === "string" ? body.code : null,
-      body
-    );
-  }
-  const rows = Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
-  return rows.map(mapActivity).filter((a): a is ActivityItem => a !== null);
+  throw last;
 }
 
 export async function cancelOrder(token: string, orderId: string): Promise<void> {

@@ -10,7 +10,7 @@
  *     serves public, path-allowlisted, credential-free reads, so a browser can
  *     call it with no infrastructure changes.
  *
- * Authenticated trading talks to `api.peakapp.site` via `/api/peak/*` instead.
+ * Authenticated trading talks to `api.peakapp.site` directly (Worker CORS).
  */
 
 const EDGE = process.env.NEXT_PUBLIC_PEAK_EDGE_URL ?? "https://edge.peakapp.site";

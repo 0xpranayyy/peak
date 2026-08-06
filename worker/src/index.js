@@ -302,17 +302,106 @@ function secretsMatch(a, b) {
 }
 
 /**
+ * Browser origins allowed to call api.* directly (CORS).
+ *
+ * iOS / native send no Origin and keep full backend path access. Browser
+ * calls are additionally path-allowlisted (same surface as the old Pages
+ * `/api/peak/*` proxy) so XSS on the web app cannot reach key-import routes.
+ */
+const WEB_ORIGINS = new Set([
+  "https://app.peakapp.site",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]);
+
+function isAllowedWebOrigin(origin) {
+  if (!origin) return false;
+  if (WEB_ORIGINS.has(origin)) return true;
+  // Cloudflare Pages preview / project hosts for peak-web.
+  return /^https:\/\/peak-web(?:-[a-z0-9-]+)?\.pages\.dev$/i.test(origin);
+}
+
+/** Exact paths + order-id cancel. Methods enforced per route. */
+const WEB_ALLOWED = [
+  { pattern: /^\/health$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^\/auth\/session$/, methods: new Set(["POST"]) },
+  { pattern: /^\/trading\/setup$/, methods: new Set(["POST"]) },
+  { pattern: /^\/portfolio$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^\/activity$/, methods: new Set(["GET", "HEAD"]) },
+  { pattern: /^\/orders$/, methods: new Set(["GET", "HEAD", "POST"]) },
+  { pattern: /^\/orders\/prepare$/, methods: new Set(["POST"]) },
+  { pattern: /^\/orders\/[^/]+$/, methods: new Set(["DELETE"]) },
+  { pattern: /^\/deposit-address$/, methods: new Set(["POST"]) },
+];
+
+function isWebAllowedPath(pathname, method) {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  for (const rule of WEB_ALLOWED) {
+    if (rule.pattern.test(path) && rule.methods.has(method)) return true;
+  }
+  return false;
+}
+
+function applyWebCors(headers, origin) {
+  headers.set("access-control-allow-origin", origin);
+  headers.set("access-control-allow-credentials", "true");
+  headers.set(
+    "access-control-allow-methods",
+    "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
+  headers.set(
+    "access-control-allow-headers",
+    "authorization, content-type, accept, x-peak-auth"
+  );
+  headers.set("access-control-max-age", "86400");
+  headers.set("vary", "Origin");
+}
+
+function withWebCors(response, origin) {
+  if (!origin) return response;
+  const headers = new Headers(response.headers);
+  applyWebCors(headers, origin);
+  return new Response(response.body, { status: response.status, headers });
+}
+
+/**
  * Reverse proxy for Peak's own backend. Unlike the Polymarket routes this
  * forwards every path and method verbatim — it fronts a single origin we
  * control, so it is not an open proxy, and the backend still enforces its own
  * Privy/APP_TOKEN auth. Auth headers pass straight through.
+ *
+ * Web browsers call api.* directly (CORS below). That avoids Cloudflare Pages
+ * Functions, which intermittently 502 under load when proxying `/api/peak/*`.
+ * Native clients are unchanged (no Origin → no CORS / no path allowlist).
  */
 async function handleBackend(request, url, env) {
+  const originHeader = request.headers.get("Origin");
+  const webOrigin = isAllowedWebOrigin(originHeader) ? originHeader : null;
+  const method = request.method.toUpperCase();
+
+  if (method === "OPTIONS") {
+    if (!webOrigin) {
+      return json({ error: "CORS origin not allowed", code: "cors_denied" }, 403);
+    }
+    const headers = new Headers();
+    applyWebCors(headers, webOrigin);
+    return new Response(null, { status: 204, headers });
+  }
+
+  if (webOrigin && !isWebAllowedPath(url.pathname, method)) {
+    return withWebCors(
+      json({ error: "Not found", code: "proxy_path_denied" }, 404),
+      webOrigin
+    );
+  }
+
   const target = new URL(url.pathname + url.search, BACKEND_ORIGIN);
 
   const headers = new Headers(request.headers);
   // Let fetch set Host from the target; a stale Host makes Railway 404.
   headers.delete("host");
+  // Worker answers CORS; do not forward browser Origin to Railway (cors: off).
+  headers.delete("origin");
 
   // Tell the backend the user's real country. It cannot work this out itself —
   // it only ever sees this Worker's IP — and a client-side check alone is
@@ -322,9 +411,10 @@ async function handleBackend(request, url, env) {
   headers.delete("x-peak-region-status");
   headers.delete("x-peak-edge-secret");
 
-  // Web client double-hop: browser → app.peakapp.site (/api/peak) → api.* .
-  // Without help, `request.cf.country` here is the Pages colo, not the trader.
-  // The Next proxy may forward the browser CF country + a shared secret.
+  // Legacy Pages double-hop: browser → app (/api/peak) → api.* . Without help,
+  // `request.cf.country` was the Pages colo. Prefer the real client country
+  // when the browser hits api.* directly; still honor the shared-secret claim
+  // if an old Pages proxy is in the path.
   const claimedCountry = headers.get("x-peak-client-country");
   const webProxySecret = headers.get("x-peak-web-proxy-secret");
   headers.delete("x-peak-client-country");
@@ -355,12 +445,12 @@ async function handleBackend(request, url, env) {
     headers.set("x-peak-region-status", blocked ? "blocked" : closeOnly ? "close_only" : "allowed");
   }
 
-  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const hasBody = method !== "GET" && method !== "HEAD";
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(), BACKEND_TIMEOUT_MS);
   try {
     const upstream = await fetch(target.toString(), {
-      method: request.method,
+      method,
       headers,
       body: hasBody ? await request.arrayBuffer() : undefined,
       signal: abort.signal,
@@ -370,14 +460,23 @@ async function handleBackend(request, url, env) {
     const out = new Headers(upstream.headers);
     // Never let an authenticated trading response sit in a shared cache.
     out.set("cache-control", "no-store");
+    // Strip any upstream CORS — we set our own for web origins.
+    out.delete("access-control-allow-origin");
+    out.delete("access-control-allow-credentials");
+    out.delete("access-control-allow-headers");
+    out.delete("access-control-allow-methods");
+    if (webOrigin) applyWebCors(out, webOrigin);
     return new Response(upstream.body, { status: upstream.status, headers: out });
   } catch (err) {
     const timedOut = err?.name === "AbortError";
-    return json(
-      timedOut
-        ? { error: "Upstream timed out", code: "upstream_timeout" }
-        : { error: "Upstream unavailable", code: "upstream_unavailable" },
-      timedOut ? 504 : 502
+    return withWebCors(
+      json(
+        timedOut
+          ? { error: "Upstream timed out", code: "upstream_timeout" }
+          : { error: "Upstream unavailable", code: "upstream_unavailable" },
+        timedOut ? 504 : 502
+      ),
+      webOrigin
     );
   } finally {
     clearTimeout(deadline);

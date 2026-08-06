@@ -12,6 +12,7 @@ import { usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   setupTrading,
   syncSession,
+  PeakApiError,
   type TradingSession,
 } from "@/lib/api";
 import { fetchGeo, type GeoStatus } from "@/lib/geo";
@@ -94,12 +95,18 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
       setSession(null);
       const raw = err instanceof Error ? err.message : "Session sync failed.";
       const lower = raw.toLowerCase();
+      const status = err instanceof PeakApiError ? err.status : 0;
       setError(
         lower.includes("user rejected") || lower.includes("user denied")
           ? "Signature cancelled in your wallet. Approve the request to continue."
           : lower.includes("network") || lower.includes("chain")
             ? "Switch your wallet to Polygon (chain id 137), then retry."
-            : raw
+            : status >= 502 && status <= 504 ||
+                lower.includes("couldn’t reach peak") ||
+                lower.includes("couldn't reach peak") ||
+                /error code:\s*50[234]/.test(lower)
+              ? "Couldn’t reach Peak. Retry"
+              : raw
       );
     } finally {
       setSyncing(false);

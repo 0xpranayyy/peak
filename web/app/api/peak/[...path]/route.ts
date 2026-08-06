@@ -1,12 +1,12 @@
 /**
- * Same-origin proxy to the Peak trading API.
+ * Same-origin proxy to the Peak trading API (legacy fallback).
  *
- * Browser → /api/peak/* → api.peakapp.site
+ * Prefer browser → `api.peakapp.site` (Worker CORS + path allowlist). Pages
+ * Functions intermittently return raw Cloudflare `error code: 502` under load
+ * when proxying here, which blocked sign-in. Kept for older bundles / SSR
+ * helpers that still hit `/api/peak/*`.
  *
- * Why not call the API from the browser? Railway CORS is intentionally off for
- * the iOS-only default (`CORS_ORIGINS` empty). Proxying keeps the web client
- * working without widening the API allow-list, and still hits the Worker-fronted
- * `api.peakapp.site` host so the edge secret stays intact.
+ * Browser → /api/peak/* → api.peakapp.site → Railway
  *
  * Geo caveat: the Worker would otherwise stamp `x-peak-country` from *this*
  * Pages fetch (colo IP), not the trader. When `PEAK_WEB_PROXY_SECRET` matches
