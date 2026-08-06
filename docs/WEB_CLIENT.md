@@ -60,23 +60,77 @@ only on `app.peakapp.site`. Browser→API CORS can stay off; the Next app proxie
 via `/api/peak/*`. If you ever call the API from the browser directly, set
 `CORS_ORIGINS=https://app.peakapp.site`.
 
-### DNS for `app` (required once)
+### DNS for `app`
 
-Pages already has custom domain **`app.peakapp.site`** registered on `peak-web`
-(status pending until DNS exists). Wrangler OAuth is often **zone read-only**,
-so create the record in the Cloudflare dashboard:
+Custom domain **`app.peakapp.site`** is attached to Pages project `peak-web`
+(status **Active**, Google Trust SSL). Record shape:
 
-1. Cloudflare → **DNS** → zone **`peakapp.site`**
-2. **Add record**:
-
-   | Type | Name | Target | Proxy status |
-   | --- | --- | --- | --- |
-   | CNAME | `app` | `peak-web-dq7.pages.dev` | Proxied (orange cloud) |
-
-3. Wait for Pages → Custom domains → `app.peakapp.site` → **Active** (SSL via
-   Google CA). Until then the hostname is **NXDOMAIN**.
+| Type | Name | Target | Proxy status |
+| --- | --- | --- | --- |
+| CNAME | `app` | `peak-web-dq7.pages.dev` | Proxied (orange cloud) |
 
 Do **not** point apex at `peak-web`.
+
+Verify:
+
+```bash
+dig @1.1.1.1 +short app.peakapp.site          # Cloudflare anycast A/AAAA
+curl -sI https://app.peakapp.site/markets     # 200, x-edge-runtime: 1 (Next)
+curl -s https://app.peakapp.site/api/peak/health   # {"ok":true,...}
+curl -sI https://peakapp.site/                # still marketing landing
+```
+
+If your Mac still says NXDOMAIN while `dig @1.1.1.1` works, flush the local
+cache: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`.
+
+### CLI ops (one-time — avoid Dashboard clicks)
+
+`npx wrangler login` OAuth is enough for **Pages deploy** and **Workers**, but
+its zone scope is **`zone (read)` only**. That is why DNS create failed with
+Authentication error / 403 — not a Peak bug. There is no `CLOUDFLARE_API_TOKEN`
+in the repo or shell today.
+
+**Create a scoped API token once** (Cloudflare Dashboard → My Profile → API
+Tokens → Create Token → Create Custom Token):
+
+| Permission | Level | Resource |
+| --- | --- | --- |
+| Account → Cloudflare Pages | Edit | Include → this account |
+| Account → Workers Scripts | Edit | Include → this account (Worker secrets / deploy) |
+| Zone → DNS | Edit | Include → `peakapp.site` only |
+| Zone → Zone | Read | Include → `peakapp.site` only |
+
+Optional: Account → Workers KV / Routes if you change Worker bindings.
+
+Then on this machine (never commit the value):
+
+```bash
+# shell profile or direnv — agents/CI read this, not wrangler OAuth
+export CLOUDFLARE_API_TOKEN=…   # the scoped token above
+export CLOUDFLARE_ACCOUNT_ID=81ca142314f0e219de74bd7128f73472
+
+# Deploy web (build needs NEXT_PUBLIC_* from web/.env.local)
+cd web && npm run pages:deploy
+
+# Deploy landing
+npx wrangler pages deploy website --project-name peak-website --branch main
+
+# DNS example (create CNAME if missing) — uses API token, not OAuth
+ZONE_ID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones?name=peakapp.site" | jq -r '.result[0].id')
+curl -s -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+  --data '{"type":"CNAME","name":"app","content":"peak-web-dq7.pages.dev","proxied":true,"ttl":1}'
+
+# Confirm token can write DNS (expect success:true)
+curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=app.peakapp.site" | jq '.success,.result[].content'
+```
+
+With that token in the environment, future agents can deploy + fix DNS without
+sending you to the Cloudflare UI. Keep using `wrangler login` alone if you only
+need Pages/Worker deploys and never DNS writes.
 
 ## Deploy (web beside landing)
 
@@ -99,7 +153,7 @@ Step-by-step + verify table: [WEB_DEPLOY_PROMPT.md](WEB_DEPLOY_PROMPT.md).
 | Origin | Required? |
 | --- | --- |
 | `https://app.peakapp.site` | **Yes** (production web) |
-| `https://peak-web-dq7.pages.dev` | **Yes** until custom domain is Active (smoke / fallback) |
+| `https://peak-web-dq7.pages.dev` | Optional fallback / preview smoke (keep while useful) |
 | `http://localhost:3000` | Yes for local `npm run dev` |
 | `https://peakapp.site` | **No** when “Launch app” is a normal navigation to `app.` — apex does not load Privy. Add only if marketing ever embeds Privy or opens an auth popup from the apex origin. |
 
@@ -221,7 +275,7 @@ Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 | Item | Who | Status notes |
 | --- | --- | --- |
 | Privy origins: `app.peakapp.site` + `peak-web-dq7.pages.dev` + localhost | Privy Dashboard | User: `app.` done; still add pages.dev + localhost if missing |
-| DNS CNAME `app` → `peak-web-dq7.pages.dev` (proxied) | Cloudflare DNS UI | Wrangler OAuth lacks zone **write** — dashboard required |
+| DNS CNAME `app` → `peak-web-dq7.pages.dev` (proxied) | Cloudflare DNS | **Done** — Pages domain Active; set `CLOUDFLARE_API_TOKEN` with Zone DNS Edit for future CLI |
 | Pages `nodejs_compat` + env (`PRIVY`, `PEAK_API_URL`, proxy secret) | Pages | Set on project; redeploy after `NEXT_PUBLIC_*` changes |
 | Worker `PEAK_WEB_PROXY_SECRET` (same value as Pages) | Wrangler | Required for honest geo on `/api/peak/*` |
 | Live order submit smoke | Human | From an **allowed** region (India/`IN` is blocked — use VPN / allowed ISP). Browse + sign-in still work while blocked. |

@@ -25,18 +25,19 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
 
 1. **Dashboard** → Pages → `peak-web` → Settings → Functions → Compatibility
    flags → **`nodejs_compat`** for Production and Preview.
-2. **Custom domains** → Add `app.peakapp.site`. If verification stays pending
-   with “CNAME record not set”, create DNS in the `peakapp.site` zone
-   (**Cloudflare Dashboard → DNS** — Wrangler OAuth is typically zone
-   **read-only** and API create returns Authentication error):
+2. **Custom domains** → Add `app.peakapp.site` (already **Active** after CNAME).
+   For future DNS changes without the UI, create a scoped API token with
+   **Zone → DNS → Edit** on `peakapp.site` and export `CLOUDFLARE_API_TOKEN`
+   (see [WEB_CLIENT.md § CLI ops](WEB_CLIENT.md#cli-ops-one-time--avoid-dashboard-clicks)).
+   Wrangler OAuth alone is **zone read-only** and cannot create records.
 
    | Type | Name | Target | Proxy |
    | --- | --- | --- | --- |
    | CNAME | `app` | `peak-web-dq7.pages.dev` | Proxied |
 
-   Confirm with `dig +short app.peakapp.site CNAME` → `peak-web-dq7.pages.dev.`
-   and `curl -so /dev/null -w '%{http_code}\n' https://app.peakapp.site/markets`
-   → `200`. Apex `https://peakapp.site/` must still be marketing.
+   Confirm with `dig @1.1.1.1 +short app.peakapp.site` and
+   `curl -sI https://app.peakapp.site/markets` → `200` + `x-edge-runtime`.
+   Apex `https://peakapp.site/` must still be marketing.
 
 3. **Privy** → App → Allowed origins:
    - `https://app.peakapp.site` (required)
