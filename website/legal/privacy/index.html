@@ -81,7 +81,8 @@
         seed phrase, that secret is sent over HTTPS to Peak's backend, which
         derives your wallet address and signs your orders on your instruction. It
         is never written to your device. On Peak's servers it is held encrypted
-        (AES-256-GCM) so that your trading session survives a restart. See
+        (AES-256-GCM) in memory only, for the life of a trading session — it is
+        never written to disk, and a restart clears it. See
         <a href="#custody">Custody</a> for what this means for control of your
         funds.</li>
       <li><strong>Trading instructions you send.</strong> Orders you place (token,
@@ -164,9 +165,10 @@
       touches in the course of relaying a trade, it is kept only as long as
       needed to operate the service and meet any applicable recordkeeping
       obligation, then deleted or anonymized. If you imported a private key or
-      seed phrase, the encrypted signing key is kept for as long as that trading
-      session is active so you do not have to re-import on every restart; ask us
-      and we will delete it. To ask about or request deletion of
+      seed phrase, the encrypted signing key lives only in Peak's server memory
+      for the life of that trading session. It is never written to disk, so a
+      restart or deployment clears it and you re-import. You can also remove it
+      yourself at any time from Account, and signing out removes it. To ask about or request deletion of
       data associated with your account, see <a href="#contact">Contact</a>.</p>
 
     <h2 id="kids">6. Age</h2>
