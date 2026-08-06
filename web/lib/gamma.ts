@@ -13,8 +13,6 @@
  * Authenticated trading talks to `api.peakapp.site` via `/api/peak/*` instead.
  */
 
-import { cache } from "react";
-
 const EDGE = process.env.NEXT_PUBLIC_PEAK_EDGE_URL ?? "https://edge.peakapp.site";
 
 // ---------------------------------------------------------------- raw shapes
@@ -319,10 +317,10 @@ export async function searchEvents(query: string, limit = 24): Promise<PeakEvent
  * or resolved market should still render rather than 404, which also keeps
  * previously indexed URLs alive.
  *
- * Wrapped in `cache()` so `generateMetadata` + the page share one Gamma fetch
- * per request.
+ * Called from the browser (EventClient). Do not wrap in React `cache()` —
+ * that is server-only and this module is shared with client components.
  */
-export const fetchEventBySlug = cache(async (slug: string): Promise<PeakEvent | null> => {
+export async function fetchEventBySlug(slug: string): Promise<PeakEvent | null> {
   const raw = await getGamma<Record<string, unknown>[]>(
     "events",
     { slug, limit: 1 },
@@ -330,7 +328,7 @@ export const fetchEventBySlug = cache(async (slug: string): Promise<PeakEvent | 
   );
   if (!Array.isArray(raw) || raw.length === 0) return null;
   return mapEvent(raw[0]);
-});
+}
 
 /** One event by Gamma id — used by the local watchlist. */
 export async function fetchEventById(id: string): Promise<PeakEvent | null> {

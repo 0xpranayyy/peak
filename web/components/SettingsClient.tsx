@@ -104,7 +104,7 @@ export function SettingsClient() {
               {session?.needsDeploy
                 ? "Finish setup from Positions before placing orders."
                 : session?.ready
-                  ? "Ready to trade when geo allows."
+                  ? "Ready to trade."
                   : authenticated
                     ? "Session linked."
                     : "Sign in to sync."}

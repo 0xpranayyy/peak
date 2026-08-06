@@ -129,12 +129,9 @@ export function TradeTicket({
     return side === "SELL" ? "FAK" : "FOK";
   }, [orderKind, side]);
 
-  // Unknown / missing geo: block new buys (fail closed); sells stay until CLOB refuses.
-  const geoBlocksBuy =
-    geo == null ||
-    geo.status === "blocked" ||
-    geo.status === "close_only" ||
-    geo.status === "unknown";
+  // Only hard-block when edge definitively says blocked / close-only.
+  // Unknown / still-loading geo stays open — API + CLOB enforce on submit.
+  const geoBlocksBuy = geo?.status === "blocked" || geo?.status === "close_only";
   const geoBlocksSell = geo?.status === "blocked";
   const geoBlocked = (side === "BUY" && geoBlocksBuy) || (side === "SELL" && geoBlocksSell);
 
@@ -171,10 +168,8 @@ export function TradeTicket({
     if (geoBlocked) {
       setError(
         geo?.status === "close_only"
-          ? "New positions aren’t available in your region."
-          : geo?.status === "unknown"
-            ? "Couldn’t confirm your region yet. New buys are paused until geo loads."
-            : "Trading isn’t available in your region."
+          ? "New positions aren’t available here."
+          : "Trading isn’t available here."
       );
       return;
     }
@@ -412,18 +407,7 @@ export function TradeTicket({
         </button>
       )}
 
-      {geoBlocked ? (
-        <p className="ticket__status ticket__status--warn">
-          {geo == null
-            ? "Checking your region…"
-            : geo.status === "close_only"
-              ? "New buys are blocked in your region. You can still sell to close."
-              : geo.status === "unknown"
-                ? "Couldn’t confirm your region. New buys are paused; sells may still work."
-                : "Trading is blocked in your region. You can still browse markets."}
-        </p>
-      ) : null}
-      {marketNeedsBook && !geoBlocked ? (
+      {marketNeedsBook ? (
         <p className="ticket__status ticket__status--warn">
           Waiting for a live {side === "BUY" ? "ask" : "bid"} before market orders.
         </p>

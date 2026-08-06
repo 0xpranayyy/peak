@@ -1206,16 +1206,6 @@ button.chip {
 
 /* ------------------------------------------------------------------- auth */
 
-.geo-banner {
-  background: rgba(248, 113, 113, 0.08);
-  border-bottom: 1px solid rgba(248, 113, 113, 0.25);
-  color: #fca5a5;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 9px 0;
-  line-height: 1.4;
-}
-
 .auth-cluster {
   display: flex;
   align-items: center;

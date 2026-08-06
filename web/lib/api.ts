@@ -46,7 +46,11 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
 
   switch (code) {
     case "region_restricted":
-      return raw || "Trading isn’t available in your region.";
+      // Prefer short submit-time copy even if an older backend still sends
+      // longer region prose.
+      return String(json.regionStatus || "").toLowerCase() === "close_only"
+        ? "New positions aren’t available here."
+        : "Trading isn’t available here.";
     case "insufficient_funds":
       return raw || "Not enough cash for this order.";
     case "insufficient_shares":

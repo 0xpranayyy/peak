@@ -1170,8 +1170,8 @@ function rejectIfRegionBlocked(req, res, { opening }) {
     res.status(403).json({
       error:
         status === "close_only"
-          ? "New positions aren’t available in your region. You can still close positions you already hold."
-          : "Trading isn’t available in your region.",
+          ? "New positions aren’t available here."
+          : "Trading isn’t available here.",
       code: "region_restricted",
       country,
       regionStatus: status,

@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 import { Providers } from "./providers";
 import { AppNav } from "@/components/AppNav";
-import { GeoBanner } from "@/components/AuthButton";
 import "./globals.css";
 
 const SITE = "https://app.peakapp.site";
@@ -72,7 +71,6 @@ export default function RootLayout({
     <html lang="en" className={sans.variable}>
       <body>
         <Providers>
-          <GeoBanner />
           <header className="masthead">
             <div className="shell">
               <AppNav />
