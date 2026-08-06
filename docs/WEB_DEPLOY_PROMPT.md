@@ -26,19 +26,23 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
 1. **Dashboard** → Pages → `peak-web` → Settings → Functions → Compatibility
    flags → **`nodejs_compat`** for Production and Preview.
 2. **Custom domains** → Add `app.peakapp.site`. If verification stays pending
-   with “CNAME record not set”, create DNS in the `peakapp.site` zone:
+   with “CNAME record not set”, create DNS in the `peakapp.site` zone
+   (**Cloudflare Dashboard → DNS** — Wrangler OAuth is typically zone
+   **read-only** and API create returns Authentication error):
 
    | Type | Name | Target | Proxy |
    | --- | --- | --- | --- |
    | CNAME | `app` | `peak-web-dq7.pages.dev` | Proxied |
 
-   (Wrangler OAuth may lack `zone` write — use the Cloudflare DNS UI if
-   `wrangler` / API returns Authentication error.)
+   Confirm with `dig +short app.peakapp.site CNAME` → `peak-web-dq7.pages.dev.`
+   and `curl -so /dev/null -w '%{http_code}\n' https://app.peakapp.site/markets`
+   → `200`. Apex `https://peakapp.site/` must still be marketing.
 
 3. **Privy** → App → Allowed origins:
-   - `https://app.peakapp.site`
-   - `http://localhost:3000`
-   - `https://<deployment>.peak-web.pages.dev` (or project `*.pages.dev`)
+   - `https://app.peakapp.site` (required)
+   - `https://peak-web-dq7.pages.dev` (required until custom domain Active)
+   - `http://localhost:3000` (local)
+   - **Not** `https://peakapp.site` when Launch app is only a link to `app.`
 4. Optional Railway: `CORS_ORIGINS=https://app.peakapp.site` — only needed if
    something calls the API from the browser without the `/api/peak/*` proxy.
    The Next app does not need this.
@@ -46,7 +50,9 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
    `PEAK_WEB_PROXY_SECRET` on Pages (`peak-web` Production + Preview) **and**
    as a Worker secret on `peak-edge` (`wrangler secret put PEAK_WEB_PROXY_SECRET`),
    then `cd worker && npx wrangler deploy`. Without this, prepare/submit may
-   see the Pages colo country instead of the trader’s.
+   see the Pages colo country instead of the trader’s. Live CLOB submit from
+   blocked regions (e.g. `IN`) still fails — smoke trade from an allowed
+   region or VPN; browse / Privy session / markets still work while blocked.
 
 ## Verify
 

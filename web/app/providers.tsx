@@ -1,6 +1,7 @@
 "use client";
 
 import { PrivyProvider } from "@privy-io/react-auth";
+import { polygon } from "viem/chains";
 import { PeakSessionProvider } from "@/lib/session";
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
@@ -16,6 +17,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       appId={APP_ID}
       clientId={CLIENT_ID}
       config={{
+        // Polymarket / Peak trading is Polygon-only. Prompt external wallets
+        // (MetaMask etc.) onto the right chain during SIWE connect.
+        defaultChain: polygon,
+        supportedChains: [polygon],
         loginMethods: ["email", "google", "apple", "wallet"],
         appearance: {
           theme: "dark",

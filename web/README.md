@@ -80,15 +80,23 @@ Then:
 2. Custom domains → add **`app.peakapp.site`** (do **not** move apex off
    `peak-website`).
 3. Privy Dashboard → Allowed origins → add `https://app.peakapp.site`,
-   `http://localhost:3000`, and the `*.pages.dev` preview host.
+   `https://peak-web-dq7.pages.dev`, and `http://localhost:3000`. Apex
+   `https://peakapp.site` is **not** required while Launch app is a plain link.
+4. If custom domain stays pending: Cloudflare DNS → CNAME `app` →
+   `peak-web-dq7.pages.dev` (proxied). Wrangler often cannot write zone DNS.
 
 Smoke on the deployment URL (then on `https://app.peakapp.site`):
 
 ```bash
+curl -so /dev/null -w '%{http_code}\n' https://peak-web-dq7.pages.dev/markets
 curl -so /dev/null -w '%{http_code}\n' https://app.peakapp.site/markets
 curl -so /dev/null -w '%{http_code}\n' https://peakapp.site/   # still marketing
 curl -sI  https://peakapp.site/.well-known/apple-app-site-association | grep -i content-type
+curl -s https://edge.peakapp.site/geo   # expect status allowed|blocked|close_only
 ```
+
+Order submit smoke needs an **allowed** geo (`/geo` not `blocked`). From India,
+browse + auth still work; use VPN / allowed ISP for prepare→CLOB.
 
 **Rollback:** leave `peak-website` on apex. Remove `app.peakapp.site` from
 `peak-web` or redeploy a known-good Pages deployment.

@@ -41,6 +41,7 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
   const raw =
     (typeof json.error === "string" && json.error) ||
     (typeof json.errorMsg === "string" && json.errorMsg) ||
+    (typeof json.message === "string" && json.message) ||
     null;
 
   switch (code) {
@@ -62,10 +63,69 @@ function friendlyApiMessage(json: Record<string, unknown>, status: number): stri
       return raw || "Enter a valid size and a price between 1¢ and 99¢.";
     case "edge_required":
       return raw || "Orders must go through Peak’s edge. Try again in a moment.";
+    case "not_signed_in":
+      return raw || "Sign in again, then retry.";
+    case "no_fill":
+      return raw || "No fill at that price. Try a market order or adjust your limit.";
+    case "clob_unreachable":
+      return (
+        raw ||
+        "Couldn’t reach Polymarket’s order book from this network. Use an allowed region (or VPN) and retry, or trade in the Peak iOS app."
+      );
     default:
       break;
   }
+
+  if (raw) {
+    const lower = raw.toLowerCase();
+    if (
+      lower.includes("user rejected") ||
+      lower.includes("user denied") ||
+      lower.includes("rejected the request") ||
+      lower.includes("request rejected")
+    ) {
+      return "Signature cancelled in your wallet. Approve the request to continue.";
+    }
+    if (
+      lower.includes("wrong network") ||
+      lower.includes("chain mismatch") ||
+      lower.includes("unsupported chain") ||
+      lower.includes("switch to polygon")
+    ) {
+      return "Switch your wallet to Polygon (chain id 137), then try again.";
+    }
+  }
+
   return raw || `Request failed (${status})`;
+}
+
+/** Map wallet / Privy client errors into short trader-facing copy. */
+export function friendlyClientError(err: unknown): string {
+  if (err instanceof PeakApiError) return err.message;
+  const raw = err instanceof Error ? err.message : String(err ?? "Something went wrong.");
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("user rejected") ||
+    lower.includes("user denied") ||
+    lower.includes("rejected the request") ||
+    lower.includes("request rejected") ||
+    lower.includes("action_rejected")
+  ) {
+    return "Signature cancelled in your wallet. Approve the request to continue.";
+  }
+  if (
+    lower.includes("wrong network") ||
+    lower.includes("chain mismatch") ||
+    lower.includes("unsupported chain") ||
+    lower.includes("switch network") ||
+    lower.includes("switch chain")
+  ) {
+    return "Switch your wallet to Polygon (chain id 137), then try again.";
+  }
+  if (lower.includes("approval") && (lower.includes("denied") || lower.includes("reject"))) {
+    return "Approval cancelled. Confirm the wallet prompt to continue.";
+  }
+  return raw || "Something went wrong.";
 }
 
 export async function peakFetch(

@@ -133,12 +133,12 @@ export function PortfolioClient() {
           <button
             type="button"
             className="btn"
-            disabled={loading || syncing}
+            disabled={loading || syncing || (authenticated && !eoa)}
             onClick={() => {
               void refreshSession().then(() => reload());
             }}
           >
-            {loading || syncing ? "Refreshing…" : "Refresh"}
+            {loading || syncing || (authenticated && !eoa) ? "Refreshing…" : "Refresh"}
           </button>
           {session?.needsDeploy ? (
             <button

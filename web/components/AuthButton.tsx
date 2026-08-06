@@ -51,7 +51,7 @@ export function GeoBanner() {
   const copy =
     geo.status === "close_only"
       ? `New positions aren’t available in ${geo.country ?? "your region"}. You can still close positions you already hold.`
-      : `Trading isn’t available in ${geo.country ?? "your region"}. You can still browse markets.`;
+      : `Trading isn’t available in ${geo.country ?? "your region"}. You can still browse and sign in; live order submit needs an allowed region (VPN if you’re geo-blocked).`;
 
   return (
     <div className="geo-banner" role="status">

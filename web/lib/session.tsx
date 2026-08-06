@@ -90,7 +90,15 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       setSession(null);
-      setError(err instanceof Error ? err.message : "Session sync failed.");
+      const raw = err instanceof Error ? err.message : "Session sync failed.";
+      const lower = raw.toLowerCase();
+      setError(
+        lower.includes("user rejected") || lower.includes("user denied")
+          ? "Signature cancelled in your wallet. Approve the request to continue."
+          : lower.includes("network") || lower.includes("chain")
+            ? "Switch your wallet to Polygon (chain id 137), then retry."
+            : raw
+      );
     } finally {
       setSyncing(false);
     }
@@ -98,7 +106,14 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    if (!authenticated || !eoa) {
+    if (!authenticated) {
+      setSession(null);
+      setError(null);
+      return;
+    }
+    if (!eoa) {
+      // Privy can report authenticated before wallets hydrate (esp. MetaMask).
+      // Keep prior session null but don't toast a false "sync failed".
       setSession(null);
       return;
     }

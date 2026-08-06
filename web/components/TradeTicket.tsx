@@ -5,6 +5,7 @@ import type { Market } from "@/lib/gamma";
 import { usePeakSession } from "@/lib/session";
 import {
   PeakApiError,
+  friendlyClientError,
   isMissingPrepareEndpoint,
   placeOrderDirect,
   prepareOrder,
@@ -206,7 +207,7 @@ export function TradeTicket({
         throw err;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Order failed.");
+      setError(friendlyClientError(err));
     } finally {
       setBusy(false);
     }
@@ -225,7 +226,9 @@ export function TradeTicket({
       <div className="ticket__head">
         <h2>Trade</h2>
         <p className="ticket__hint">
-          Peak signs on the server; your browser submits so eligibility follows your IP.
+          Peak signs the order on the server; your browser posts it to CLOB so
+          eligibility follows your IP. External wallets only need Polygon for
+          sign-in — not for each trade.
         </p>
       </div>
 

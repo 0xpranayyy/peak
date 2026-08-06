@@ -52,6 +52,7 @@ Prefer same brand domain; apex for landing, `app` for the client, `api` already 
 | `www.peakapp.site` | Redirect → apex | Cloudflare |
 | `app.peakapp.site` | Web trading client (Next.js) | Cloudflare Pages (`web/` → `peak-web`) |
 | `api.peakapp.site` | Existing trading / auth API | Railway (unchanged) |
+| `edge.peakapp.site` | Public Gamma / CLOB / `/geo` Worker | `worker/` → `peak-edge` |
 
 **Apex is live and stays on `peak-website`.** Do not attach `peakapp.site` to
 `peak-web` — that would replace the marketing homepage. The web client lives
@@ -59,20 +60,57 @@ only on `app.peakapp.site`. Browser→API CORS can stay off; the Next app proxie
 via `/api/peak/*`. If you ever call the API from the browser directly, set
 `CORS_ORIGINS=https://app.peakapp.site`.
 
+### DNS for `app` (required once)
+
+Pages already has custom domain **`app.peakapp.site`** registered on `peak-web`
+(status pending until DNS exists). Wrangler OAuth is often **zone read-only**,
+so create the record in the Cloudflare dashboard:
+
+1. Cloudflare → **DNS** → zone **`peakapp.site`**
+2. **Add record**:
+
+   | Type | Name | Target | Proxy status |
+   | --- | --- | --- | --- |
+   | CNAME | `app` | `peak-web-dq7.pages.dev` | Proxied (orange cloud) |
+
+3. Wait for Pages → Custom domains → `app.peakapp.site` → **Active** (SSL via
+   Google CA). Until then the hostname is **NXDOMAIN**.
+
+Do **not** point apex at `peak-web`.
+
 ## Deploy (web beside landing)
 
 1. `npx wrangler pages deploy website --project-name peak-website` — refresh
    landing CTAs (“Launch app” → `https://app.peakapp.site`).
 2. `cd web && npm run pages:deploy` — create/update `peak-web` (build with
-   `NEXT_PUBLIC_PRIVY_APP_ID` in the environment).
-3. Pages → `peak-web` → add compatibility flag **`nodejs_compat`** (Production +
-   Preview).
-4. Pages → `peak-web` → Custom domains → **`app.peakapp.site`**.
-5. Privy Dashboard → Allowed origins:
-   `https://app.peakapp.site`, `http://localhost:3000`, and the Pages preview
-   host.
+   `NEXT_PUBLIC_PRIVY_APP_ID` in the environment / `.env.local`).
+3. Pages → `peak-web` → Compatibility flags → **`nodejs_compat`** (Production +
+   Preview) — already set on current project.
+4. Pages → `peak-web` → Custom domains → **`app.peakapp.site`** + DNS CNAME above.
+5. Pages env (Production + Preview): `NEXT_PUBLIC_PRIVY_APP_ID`,
+   `NEXT_PUBLIC_PEAK_EDGE_URL`, `PEAK_API_URL`, and matching
+   `PEAK_WEB_PROXY_SECRET` (also `wrangler secret put` on `peak-edge`).
+6. Privy Dashboard → Allowed origins checklist (below).
 
 Step-by-step + verify table: [WEB_DEPLOY_PROMPT.md](WEB_DEPLOY_PROMPT.md).
+
+### Privy allowlist checklist
+
+| Origin | Required? |
+| --- | --- |
+| `https://app.peakapp.site` | **Yes** (production web) |
+| `https://peak-web-dq7.pages.dev` | **Yes** until custom domain is Active (smoke / fallback) |
+| `http://localhost:3000` | Yes for local `npm run dev` |
+| `https://peakapp.site` | **No** when “Launch app” is a normal navigation to `app.` — apex does not load Privy. Add only if marketing ever embeds Privy or opens an auth popup from the apex origin. |
+
+Auth uses Privy JWT Bearer via `/api/peak/*` (same as iOS). HttpOnly cookie sync
+across `*.peakapp.site` is **not** required for v1. If you later enable Privy
+HttpOnly cookies, set the app domain to `peakapp.site` in the Dashboard and
+complete Privy’s DNS verification — still keep the trading UI on `app.`.
+
+External wallets (MetaMask etc.) are configured for **Polygon** (`defaultChain`
+137). Order signing stays on Peak’s server; the browser only posts the prepared
+CLOB body.
 
 
 ## Architecture
@@ -180,14 +218,14 @@ Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 
 ## Remaining ops (not code)
 
-| Item | Who |
-| --- | --- |
-| Privy allowed origins for `app.peakapp.site` + preview | Privy Dashboard |
-| DNS CNAME `app` → `peak-web-*.pages.dev` (proxied) | Cloudflare DNS |
-| Pages `nodejs_compat` + `PEAK_API_URL` / `PEAK_WEB_PROXY_SECRET` | Pages env |
-| Worker secret `PEAK_WEB_PROXY_SECRET` (same value) + redeploy worker | Wrangler |
-| Live trade smoke from non-blocked ISP | Human |
-| App Store public URL once listed | Replace landing CTA |
+| Item | Who | Status notes |
+| --- | --- | --- |
+| Privy origins: `app.peakapp.site` + `peak-web-dq7.pages.dev` + localhost | Privy Dashboard | User: `app.` done; still add pages.dev + localhost if missing |
+| DNS CNAME `app` → `peak-web-dq7.pages.dev` (proxied) | Cloudflare DNS UI | Wrangler OAuth lacks zone **write** — dashboard required |
+| Pages `nodejs_compat` + env (`PRIVY`, `PEAK_API_URL`, proxy secret) | Pages | Set on project; redeploy after `NEXT_PUBLIC_*` changes |
+| Worker `PEAK_WEB_PROXY_SECRET` (same value as Pages) | Wrangler | Required for honest geo on `/api/peak/*` |
+| Live order submit smoke | Human | From an **allowed** region (India/`IN` is blocked — use VPN / allowed ISP). Browse + sign-in still work while blocked. |
+| App Store public URL once listed | Replace landing CTA | |
 
 ## CORS / Privy / geo (Peak-specific)
 
