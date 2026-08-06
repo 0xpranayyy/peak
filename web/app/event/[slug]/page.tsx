@@ -110,7 +110,7 @@ export default async function EventPage({ params }: Props) {
         <Suspense
           fallback={
             <div className="detail__aside">
-              <p className="empty">Loading ticket…</p>
+              <div className="ticket-fallback">Loading ticket…</div>
             </div>
           }
         >

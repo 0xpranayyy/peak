@@ -80,7 +80,7 @@ function page(opts: { heading: string; body: string; codeBlock: string }): strin
 </head>
 <body>
   <main>
-    <img class="logo" src="/PeakLogo.png" width="64" height="64" alt="Peak app icon" />
+    <img class="logo" src="/peak-mark.png" width="64" height="64" alt="Peak app icon" />
     <div class="brand">Peak</div>
     <h1>${escapeHtml(opts.heading)}</h1>
     <p class="lede">${opts.body}</p>

@@ -31,10 +31,16 @@ export function AppNav() {
   return (
     <div className="masthead__row">
       <a href="/markets" className="wordmark" aria-label="Peak markets">
-        <svg viewBox="0 0 48 41" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path fill="currentColor" d="M24 0 48 41H36L24 19 12 41H0L24 0Z" />
-        </svg>
-        PEAK
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="wordmark__mark"
+          src="/peak-mark.png"
+          width={28}
+          height={28}
+          alt=""
+          decoding="async"
+        />
+        <span className="wordmark__name">Peak</span>
       </a>
       <nav className="masthead__nav" aria-label="Primary">
         {LINKS.map((link) => (

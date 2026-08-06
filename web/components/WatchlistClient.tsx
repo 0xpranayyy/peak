@@ -59,28 +59,29 @@ export function WatchlistClient() {
       {ids.length === 0 ? (
         <p className="empty">
           Nothing saved yet. Open a market and tap Watch, or{" "}
-          <a href="/markets" style={{ color: "var(--accent)" }}>
+          <a href="/markets" className="text-link">
             browse markets
           </a>
           .
         </p>
       ) : loading && events.length === 0 ? (
-        <p className="empty">Loading watchlist…</p>
+        <p className="empty empty--compact">Loading watchlist…</p>
       ) : error && events.length === 0 ? (
         <p className="empty">{error}</p>
       ) : (
         <div className="market-list">
+          <div className="market-list__head market-list__head--watch" aria-hidden="true">
+            <span>Market</span>
+            <span>Chance</span>
+            <span />
+          </div>
           {events.map((event) => {
             const probability = event.displayProbability;
             const ends = endsIn(event.endDate);
             const href = event.slug ? `/event/${event.slug}` : "#";
             return (
-              <div
-                key={event.id}
-                className="market-row"
-                style={{ gridTemplateColumns: "minmax(0, 1fr) auto auto" }}
-              >
-                <a href={href} style={{ minWidth: 0 }}>
+              <div key={event.id} className="market-row market-row--watch">
+                <a href={href} className="market-row__main">
                   <div className="market-row__title">{event.title}</div>
                   <div className="market-row__meta">
                     <span>{compactUsd(event.volume24hr)} 24h</span>

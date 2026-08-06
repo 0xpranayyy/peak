@@ -10,7 +10,7 @@ export function MarketCard({ event }: { event: PeakEvent }) {
 
   return (
     <a className="market-row" href={href}>
-      <div>
+      <div className="market-row__main">
         <div className="market-row__title">{event.title}</div>
         <div className="market-row__meta">
           <span>{compactUsd(event.volume24hr)} 24h</span>

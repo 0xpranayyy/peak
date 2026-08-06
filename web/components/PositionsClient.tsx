@@ -140,10 +140,8 @@ export function PositionsClient() {
     <div className="portfolio">
       <header className="portfolio__head">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>
-            Positions
-          </h1>
-          <p style={{ marginTop: 6, color: "var(--text-3)", fontSize: 13 }}>
+          <h1>Positions</h1>
+          <p>
             {eoa ? (
               <>
                 Signer <span className="mono">{eoa}</span>
@@ -181,10 +179,9 @@ export function PositionsClient() {
         <p
           className={
             actionMsg && !error && !loadError
-              ? "ticket__status ticket__status--ok"
-              : "ticket__status ticket__status--err"
+              ? "ticket__status ticket__status--ok portfolio__flash"
+              : "ticket__status ticket__status--err portfolio__flash"
           }
-          style={{ marginTop: 12 }}
         >
           {error || loadError || actionMsg}
         </p>
@@ -242,9 +239,9 @@ export function PositionsClient() {
           <h2>Open orders</h2>
         </div>
         {loading && !orders.length && !portfolio ? (
-          <p className="empty">Loading orders…</p>
+          <p className="empty empty--compact">Loading orders…</p>
         ) : !orders.length ? (
-          <p className="empty">No open orders.</p>
+          <p className="empty empty--compact">No open orders.</p>
         ) : (
           <div className="positions">
             {orders.map((o) => {
@@ -280,11 +277,11 @@ export function PositionsClient() {
           <h2>Positions</h2>
         </div>
         {loading && !portfolio ? (
-          <p className="empty">Loading positions…</p>
+          <p className="empty empty--compact">Loading positions…</p>
         ) : !portfolio?.positions.length ? (
-          <p className="empty">
+          <p className="empty empty--compact">
             No open positions.{" "}
-            <a href="/markets" style={{ color: "var(--accent)" }}>
+            <a href="/markets" className="text-link">
               Browse markets
             </a>
           </p>
@@ -322,14 +319,14 @@ export function PositionsClient() {
         )}
       </section>
 
-      <section className="section" style={{ paddingBottom: 48 }}>
+      <section className="section section--last">
         <div className="section__head">
           <h2>Recent activity</h2>
         </div>
         {loading && !activity.length && !portfolio ? (
-          <p className="empty">Loading activity…</p>
+          <p className="empty empty--compact">Loading activity…</p>
         ) : !activity.length ? (
-          <p className="empty">No recent activity.</p>
+          <p className="empty empty--compact">No recent activity.</p>
         ) : (
           <div className="positions">
             {activity.map((a) => {
@@ -350,9 +347,7 @@ export function PositionsClient() {
                   </div>
                   <div className="position__right">
                     {a.usdcSize > 0 ? (
-                      <b style={{ color: "var(--text)" }}>
-                        ${a.usdcSize.toFixed(2)}
-                      </b>
+                      <b className="position__usd">${a.usdcSize.toFixed(2)}</b>
                     ) : null}
                   </div>
                 </>

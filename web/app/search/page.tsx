@@ -42,19 +42,27 @@ export default async function SearchPage({ searchParams }: Props) {
       </div>
 
       {!query ? (
-        <p className="empty">Type something to search live markets.</p>
+        <p className="empty">
+          Type something to search live markets, or{" "}
+          <a className="text-link" href="/markets">
+            browse trending
+          </a>
+          .
+        </p>
       ) : events.length === 0 ? (
         <p className="empty">
           Nothing matched “{query}”. Try a shorter or more general term.
         </p>
       ) : (
         <>
-          <p className="detail__meta" style={{ marginTop: 8, marginBottom: 8 }}>
-            <span>
-              {events.length} market{events.length === 1 ? "" : "s"} for “{query}”
-            </span>
+          <p className="result-meta">
+            {events.length} market{events.length === 1 ? "" : "s"} for “{query}”
           </p>
           <div className="market-list">
+            <div className="market-list__head" aria-hidden="true">
+              <span>Market</span>
+              <span>Chance</span>
+            </div>
             {events.map((event) => (
               <MarketCard key={event.id} event={event} />
             ))}

@@ -33,7 +33,7 @@ export function SettingsClient() {
       <div className="page-head">
         <div>
           <h1>Settings</h1>
-          <p>Account, network, and legal. No junk toggles.</p>
+          <p>Account, network, and legal.</p>
         </div>
       </div>
 

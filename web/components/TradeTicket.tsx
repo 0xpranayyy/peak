@@ -399,9 +399,7 @@ export function TradeTicket({
       {message ? (
         <p className="ticket__status ticket__status--ok">
           {message}{" "}
-          <a href="/positions" style={{ color: "inherit", textDecoration: "underline" }}>
-            View positions
-          </a>
+          <a href="/positions">View positions</a>
         </p>
       ) : null}
     </form>

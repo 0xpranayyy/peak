@@ -225,6 +225,11 @@ is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 when the API has nothing; omit UI for capabilities the Polymarket/Peak API
 does not expose.
 
+**Brand mark:** Official Peak logo lives at `web/public/peak-mark.png` (same
+asset as iOS `PeakLogo.imageset`). Wired into nav, Privy modal, invite page,
+favicon / apple-touch, and `og.png`. Keep `PeakLogo.png` as an alias for
+older references.
+
 ### 2 — Auth — **done in `web/`**
 
 1. Privy Dashboard: add web origins (`https://app.peakapp.site`, Pages preview,

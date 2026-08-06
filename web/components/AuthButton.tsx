@@ -11,7 +11,9 @@ export function AuthButton() {
     usePeakSession();
 
   if (!ready) {
-    return <span className="auth-muted">…</span>;
+    return <span className="auth-muted" aria-hidden="true">
+      ···
+    </span>;
   }
 
   if (!authenticated) {

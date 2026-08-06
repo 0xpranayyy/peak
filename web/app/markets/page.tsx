@@ -93,6 +93,10 @@ export default async function MarketsPage({ searchParams }: Props) {
         </p>
       ) : (
         <div className="market-list">
+          <div className="market-list__head" aria-hidden="true">
+            <span>Market</span>
+            <span>Chance</span>
+          </div>
           {events.map((event) => (
             <MarketCard key={event.id} event={event} />
           ))}
