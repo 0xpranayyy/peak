@@ -204,19 +204,21 @@ function isListEligible(raw: Record<string, unknown>): boolean {
 async function getGamma<T>(
   path: string,
   query: Record<string, string | number | undefined>,
-  revalidate: number
+  _revalidate: number
 ): Promise<T> {
   const url = new URL(`${EDGE}/gamma/${path}`);
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined) url.searchParams.set(key, String(value));
   }
 
-  const response = await fetch(url, {
-    // The Worker already edge-caches these. On Cloudflare Pages (`next-on-pages`)
-    // ISR is a no-op, but `revalidate` still documents intent for local Next.
-    // Do not pair with `cache: "no-store"` — that overrides revalidate.
-    next: { revalidate },
+  // Always `cache: "no-store"` here. Cloudflare Pages Functions mishandle
+  // Next’s `next.revalidate` Cache API on large Gamma payloads (multi‑MB
+  // `/events` lists), and the Worker already applies its own edge TTL.
+  // Event-detail SSR stays small (`?slug=` / `/events/:id`).
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
     headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {
@@ -337,8 +339,8 @@ export async function fetchEventById(id: string): Promise<PeakEvent | null> {
   const url = new URL(`${EDGE}/gamma/events/${encodeURIComponent(trimmed)}`);
   const response = await fetch(url.toString(), {
     headers: { accept: "application/json" },
-    // Browser watchlist loads; avoid Next-only `next.revalidate` here.
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) return null;
   const raw = (await response.json()) as Record<string, unknown>;

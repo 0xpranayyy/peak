@@ -40,8 +40,9 @@ const WS_UPSTREAM = "https://ws-subscriptions-clob.polymarket.com/ws/market";
  */
 const ROUTES = {
   gamma: {
-    events: 15,
-    markets: 15,
+    // Longer TTL collapses Pages + iOS thundering herds on fat /events pages.
+    events: 60,
+    markets: 30,
     tags: 300,
     "public-search": 30,
     "public-profile": 60,

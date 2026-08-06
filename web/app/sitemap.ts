@@ -13,11 +13,11 @@ const SITE = "https://app.peakapp.site";
  * Sitemap of live markets. This is the mechanism that turns server rendering
  * into actual traffic — without it, crawlers only ever find the home page.
  *
- * Capped at the top 200 by volume: markets churn constantly, and a sitemap full
- * of URLs that resolve away within days trains crawlers to trust it less.
+ * Capped at the top 48 by volume. Larger Gamma list fetches are multi‑MB and
+ * routinely trip Cloudflare Pages CPU limits during SSR.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const events = await fetchEvents({ limit: 200, sort: "volume" }).catch(() => []);
+  const events = await fetchEvents({ limit: 48, sort: "volume" }).catch(() => []);
 
   return [
     {
