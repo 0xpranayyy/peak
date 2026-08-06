@@ -316,25 +316,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Sign PrivySDK XCFramework";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# TMS-91065: codesign PrivySDK.xcframework (needs sandbox OFF — see ENABLE_USER_SCRIPT_SANDBOXING).\n# Run after Frameworks so EXPANDED_CODE_SIGN_IDENTITY is more often populated on Archive.\n# Build-only (CI_XCODEBUILD_ACTION=build) may skip when no Apple identity + ephemeral import fails.\ncd \"${SRCROOT}\"\nexport IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}\"\necho \"Sign PrivySDK: IDENTITY=${IDENTITY} EXPANDED=${EXPANDED_CODE_SIGN_IDENTITY:-} CODE_SIGN_IDENTITY=${CODE_SIGN_IDENTITY:-} action=${CI_XCODEBUILD_ACTION:-local}\"\n/bin/sh \"${SRCROOT}/scripts/sign-privy-xcframework.sh\"\n";
-		};
 		PEAKATS000000000000000001 /* Debug Allow Local Networking */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -353,6 +334,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"${CONFIGURATION}\" != \"Debug\" ]; then\n  exit 0\nfi\nPLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"${PLIST}\" ]; then\n  echo \"warning: Info.plist not found at ${PLIST}; skipping NSAllowsLocalNetworking\"\n  exit 0\nfi\n/usr/libexec/PlistBuddy -c \"Delete :NSAppTransportSecurity:NSAllowsLocalNetworking\" \"${PLIST}\" 2>/dev/null || true\n/usr/libexec/PlistBuddy -c \"Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true\" \"${PLIST}\"\necho \"Enabled NSAllowsLocalNetworking for Debug\"\n";
+		};
+		PEAKPRIVYSIGN00000000001 /* Sign PrivySDK XCFramework */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sign PrivySDK XCFramework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# TMS-91065: codesign PrivySDK.xcframework (needs sandbox OFF — see ENABLE_USER_SCRIPT_SANDBOXING).\n# Run after Frameworks so EXPANDED_CODE_SIGN_IDENTITY is more often populated on Archive.\n# Build-only (CI_XCODEBUILD_ACTION=build) may skip when no Apple identity + ephemeral import fails.\ncd \"${SRCROOT}\"\nexport IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:-$CODE_SIGN_IDENTITY}\"\necho \"Sign PrivySDK: IDENTITY=${IDENTITY} EXPANDED=${EXPANDED_CODE_SIGN_IDENTITY:-} CODE_SIGN_IDENTITY=${CODE_SIGN_IDENTITY:-} action=${CI_XCODEBUILD_ACTION:-local}\"\n/bin/sh \"${SRCROOT}/scripts/sign-privy-xcframework.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -775,7 +775,7 @@
 		9AC023AEE768F3E62898B6BB /* Sentry-Dynamic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A1DDCB58E828240444EED0D8 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
-			productName = Sentry-Dynamic;
+			productName = "Sentry-Dynamic";
 		};
 		CRYPT00000000000000000002 /* CryptoSwift */ = {
 			isa = XCSwiftPackageProductDependency;

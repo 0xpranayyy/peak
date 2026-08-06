@@ -43,6 +43,9 @@ struct TradeCelebrationResult: Equatable, Sendable {
     var avatarURL: URL? = nil
     /// Fill time shown on the receipt footer.
     var tradedAt: Date = Date()
+    /// Average entry for the shares being closed. Set when a sell is opened from
+    /// a known position; `nil` when holdings are unknown (e.g. sell from market).
+    var entryPrice: Double? = nil
 
     var headline: String { side.pastTitle }
 
@@ -62,6 +65,24 @@ struct TradeCelebrationResult: Equatable, Sendable {
     /// Price as implied odds percent (0–100).
     var impliedOdds: Int {
         Int((price * 100).rounded())
+    }
+
+    /// Cost basis of the shares in this fill — needs a known entry price.
+    var costBasis: Double? {
+        guard let entryPrice, entryPrice > 0 else { return nil }
+        return shares * entryPrice
+    }
+
+    /// Dollars actually made or lost closing this position.
+    var realizedPnl: Double? {
+        guard side == .sell, let cost = costBasis else { return nil }
+        return usd - cost
+    }
+
+    /// Realized return as a percentage of cost basis (38.2 → +38.2%).
+    var realizedReturnPct: Double? {
+        guard let pnl = realizedPnl, let cost = costBasis, cost > 0 else { return nil }
+        return (pnl / cost) * 100
     }
 
     /// Buy: toWin − spent. Sell: nil (use proceeds-focused copy instead).
@@ -151,6 +172,8 @@ struct PeakTradeShareCard: View {
     var avatar: UIImage? = nil
     /// Pre-blurred market art for subtle ambient wash only — not the hero tile.
     var blurredBackground: UIImage? = nil
+    /// On-screen reveal choreography. Left `false` for `ImageRenderer` exports.
+    var animated: Bool = false
 
     /// Buy / profit → vivid mint; sell / proceeds → warm coral.
     private var heroColor: Color {
@@ -166,6 +189,20 @@ struct PeakTradeShareCard: View {
     }
 
     var body: some View {
+        if PeakReceiptStyle.isEnabled {
+            PeakReceiptCard(
+                data: PeakReceiptData(trade: result),
+                icon: icon,
+                avatar: avatar,
+                animated: animated
+            )
+        } else {
+            legacyBody
+        }
+    }
+
+    /// Previous charcoal receipt. Kept intact — `PeakReceiptStyle` flips back to it.
+    private var legacyBody: some View {
         ZStack {
             receiptAtmosphere
 
@@ -683,7 +720,8 @@ enum PeakTradeShareCardRenderer {
             height: PeakPostcard.tradeCardHeight
         )
         renderer.scale = 3
-        renderer.isOpaque = true
+        // Ticket notches need alpha; the legacy receipt is unaffected.
+        renderer.isOpaque = !PeakReceiptStyle.isEnabled
         return renderer.uiImage
     }
 

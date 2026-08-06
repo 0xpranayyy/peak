@@ -179,6 +179,8 @@ struct PortfolioView: View {
         let isYes: Bool
         let quotePrice: Double
         let shares: Double
+        /// Average entry of the held shares — drives realized return on the receipt.
+        let entryPrice: Double
     }
     @AppStorage("peak.portfolio.linkBanner.dismissed") private var linkBannerDismissed = false
 
@@ -323,7 +325,8 @@ struct PortfolioView: View {
                     isYes: target.isYes,
                     action: .sell,
                     quotePrice: target.quotePrice,
-                    maxShares: target.shares
+                    maxShares: target.shares,
+                    entryPrice: target.entryPrice
                 )
                 .environmentObject(env)
                 .environmentObject(env.tradingConfig)
@@ -340,7 +343,14 @@ struct PortfolioView: View {
                 Text(sellLoadError ?? "")
             }
             .sheet(item: $sharePosition) { position in
-                SharePositionSheet(position: position)
+                SharePositionSheet(
+                    position: position,
+                    handle: peakProfile.displayName(
+                        fallbackAddress: auth.walletAddress ?? env.wallet.address,
+                        email: auth.email
+                    ),
+                    avatarURL: peakProfile.profile?.profileImageURL
+                )
             }
             .task(id: "\(env.wallet.address ?? "")-\(tradingConfig.isConfigured)-\(auth.isAuthenticated)-\(auth.walletAddress ?? "")") {
                 model.syncDraft(from: env.wallet)
@@ -848,7 +858,8 @@ struct PortfolioView: View {
                 market: market,
                 isYes: isYes,
                 quotePrice: isYes ? market.yesPrice : market.noPrice,
-                shares: position.size
+                shares: position.size,
+                entryPrice: position.avgPrice
             )
             PeakHaptics.selection()
         } catch {

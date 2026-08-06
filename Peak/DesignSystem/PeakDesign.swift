@@ -38,11 +38,16 @@ enum PeakUserCopy {
     /// After retries exhausted — clearer than a naked timeout when Gamma/host is unreachable.
     static let marketsUnreachable =
         "Couldn’t reach Polymarket markets. Check your connection and try again."
+    /// Shown when the server no longer holds a signing key for this wallet.
+    ///
+    /// Being asked for a seed phrase out of nowhere is exactly what a phishing
+    /// attack looks like, so this says what happened and that nothing was lost
+    /// before it asks for anything.
     static let importWalletRequired =
-        "Import the private key or seed for this Polymarket wallet to enable trading."
+        "Your trading session ended on Peak's servers. Your funds and positions are untouched — re-import this wallet under Account to keep trading."
     static let signFailed = "Couldn’t sign this order. Try again — if it keeps failing, re-import your wallet under Account."
     static let walletAuthFailed =
-        "Couldn’t authorize this wallet to trade. Try importing again or contact support."
+        "Couldn’t authorize this wallet to trade. Your funds are unaffected — try importing again under Account, or contact support."
     static let connectedPolymarketAccount = "Connected to your Polymarket account."
     static let linkedPolymarketWallet = connectedPolymarketAccount
     static let readyToTrade = "Ready to trade."
@@ -53,6 +58,14 @@ enum PeakUserCopy {
         "Your Polymarket wallet is ready. You can buy and sell without importing again until you sign out."
     static let importFailureTitle = "Couldn’t import wallet"
     static let securedByPrivy = "Secured by Privy"
+    /// Anti-phishing notice. Always visible on the import screen so the legitimate
+    /// request has a shape users can recognise, and anything else looks wrong.
+    static let removeKeyTitle = "Remove key from Peak's servers"
+    static let removeKeyPrompt =
+        "Peak will delete the encrypted signing key it holds for your imported wallet. Your funds and positions are untouched — you'll just need to import again before your next trade."
+    static let removeKeyDone = "Removed. Peak no longer holds a signing key for this wallet."
+    static let importPhishingWarning =
+        "Peak only ever asks for this here, inside the app under Account. Peak will never ask for your key or seed phrase by email, DM, or support chat — anyone who does is trying to steal from you."
     static let insufficientFunds =
         "Not enough cash in your trading wallet. Deposit under Portfolio, then try again."
     static let approvalsNeeded =
@@ -63,6 +76,8 @@ enum PeakUserCopy {
         return lower.contains("import_wallet")
             || lower.contains("import the private key")
             || lower.contains("import your wallet")
+            || lower.contains("re-import this wallet")
+            || lower.contains("trading session ended")
             || lower == importWalletRequired.lowercased()
     }
 

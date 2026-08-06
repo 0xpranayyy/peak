@@ -18,6 +18,9 @@ struct TradeStubSheet: View {
     /// Shares held, when opened from a position. Enables Max / percentage
     /// shortcuts; nil when opened from a market where holdings are unknown.
     var maxShares: Double? = nil
+    /// Average entry of the held shares, when opened from a position. Lets the
+    /// sell receipt show realized return instead of bare proceeds.
+    var entryPrice: Double? = nil
 
     enum TradeAction {
         case buy
@@ -270,7 +273,8 @@ struct TradeStubSheet: View {
                                 marketSlug: market.slug,
                                 username: celebrationUsername,
                                 avatarURL: peakProfile.profile?.profileImageURL,
-                                tradedAt: Date()
+                                tradedAt: Date(),
+                                entryPrice: entryPrice
                             )
                         }
                         .font(.caption.weight(.semibold))
@@ -566,21 +570,47 @@ struct TradeStubSheet: View {
                 }
 
                 Section {
-                    Button {
-                        focusedField = nil
-                        Task { await submit() }
-                    } label: {
-                        PeakPrimaryCTA(
-                            title: "\(action.title) \(sideLabel)",
-                            color: action.color,
-                            isLoading: isSubmitting,
-                            isEnabled: !submitDisabled
-                        )
+                    if needsImportBeforeTrading {
+                        // Found out up front rather than after the user has picked a
+                        // size and tapped Buy. The server drops its signing key on
+                        // restart by design, so this is a normal state, not an error.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(PeakUserCopy.importWalletRequired)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button {
+                                focusedField = nil
+                                showImportKey = true
+                            } label: {
+                                PeakPrimaryCTA(
+                                    title: "Re-import to trade",
+                                    systemImage: "key.fill",
+                                    color: action.color
+                                )
+                            }
+                            .peakPressable()
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
+                    } else {
+                        Button {
+                            focusedField = nil
+                            Task { await submit() }
+                        } label: {
+                            PeakPrimaryCTA(
+                                title: "\(action.title) \(sideLabel)",
+                                color: action.color,
+                                isLoading: isSubmitting,
+                                isEnabled: !submitDisabled
+                            )
+                        }
+                        .peakPressable()
+                        .disabled(submitDisabled)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color.clear)
                     }
-                    .peakPressable()
-                    .disabled(submitDisabled)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -659,6 +689,13 @@ struct TradeStubSheet: View {
             || lower.contains("funds")
             || lower.contains("allowance")
             || lower.contains("not enough")
+    }
+
+    /// Known before the user composes anything — the backend already told us this
+    /// session has no signing key. Distinct from `shouldOfferImport`, which also
+    /// fires off the back of a failed submit.
+    private var needsImportBeforeTrading: Bool {
+        tradingPath.snapshot.needsImport && !didSucceed && message == nil
     }
 
     private var shouldOfferImport: Bool {
@@ -775,7 +812,8 @@ struct TradeStubSheet: View {
                 marketSlug: market.slug,
                 username: celebrationUsername,
                 avatarURL: peakProfile.profile?.profileImageURL,
-                tradedAt: Date()
+                tradedAt: Date(),
+                entryPrice: entryPrice
             )
 
             focusedField = nil

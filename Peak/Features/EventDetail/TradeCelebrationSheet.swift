@@ -92,7 +92,20 @@ struct TradeCelebrationSheet: View {
             let h = PeakPostcard.tradeCardHeight * scale
 
             Group {
-                if let cardImage {
+                if PeakReceiptStyle.isEnabled {
+                    // Stay live so the reveal choreography actually plays. The
+                    // rendered image is identical art, so it is only needed for
+                    // Share / paste — swapping it in here would cut the animation.
+                    PeakTradeShareCard(
+                        result: result,
+                        icon: marketIcon,
+                        avatar: avatarImage,
+                        blurredBackground: blurredBackground,
+                        animated: true
+                    )
+                    .scaleEffect(scale)
+                    .frame(width: w, height: h)
+                } else if let cardImage {
                     Image(uiImage: cardImage)
                         .resizable()
                         .interpolation(.high)

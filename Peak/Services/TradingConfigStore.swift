@@ -59,7 +59,11 @@ final class TradingConfigStore: ObservableObject {
     }
 
     /// Bundled HTTPS backend from Info.plist `PEAK_BACKEND_URL` (Debug + Release).
-    private static func bundledBackendURL() -> String? {
+    ///
+    /// `nonisolated` so the pure predicates below (`isPinnedBackendHost`) can read
+    /// it without an actor hop. Reading `Bundle.main`'s info dictionary is a
+    /// thread-safe lookup of immutable bundle data.
+    nonisolated private static func bundledBackendURL() -> String? {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: "PEAK_BACKEND_URL") as? String else {
             return nil
         }
@@ -110,7 +114,7 @@ final class TradingConfigStore: ObservableObject {
         }
 
         #if !DEBUG
-        if !isReleaseAllowedBackendURL(trimmed) {
+        if !isReleaseAllowedBackendURL(trimmed) || !isPinnedBackendHost(trimmed) {
             return bundled ?? ""
         }
         #endif
@@ -141,6 +145,23 @@ final class TradingConfigStore: ObservableObject {
     nonisolated static func isSupersededBackendHost(_ url: String) -> Bool {
         guard let host = URL(string: url)?.host?.lowercased() else { return false }
         return host.hasSuffix(".up.railway.app")
+    }
+
+    /// Release additionally pins to Peak's own hosts.
+    ///
+    /// `isReleaseAllowedBackendURL` only proves a URL is HTTPS and non-local — any
+    /// attacker-controlled HTTPS host passes it. Since this value decides where an
+    /// imported private key is POSTed, defence-in-depth says pin it. Anything that
+    /// can write our UserDefaults could otherwise redirect key submission.
+    nonisolated static func isPinnedBackendHost(_ url: String) -> Bool {
+        guard let host = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines))?
+            .host?.lowercased() else { return false }
+        if let bundled = bundledBackendURL(),
+           let bundledHost = URL(string: bundled)?.host?.lowercased(),
+           host == bundledHost {
+            return true
+        }
+        return host == "peakapp.site" || host.hasSuffix(".peakapp.site")
     }
 
     /// Release accepts only non-local HTTPS backends.

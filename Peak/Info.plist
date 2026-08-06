@@ -20,19 +20,14 @@
 	<string>https://edge.peakapp.site</string>
 	<key>PEAK_BACKEND_URL</key>
 	<string>https://api.peakapp.site</string>
-	<!-- Legal pages live on Cloudflare Pages (peak-website-88n.pages.dev), not
-	     the trading API — so a copy fix doesn't require redeploying the backend
-	     that also places live orders. Temporarily use the pages.dev origin
-	     while apex peakapp.site SSL returns Cloudflare 525; api.peakapp.site
-	     /legal/* 301-redirects here for anything that cached the old address.
-	     After Cloudflare custom-domain SSL is fixed, switch these (and
-	     backend/legalPages.mjs WEBSITE_ORIGIN) back to https://peakapp.site. -->
+	<!-- Legal pages are static HTML on Cloudflare Pages, served from the apex
+	     domain. Source lives in website/legal/. -->
 	<key>PEAK_PRIVACY_URL</key>
-	<string>https://peak-website-88n.pages.dev/legal/privacy</string>
+	<string>https://peakapp.site/legal/privacy</string>
 	<key>PEAK_TERMS_URL</key>
-	<string>https://peak-website-88n.pages.dev/legal/terms</string>
+	<string>https://peakapp.site/legal/terms</string>
 	<key>PEAK_SUPPORT_URL</key>
-	<string>https://peak-website-88n.pages.dev/legal/support</string>
+	<string>https://peakapp.site/legal/support</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

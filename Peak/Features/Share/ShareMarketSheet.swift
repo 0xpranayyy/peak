@@ -554,6 +554,9 @@ struct PeakShareCard: View {
 
 struct PeakPositionShareCard: View {
     let position: PortfolioPosition
+    /// Profile identity for the receipt footer. Optional so existing callers still compile.
+    var handle: String? = nil
+    var avatar: UIImage? = nil
 
     /// Cost basis (shares × average entry).
     private var boughtUSD: Double { position.size * position.avgPrice }
@@ -563,6 +566,18 @@ struct PeakPositionShareCard: View {
     private var isUp: Bool { position.percentPnl >= 0 }
 
     var body: some View {
+        if PeakReceiptStyle.isEnabled {
+            PeakReceiptCard(
+                data: PeakReceiptData(position: position, handle: handle),
+                avatar: avatar
+            )
+        } else {
+            legacyBody
+        }
+    }
+
+    /// Previous paper postcard. Kept intact — `PeakReceiptStyle` flips back to it.
+    private var legacyBody: some View {
         PeakPostcardShell(height: PeakPostcard.positionCardHeight) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(position.title)
@@ -763,6 +778,10 @@ struct ShareMarketSheet: View {
 
 struct SharePositionSheet: View {
     let position: PortfolioPosition
+    /// Passed through to the receipt footer. Defaults keep older call sites valid.
+    var handle: String? = nil
+    var avatarURL: URL? = nil
+
     @Environment(\.dismiss) private var dismiss
     @State private var image: UIImage?
 
@@ -812,10 +831,16 @@ struct SharePositionSheet: View {
                 }
             }
             .task {
-                let card = PeakPositionShareCard(position: position)
+                let avatar = await PeakTradeShareCardRenderer.loadIcon(url: avatarURL)
+                let card = PeakPositionShareCard(
+                    position: position,
+                    handle: handle,
+                    avatar: avatar
+                )
                 let renderer = ImageRenderer(content: card)
                 renderer.scale = 3
-                renderer.isOpaque = true
+                // Ticket notches need alpha; the legacy postcard is unaffected.
+                renderer.isOpaque = !PeakReceiptStyle.isEnabled
                 image = renderer.uiImage
             }
         }

@@ -575,9 +575,17 @@ struct ImportTradingWalletSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(
                         auth.isAuthenticated
-                            ? "Your key is sent once securely and never stored on this device."
-                            : "Paste your Polymarket \(kind == .seed ? "seed phrase" : "private key"). Peak signs you in with that wallet — no Apple or Google needed."
+                            ? "Sent over HTTPS to Peak's servers, which sign your orders. Never stored on this device, and held encrypted on our side."
+                            : "Paste your Polymarket \(kind == .seed ? "seed phrase" : "private key"). Peak's servers sign with it so you can trade — no Apple or Google needed. It is never stored on this device."
                     )
+                    Label {
+                        Text(PeakUserCopy.importPhishingWarning)
+                    } icon: {
+                        Image(systemName: "exclamationmark.shield.fill")
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+
                     Text(PeakUserCopy.securedByPrivy)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -694,6 +702,13 @@ struct ImportTradingWalletSheet: View {
                 wallet: wallet,
                 tradingConfig: tradingConfig
             )
+            // A seed phrase left on the system pasteboard is readable by the next
+            // app the user opens, and syncs to their Mac via Universal Clipboard.
+            // Only clear our own value, and only once it is no longer needed.
+            if UIPasteboard.general.string?
+                .trimmingCharacters(in: .whitespacesAndNewlines) == trimmed {
+                UIPasteboard.general.string = ""
+            }
             phase = .success
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
@@ -738,6 +753,8 @@ struct AccountView: View {
 
     @State private var statusMessage: String?
     @State private var showSignIn = false
+    @State private var showRemoveKeyConfirm = false
+    @State private var isRemovingKey = false
     @State private var showImportKey = false
     @State private var showPasteAddress = false
     @State private var showTradingPath = false
@@ -947,12 +964,50 @@ struct AccountView: View {
             }
 
         Section {
+            if tradingPath.snapshot.imported {
+                Button(PeakUserCopy.removeKeyTitle, role: .destructive) {
+                    showRemoveKeyConfirm = true
+                }
+                .disabled(isRemovingKey)
+            }
+
             Button("Sign out", role: .destructive) {
                 Task {
                     await auth.logout()
                     statusMessage = nil
                 }
             }
+        }
+        .confirmationDialog(
+            PeakUserCopy.removeKeyTitle,
+            isPresented: $showRemoveKeyConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Remove key", role: .destructive) {
+                Task { await removeStoredKey() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(PeakUserCopy.removeKeyPrompt)
+        }
+    }
+
+    /// Explicit counterpart to the privacy policy's deletion promise. Sign-out
+    /// does this too, but users deserve a deliberate control they can find.
+    private func removeStoredKey() async {
+        isRemovingKey = true
+        defer { isRemovingKey = false }
+        do {
+            try await TradingProxyClient.forgetWallet()
+            TradingPathStore.shared.clear()
+            statusMessage = PeakUserCopy.removeKeyDone
+            PeakHaptics.success()
+        } catch {
+            statusMessage = PeakUserCopy.fromError(
+                error,
+                fallback: "Couldn’t remove the key right now. Try again."
+            )
+            PeakHaptics.selection()
         }
     }
 

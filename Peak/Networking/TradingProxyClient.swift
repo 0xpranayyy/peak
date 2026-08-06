@@ -270,9 +270,17 @@ enum TradingProxyClient {
                 ?? "HTTP \(http.statusCode)"
             let code = json["code"] as? String
             if http.statusCode >= 500 {
+                // `message` can fall back to the raw response body. Our server never
+                // echoes request bodies, but a proxy or future handler might — and
+                // this path carries wallet imports. Report the shape, not the text.
                 CrashReporting.capture(
-                    TradingError.fromServerMessage(message, code: code),
-                    context: ["path": path, "method": method, "status": String(http.statusCode)]
+                    TradingError.server("HTTP \(http.statusCode)"),
+                    context: [
+                        "path": path,
+                        "method": method,
+                        "status": String(http.statusCode),
+                        "code": code ?? "none",
+                    ]
                 )
             }
             if http.statusCode == 401 || message.lowercased().contains("unauthorized") {
@@ -285,6 +293,19 @@ enum TradingProxyClient {
             )
         }
         return json
+    }
+
+    /// Delete this user's server-side trading session, including the encrypted
+    /// signing key from an imported wallet.
+    ///
+    /// Best-effort by design: it runs while signing out, and a network blip must
+    /// never trap the user in a signed-in state. Failure is reported to the
+    /// caller so an explicit "remove my key" action can surface it, but sign-out
+    /// itself ignores it.
+    @discardableResult
+    static func forgetWallet() async throws -> Bool {
+        let json = try await jsonObject(path: "auth/forget-wallet", method: "POST")
+        return (json["ok"] as? Bool) ?? false
     }
 
     /// Import private key or mnemonic via backend (not stored on device).
