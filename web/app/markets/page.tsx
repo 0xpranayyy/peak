@@ -10,9 +10,10 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const SORTS: SortKey[] = ["volume24hr", "volume", "liquidity", "endDate"];
+const PAGE_SIZE = 36;
 
 type Props = {
-  searchParams: Promise<{ tag?: string; sort?: string }>;
+  searchParams: Promise<{ tag?: string; sort?: string; page?: string }>;
 };
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
@@ -31,21 +32,42 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   };
 }
 
+function pageHref(opts: {
+  tag?: string;
+  sort: SortKey;
+  page: number;
+}): string {
+  const params = new URLSearchParams();
+  if (opts.tag) params.set("tag", opts.tag);
+  if (opts.sort !== "volume24hr") params.set("sort", opts.sort);
+  if (opts.page > 1) params.set("page", String(opts.page));
+  const q = params.toString();
+  return q ? `/markets?${q}` : "/markets";
+}
+
 export default async function HomePage({ searchParams }: Props) {
   const params = await searchParams;
   const activeTag = params.tag?.trim() || undefined;
   const activeSort: SortKey = SORTS.includes(params.sort as SortKey)
     ? (params.sort as SortKey)
     : "volume24hr";
+  const page = Math.max(1, Number(params.page) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
 
   // The feed and the chips fail independently. Losing categories should not
   // cost the user the markets, and vice versa.
   const [events, tags] = await Promise.all([
-    fetchEvents({ limit: 36, sort: activeSort, tagSlug: activeTag }).catch(
-      (): PeakEvent[] => []
-    ),
+    fetchEvents({
+      limit: PAGE_SIZE,
+      offset,
+      sort: activeSort,
+      tagSlug: activeTag,
+    }).catch((): PeakEvent[] => []),
     fetchTags(24).catch((): Tag[] => []),
   ]);
+
+  const hasMore = events.length >= PAGE_SIZE;
+  const hasPrev = page > 1;
 
   return (
     <>
@@ -75,7 +97,9 @@ export default async function HomePage({ searchParams }: Props) {
           <p className="empty">
             {activeTag
               ? "No live markets in this category right now."
-              : "Markets are unavailable right now. Try again in a moment."}
+              : page > 1
+                ? "No more markets on this page."
+                : "Markets are unavailable right now. Try again in a moment."}
           </p>
         ) : (
           <div className="grid">
@@ -83,6 +107,32 @@ export default async function HomePage({ searchParams }: Props) {
               <MarketCard key={event.id} event={event} />
             ))}
           </div>
+        )}
+
+        {(hasPrev || hasMore) && (
+          <nav className="pager" aria-label="Markets pages">
+            {hasPrev ? (
+              <a
+                className="btn"
+                href={pageHref({ tag: activeTag, sort: activeSort, page: page - 1 })}
+              >
+                ← Previous
+              </a>
+            ) : (
+              <span />
+            )}
+            <span className="pager__label">Page {page}</span>
+            {hasMore ? (
+              <a
+                className="btn"
+                href={pageHref({ tag: activeTag, sort: activeSort, page: page + 1 })}
+              >
+                Next →
+              </a>
+            ) : (
+              <span />
+            )}
+          </nav>
         )}
       </div>
     </>

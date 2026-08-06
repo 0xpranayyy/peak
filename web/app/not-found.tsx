@@ -6,10 +6,10 @@ export default function NotFound() {
       </h1>
       <p style={{ color: "var(--text-2)", marginTop: 12, maxWidth: "56ch" }}>
         It may have resolved and been removed upstream, or the link may be
-        mistyped. Live markets are on the home page.
+        mistyped. Live markets are under Markets.
       </p>
       <p style={{ marginTop: 24 }}>
-        <a className="cta" href="/">
+        <a className="cta" href="/markets">
           Browse markets
         </a>
       </p>

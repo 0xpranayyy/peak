@@ -143,7 +143,17 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <PeakSessionContext.Provider value={value}>{children}</PeakSessionContext.Provider>
+    <PeakSessionContext.Provider value={value}>
+      {children}
+      {error && authenticated ? (
+        <div className="session-toast" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => void refreshSession()}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+    </PeakSessionContext.Provider>
   );
 }
 

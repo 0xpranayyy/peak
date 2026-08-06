@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { fetchEventBySlug } from "@/lib/gamma";
 import { cents, compactUsd, endsIn, percent } from "@/lib/format";
@@ -108,7 +109,9 @@ export default async function EventPage({ params }: Props) {
           </p>
         </div>
 
-        <EventTradePanel markets={event.markets} />
+        <Suspense fallback={<div className="detail__aside"><p className="empty">Loading ticket…</p></div>}>
+          <EventTradePanel markets={event.markets} />
+        </Suspense>
       </div>
     </div>
   );

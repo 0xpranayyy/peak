@@ -1,11 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Market } from "@/lib/gamma";
 import { TradeTicket } from "@/components/TradeTicket";
 
 export function EventTradePanel({ markets }: { markets: Market[] }) {
-  const [index, setIndex] = useState(0);
+  const searchParams = useSearchParams();
+  const preferredOutcome = searchParams.get("outcome") ?? undefined;
+  const initialSide =
+    searchParams.get("side")?.toUpperCase() === "SELL" ? ("SELL" as const) : ("BUY" as const);
+  const sharesParam = Number(searchParams.get("shares"));
+  const initialShares =
+    Number.isFinite(sharesParam) && sharesParam > 0 ? sharesParam : undefined;
+
+  const preferredIndex = useMemo(() => {
+    if (!preferredOutcome) return 0;
+    const idx = markets.findIndex((m) => m.outcomes.includes(preferredOutcome));
+    return idx >= 0 ? idx : 0;
+  }, [markets, preferredOutcome]);
+
+  const [index, setIndex] = useState(preferredIndex);
   const market = markets[Math.min(index, markets.length - 1)];
   if (!market) return null;
 
@@ -26,7 +41,13 @@ export function EventTradePanel({ markets }: { markets: Market[] }) {
           </select>
         </label>
       ) : null}
-      <TradeTicket key={market.id} market={market} />
+      <TradeTicket
+        key={`${market.id}-${initialSide}-${preferredOutcome ?? ""}`}
+        market={market}
+        preferredOutcome={preferredOutcome}
+        initialSide={initialSide}
+        initialShares={initialShares}
+      />
     </div>
   );
 }

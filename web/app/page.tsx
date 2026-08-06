@@ -7,7 +7,7 @@ export const runtime = "edge";
 // `next build` from needing live market data just to produce a bundle.
 export const dynamic = "force-dynamic";
 
-const APP_STORE_URL = "https://apps.apple.com/app/id0000000000";
+const LANDING = "https://peakapp.site";
 
 /**
  * Landing. Marketing and live markets on one page, on one domain.
@@ -77,7 +77,7 @@ export default async function LandingPage() {
           <div className="pillar">
             <h3>Prices you can read</h3>
             <p>
-              Outcome, bid, ask and spread on screen before you order. A market
+              Live bid, ask and spread on the ticket before you order. A market
               at 70¢ prices a ~70% chance — not a promise, and it moves.
             </p>
           </div>
@@ -102,8 +102,8 @@ export default async function LandingPage() {
             <a className="btn btn--primary" href="/markets">
               Browse markets
             </a>
-            <a className="btn" href={APP_STORE_URL} rel="noopener">
-              Download for iOS
+            <a className="btn" href={LANDING} rel="noopener">
+              About Peak / iOS
             </a>
           </div>
           <p className="risk">

@@ -210,11 +210,11 @@ async function getGamma<T>(
   }
 
   const response = await fetch(url, {
-    // The Worker already edge-caches these, which is the layer that matters on
-    // Cloudflare. `revalidate` is kept as the cache hint Next understands.
+    // The Worker already edge-caches these. On Cloudflare Pages (`next-on-pages`)
+    // ISR is a no-op, but `revalidate` still documents intent for local Next.
+    // Do not pair with `cache: "no-store"` — that overrides revalidate.
     next: { revalidate },
     headers: { accept: "application/json" },
-    cache: "no-store",
   });
 
   if (!response.ok) {

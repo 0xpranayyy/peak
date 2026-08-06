@@ -3,7 +3,7 @@
  *
  * All authenticated calls go through `/api/peak/*` (Next edge proxy) so we do
  * not depend on Railway `CORS_ORIGINS`. Market data stays on the public edge
- * Worker via `lib/gamma.ts`.
+ * Worker via `lib/gamma.ts` / `lib/clob.ts`.
  */
 
 export class PeakApiError extends Error {
@@ -34,6 +34,38 @@ async function parseJson(response: Response): Promise<Record<string, unknown>> {
   } catch {
     return { error: text };
   }
+}
+
+function friendlyApiMessage(json: Record<string, unknown>, status: number): string {
+  const code = typeof json.code === "string" ? json.code : null;
+  const raw =
+    (typeof json.error === "string" && json.error) ||
+    (typeof json.errorMsg === "string" && json.errorMsg) ||
+    null;
+
+  switch (code) {
+    case "region_restricted":
+      return raw || "Trading isn’t available in your region.";
+    case "insufficient_funds":
+      return raw || "Not enough cash for this order.";
+    case "insufficient_shares":
+      return raw || "Not enough shares to sell.";
+    case "setup_required":
+      return raw || "Finish trading setup first, then place an order.";
+    case "builder_not_ready":
+      return raw || "Live trading isn’t configured on the Peak backend yet.";
+    case "import_wallet_required":
+      return "This Polymarket wallet needs a key import in the Peak iOS app.";
+    case "market_closed":
+      return raw || "This market is no longer accepting orders.";
+    case "invalid_order":
+      return raw || "Enter a valid size and a price between 1¢ and 99¢.";
+    case "edge_required":
+      return raw || "Orders must go through Peak’s edge. Try again in a moment.";
+    default:
+      break;
+  }
+  return raw || `Request failed (${status})`;
 }
 
 export async function peakFetch(
@@ -68,12 +100,8 @@ export async function peakFetch(
 
   const json = await parseJson(response);
   if (!response.ok) {
-    const message =
-      (typeof json.error === "string" && json.error) ||
-      (typeof json.errorMsg === "string" && json.errorMsg) ||
-      `Request failed (${response.status})`;
     throw new PeakApiError(
-      message,
+      friendlyApiMessage(json, response.status),
       response.status,
       typeof json.code === "string" ? json.code : null,
       json
@@ -141,6 +169,8 @@ export type Position = {
   curPrice: number | null;
   cashPnl: number | null;
   eventSlug: string | null;
+  /** CLOB asset / token id when present — used to deep-link a sell. */
+  asset: string | null;
 };
 
 export type PortfolioSnapshot = {
@@ -156,9 +186,53 @@ export type PortfolioSnapshot = {
   positions: Position[];
 };
 
+export type OpenOrder = {
+  id: string;
+  tokenID: string;
+  market: string | null;
+  side: string;
+  price: number;
+  originalSize: number;
+  sizeMatched: number;
+  status: string | null;
+};
+
+export async function fetchOpenOrders(token: string): Promise<OpenOrder[]> {
+  const root = await peakFetch("orders", { token });
+  const rows = Array.isArray(root.open) ? (root.open as Record<string, unknown>[]) : [];
+  return rows.map(mapOpenOrder).filter((o): o is OpenOrder => o !== null);
+}
+
+export async function cancelOrder(token: string, orderId: string): Promise<void> {
+  await peakFetch(`orders/${encodeURIComponent(orderId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function fetchDepositAddress(
+  token: string,
+  chain = "polygon",
+  depositToken = "USDC"
+): Promise<string | null> {
+  const root = await peakFetch("deposit-address", {
+    method: "POST",
+    token,
+    body: { chain, token: depositToken },
+  });
+  return (
+    (typeof root.depositAddress === "string" && root.depositAddress) ||
+    (typeof root.address === "string" && root.address) ||
+    (typeof root.funder === "string" && root.funder) ||
+    (typeof root.accountWallet === "string" && root.accountWallet) ||
+    null
+  );
+}
+
 export type PreparedOrder = {
   url: string;
   headers: Record<string, string>;
+  /** Exact JSON string from prepare — must be sent verbatim for L2 HMAC. */
   body: string;
 };
 
@@ -195,20 +269,31 @@ export async function prepareOrder(
  * Submit a prepared order from the browser to CLOB.
  *
  * Mirrors iOS: Peak signs on the server; the device posts so Polymarket’s
- * geoblock sees the user’s IP, not Railway’s.
+ * geoblock sees the user’s IP, not Railway’s. The body string must not be
+ * re-serialized — L2 HMAC covers the exact bytes.
  */
 export async function submitPreparedOrder(
   prepared: PreparedOrder
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(prepared.url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      ...prepared.headers,
-    },
-    body: prepared.body,
-  });
+  let response: Response;
+  try {
+    response = await fetch(prepared.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...prepared.headers,
+      },
+      body: prepared.body,
+    });
+  } catch {
+    throw new PeakApiError(
+      "Couldn’t reach Polymarket’s order book from this network. Try again on an unblocked connection, or use the Peak iOS app.",
+      0,
+      "clob_unreachable",
+      {}
+    );
+  }
   const text = await response.text();
   let json: Record<string, unknown> = {};
   try {
@@ -217,18 +302,35 @@ export async function submitPreparedOrder(
     json = { error: text };
   }
   if (!response.ok) {
-    const message =
-      (typeof json.error === "string" && json.error) ||
-      (typeof json.errorMsg === "string" && json.errorMsg) ||
-      `Order rejected (${response.status})`;
     throw new PeakApiError(
-      message,
+      friendlyApiMessage(json, response.status),
       response.status,
       typeof json.code === "string" ? json.code : null,
       json
     );
   }
+  // FAK/FOK can return 200 with success:false / empty fill.
+  if (json.success === false) {
+    throw new PeakApiError(
+      friendlyApiMessage(json, response.status),
+      response.status,
+      typeof json.code === "string" ? json.code : "no_fill",
+      json
+    );
+  }
   return json;
+}
+
+/**
+ * True only when the backend predates `/orders/prepare`.
+ * Kept narrow on purpose — bare 404 must not silently resend via Railway IP
+ * for business failures (those use 4xx + `code`, not a missing route).
+ */
+export function isMissingPrepareEndpoint(err: unknown): boolean {
+  if (!(err instanceof PeakApiError)) return false;
+  if (err.status !== 404) return false;
+  if (err.code && err.code !== "not_found") return false;
+  return true;
 }
 
 /** Fallback when `/orders/prepare` is missing on an older backend. */
@@ -275,6 +377,33 @@ function mapPosition(row: Record<string, unknown>): Position | null {
     curPrice: numOrNull(row.curPrice ?? row.price),
     cashPnl: numOrNull(row.cashPnl ?? row.pnl),
     eventSlug: typeof row.eventSlug === "string" ? row.eventSlug : null,
+    asset:
+      (typeof row.asset === "string" && row.asset) ||
+      (typeof row.tokenId === "string" && row.tokenId) ||
+      (typeof row.tokenID === "string" && row.tokenID) ||
+      null,
+  };
+}
+
+function mapOpenOrder(row: Record<string, unknown>): OpenOrder | null {
+  const id =
+    (typeof row.id === "string" && row.id) ||
+    (typeof row.orderID === "string" && row.orderID) ||
+    (typeof row.order_id === "string" && row.order_id) ||
+    null;
+  if (!id) return null;
+  return {
+    id,
+    tokenID:
+      (typeof row.asset_id === "string" && row.asset_id) ||
+      (typeof row.tokenID === "string" && row.tokenID) ||
+      "",
+    market: typeof row.market === "string" ? row.market : null,
+    side: String(row.side ?? "BUY").toUpperCase(),
+    price: numOrNull(row.price) ?? 0,
+    originalSize: numOrNull(row.original_size) ?? numOrNull(row.size) ?? 0,
+    sizeMatched: numOrNull(row.size_matched) ?? numOrNull(row.matched) ?? 0,
+    status: typeof row.status === "string" ? row.status : null,
   };
 }
 

@@ -290,6 +290,16 @@ async function handleWebSocket(request) {
   return new Response(null, { status: 101, webSocket: clientSide });
 }
 
+/** Constant-time string compare for shared proxy secrets. */
+function secretsMatch(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length === 0 || a.length !== b.length) {
+    return false;
+  }
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
 /**
  * Reverse proxy for Peak's own backend. Unlike the Polymarket routes this
  * forwards every path and method verbatim — it fronts a single origin we
@@ -311,13 +321,32 @@ async function handleBackend(request, url, env) {
   headers.delete("x-peak-region-status");
   headers.delete("x-peak-edge-secret");
 
+  // Web client double-hop: browser → app.peakapp.site (/api/peak) → api.* .
+  // Without help, `request.cf.country` here is the Pages colo, not the trader.
+  // The Next proxy may forward the browser CF country + a shared secret.
+  const claimedCountry = headers.get("x-peak-client-country");
+  const webProxySecret = headers.get("x-peak-web-proxy-secret");
+  headers.delete("x-peak-client-country");
+  headers.delete("x-peak-web-proxy-secret");
+
   // Proves the request came through here, so the backend can refuse direct
   // origin calls that would otherwise skip the region gate. Deleted first: a
   // client must never be able to supply its own.
   if (env?.PEAK_EDGE_SECRET) {
     headers.set("x-peak-edge-secret", env.PEAK_EDGE_SECRET);
   }
-  const country = request.cf?.country ?? null;
+
+  let country = request.cf?.country ?? null;
+  const expectedWebSecret = env?.PEAK_WEB_PROXY_SECRET;
+  if (
+    expectedWebSecret &&
+    secretsMatch(webProxySecret, expectedWebSecret) &&
+    claimedCountry &&
+    /^[A-Z]{2}$/i.test(claimedCountry)
+  ) {
+    country = claimedCountry.toUpperCase();
+  }
+
   if (country) {
     const blocked = REGION_BLOCKED.has(country);
     const closeOnly = REGION_CLOSE_ONLY.has(country);

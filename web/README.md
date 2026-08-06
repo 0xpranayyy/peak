@@ -11,7 +11,7 @@ as iOS (`api.peakapp.site`), same public edge Worker for Gamma/CLOB/geo
 | `/` | Web client home — pitch + trending markets |
 | `/markets` | Full feed, with sort and category filters |
 | `/event/[slug]` | Market detail + trade ticket (SSR metadata) |
-| `/portfolio` | Cash, deposit wallet, positions (auth) |
+| `/portfolio` | Cash, deposit wallet, open orders + cancel, positions (auth) |
 | `/search` | Search (`noindex`) |
 | `/invite/[code]` | Referral landing (apex `/invite/*` remains canonical for Universal Links) |
 | `/legal/*` | Privacy, Terms, Support mirrors (canonical copy on apex) |
@@ -27,12 +27,18 @@ as iOS (`api.peakapp.site`), same public edge Worker for Gamma/CLOB/geo
   `POST /trading/setup` when deploy is needed.
 - Orders use the iOS flow: `POST /orders/prepare` (Peak signs) → browser
   submits the prepared body to CLOB so geoblock sees the user IP.
+- Ticket supports **market** (FOK buy / FAK sell) and **limit** (GTC), with
+  live bid/ask/spread from the edge CLOB book.
 - Geo banner uses Worker `GET /geo`. Buys are disabled when status is
   `blocked` or `close_only`.
 
 Authenticated API calls go through `/api/peak/*` so local and Pages deploys
 work without setting Railway `CORS_ORIGINS`. Optional allow-list later:
 `https://app.peakapp.site` / `http://localhost:3000`.
+
+For honest API region gating through the proxy, set the same
+`PEAK_WEB_PROXY_SECRET` on Cloudflare Pages (`peak-web`) and the edge Worker
+(`peak-edge`), then redeploy both.
 
 ## Develop
 
@@ -52,8 +58,9 @@ Optional env:
 | --- | --- | --- |
 | `NEXT_PUBLIC_PRIVY_APP_ID` | — | Required for sign-in |
 | `NEXT_PUBLIC_PRIVY_CLIENT_ID` | — | Optional Privy client id |
-| `NEXT_PUBLIC_PEAK_EDGE_URL` | `https://edge.peakapp.site` | Gamma / geo |
+| `NEXT_PUBLIC_PEAK_EDGE_URL` | `https://edge.peakapp.site` | Gamma / CLOB / geo |
 | `PEAK_API_URL` | `https://api.peakapp.site` | Upstream for `/api/peak/*` |
+| `PEAK_WEB_PROXY_SECRET` | — | Shared with Worker; forwards browser CF country |
 
 Without `NEXT_PUBLIC_PRIVY_APP_ID`, browse still works; Sign in explains the missing env.
 

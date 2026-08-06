@@ -1,43 +1,99 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePeakSession } from "@/lib/session";
-import { fetchPortfolio, type PortfolioSnapshot } from "@/lib/api";
+import {
+  cancelOrder,
+  fetchDepositAddress,
+  fetchOpenOrders,
+  fetchPortfolio,
+  type OpenOrder,
+  type PortfolioSnapshot,
+} from "@/lib/api";
 import { cents } from "@/lib/format";
 
 export function PortfolioClient() {
-  const { ready, authenticated, login, getToken, session, syncing, error, runSetup, eoa } =
-    usePeakSession();
+  const {
+    ready,
+    authenticated,
+    login,
+    getToken,
+    session,
+    syncing,
+    error,
+    runSetup,
+    refreshSession,
+    eoa,
+  } = usePeakSession();
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
+  const [orders, setOrders] = useState<OpenOrder[]>([]);
+  const [depositAddress, setDepositAddress] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!authenticated) {
       setPortfolio(null);
+      setOrders([]);
+      setDepositAddress(null);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("Sign in again.");
-        const snap = await fetchPortfolio(token);
-        if (!cancelled) setPortfolio(snap);
-      } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Couldn’t load portfolio.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authenticated, getToken, session?.accountWallet, session?.ready]);
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Sign in again.");
+      const [snap, open, deposit] = await Promise.all([
+        fetchPortfolio(token),
+        fetchOpenOrders(token).catch(() => [] as OpenOrder[]),
+        fetchDepositAddress(token).catch(() => null),
+      ]);
+      setPortfolio(snap);
+      setOrders(open);
+      setDepositAddress(
+        deposit || snap.accountWallet || session?.accountWallet || null
+      );
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Couldn’t load portfolio.");
+    } finally {
+      setLoading(false);
+    }
+  }, [authenticated, getToken, session?.accountWallet]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload, session?.accountWallet, session?.ready]);
+
+  async function onCancel(orderId: string) {
+    setActionMsg(null);
+    setCancelling(orderId);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Sign in again.");
+      await cancelOrder(token, orderId);
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setActionMsg("Order cancelled.");
+    } catch (err) {
+      setActionMsg(err instanceof Error ? err.message : "Cancel failed.");
+    } finally {
+      setCancelling(null);
+    }
+  }
+
+  async function copyDeposit() {
+    const addr = depositAddress;
+    if (!addr) return;
+    try {
+      await navigator.clipboard.writeText(addr);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setActionMsg("Couldn’t copy — select the address manually.");
+    }
+  }
 
   if (!ready) {
     return <p className="empty">Loading…</p>;
@@ -47,13 +103,16 @@ export function PortfolioClient() {
     return (
       <div className="portfolio-empty">
         <h1>Portfolio</h1>
-        <p>Sign in with Privy to see cash, positions, and your deposit wallet.</p>
+        <p>Sign in with Privy to see cash, positions, open orders, and your deposit wallet.</p>
         <button type="button" className="btn btn--primary" onClick={login}>
           Sign in
         </button>
       </div>
     );
   }
+
+  const displayWallet =
+    depositAddress || portfolio?.accountWallet || session?.accountWallet || null;
 
   return (
     <div className="portfolio">
@@ -70,45 +129,67 @@ export function PortfolioClient() {
             )}
           </p>
         </div>
-        {session?.needsDeploy ? (
+        <div className="portfolio__actions">
           <button
             type="button"
             className="btn"
-            disabled={syncing}
-            onClick={() => void runSetup().catch(() => undefined)}
+            disabled={loading || syncing}
+            onClick={() => {
+              void refreshSession().then(() => reload());
+            }}
           >
-            {syncing ? "Setting up…" : "Finish setup"}
+            {loading || syncing ? "Refreshing…" : "Refresh"}
           </button>
-        ) : null}
+          {session?.needsDeploy ? (
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={syncing}
+              onClick={() => void runSetup().catch(() => undefined)}
+            >
+              {syncing ? "Setting up…" : "Finish setup"}
+            </button>
+          ) : null}
+        </div>
       </header>
 
-      {(error || loadError) && (
-        <p className="ticket__status ticket__status--err">{error || loadError}</p>
+      {(error || loadError || actionMsg) && (
+        <p
+          className={
+            actionMsg && !error && !loadError
+              ? "ticket__status ticket__status--ok"
+              : "ticket__status ticket__status--err"
+          }
+        >
+          {error || loadError || actionMsg}
+        </p>
       )}
 
       <div className="portfolio__stats">
         <div className="stat">
           <span>Cash</span>
           <b>
-            {loading
+            {loading && !portfolio
               ? "…"
               : portfolio?.cashUSD != null
                 ? `$${portfolio.cashUSD.toFixed(2)}`
                 : "—"}
           </b>
-          {portfolio?.cashError ? (
-            <small>{portfolio.cashError}</small>
-          ) : null}
+          {portfolio?.cashError ? <small>{portfolio.cashError}</small> : null}
         </div>
         <div className="stat">
           <span>Deposit wallet</span>
-          <b className="mono">
-            {portfolio?.accountWallet
-              ? `${portfolio.accountWallet.slice(0, 8)}…${portfolio.accountWallet.slice(-4)}`
-              : session?.accountWallet
-                ? `${session.accountWallet.slice(0, 8)}…`
-                : "—"}
+          <b className="mono" title={displayWallet ?? undefined}>
+            {displayWallet
+              ? `${displayWallet.slice(0, 8)}…${displayWallet.slice(-4)}`
+              : "—"}
           </b>
+          {displayWallet ? (
+            <button type="button" className="stat__copy" onClick={() => void copyDeposit()}>
+              {copied ? "Copied" : "Copy address"}
+            </button>
+          ) : null}
+          <small>Send USDC on Polygon to this address.</small>
         </div>
         <div className="stat">
           <span>Status</span>
@@ -134,6 +215,44 @@ export function PortfolioClient() {
 
       <section className="section" style={{ paddingTop: 28 }}>
         <div className="section__head">
+          <h2>Open orders</h2>
+        </div>
+        {loading && !orders.length && !portfolio ? (
+          <p className="empty">Loading orders…</p>
+        ) : !orders.length ? (
+          <p className="empty">No open orders.</p>
+        ) : (
+          <div className="positions">
+            {orders.map((o) => {
+              const remaining = Math.max(0, o.originalSize - o.sizeMatched);
+              return (
+                <div key={o.id} className="position position--row">
+                  <div>
+                    <div className="position__title">
+                      {o.side} · {cents(o.price)} · {remaining.toFixed(2)} left
+                    </div>
+                    <div className="position__sub">
+                      {o.status ?? "open"} ·{" "}
+                      <span className="mono">{o.id.slice(0, 12)}…</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={cancelling === o.id}
+                    onClick={() => void onCancel(o.id)}
+                  >
+                    {cancelling === o.id ? "Cancelling…" : "Cancel"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="section" style={{ paddingTop: 12 }}>
+        <div className="section__head">
           <h2>Positions</h2>
         </div>
         {loading && !portfolio ? (
@@ -146,13 +265,18 @@ export function PortfolioClient() {
               <a
                 key={`${p.title}-${p.outcome}-${i}`}
                 className="position"
-                href={p.eventSlug ? `/event/${p.eventSlug}` : "/markets"}
+                href={
+                  p.eventSlug
+                    ? `/event/${p.eventSlug}?side=SELL&outcome=${encodeURIComponent(p.outcome)}&shares=${p.size}`
+                    : "/markets"
+                }
               >
                 <div>
                   <div className="position__title">{p.title}</div>
                   <div className="position__sub">
                     {p.outcome} · {p.size.toFixed(2)} shares
                     {p.avgPrice != null ? ` · avg ${cents(p.avgPrice)}` : ""}
+                    {" · Sell →"}
                   </div>
                 </div>
                 <div className="position__right">

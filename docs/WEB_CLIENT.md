@@ -128,7 +128,7 @@ Next app under `web/`: markets list, event detail with SSR metadata, search,
 invite route, legal mirrors. Reads Worker (`edge.peakapp.site`). Production host
 is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 
-### 2 — Auth — **in progress (`web/`)**
+### 2 — Auth — **done in `web/`**
 
 1. Privy Dashboard: add web origins (`https://app.peakapp.site`, Pages preview,
    `http://localhost:3000`).
@@ -136,13 +136,18 @@ is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
    browser→API. The web app proxies via `/api/peak/*` so CORS is not required
    for the Next client.
 3. Email / Google / Apple / wallet SIWE via Privy Web; API verifies Privy JWT.
+4. Session sync + trading setup with retry toast on failure.
 
-### 3 — Trade — **in progress (`web/`)**
+### 3 — Trade — **done in `web/` (ops still required)**
 
 1. Portfolio, setup, prepare/submit order path wired in `web/` (Privy path
    `new` only — no seed import).
-2. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
-3. Smoke in allowed regions still recommended before marketing web trading.
+2. Market (FOK/FAK) + limit (GTC) ticket; live bid/ask/spread from edge CLOB.
+3. Open orders + cancel; deposit address copy; position → sell deep-link.
+4. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
+5. `/api/peak/*` can forward browser CF country when `PEAK_WEB_PROXY_SECRET`
+   matches on Pages + Worker (otherwise API region gate may see the colo).
+6. Smoke in allowed regions still required before marketing web trading.
 
 ### 4 — Polish
 
@@ -151,11 +156,44 @@ is **`app.peakapp.site`**; apex marketing stays on `peak-website`.
 2. Align error copy with iOS (“backend not configured”, geo messages).
 3. Monitoring (optional Sentry browser); document deploy next to RELEASE.md cadence.
 
+## Smoke test checklist (web)
+
+Run against `https://app.peakapp.site` (or local `npm run dev`) from an
+**allowed** region. Skip live order submit if geo-blocked.
+
+1. **Browse** — `/markets` loads cards; category + sort change URL; pagination
+   works; search returns events.
+2. **Detail** — open an event; bid/ask/spread refresh on the ticket.
+3. **Auth** — Sign in (email or Google); portfolio shows signer; geo banner
+   matches `/geo` if restricted.
+4. **Setup** — if “Needs setup”, Finish setup succeeds (Builder/Relayer live).
+5. **Deposit** — Portfolio shows deposit wallet; Copy address works.
+6. **Limit buy** — small GTC buy prepare → submit → success or clear CLOB/
+   balance error (never silent 404→Railway fallback except missing prepare).
+7. **Market sell** — from a position link (`?side=SELL&shares=…`) or ticket;
+   order type shows FAK.
+8. **Orders** — open GTC appears under Open orders; Cancel removes it.
+9. **Geo** — in a blocked region, buy disabled with clear copy; close-only
+   allows sell only.
+10. **Landing intact** — `https://peakapp.site/` still marketing; Launch app →
+    `app.peakapp.site`.
+
+## Remaining ops (not code)
+
+| Item | Who |
+| --- | --- |
+| Privy allowed origins for `app.peakapp.site` + preview | Privy Dashboard |
+| DNS CNAME `app` → `peak-web-*.pages.dev` (proxied) | Cloudflare DNS |
+| Pages `nodejs_compat` + `PEAK_API_URL` / `PEAK_WEB_PROXY_SECRET` | Pages env |
+| Worker secret `PEAK_WEB_PROXY_SECRET` (same value) + redeploy worker | Wrangler |
+| Live trade smoke from non-blocked ISP | Human |
+| App Store public URL once listed | Replace landing CTA |
+
 ## CORS / Privy / geo (Peak-specific)
 
 - **CORS:** iOS needs none. Web needs an explicit allow-list — never `*`, never production `http://`. Recommended production value when SPA is live: `https://app.peakapp.site`. Detail: [PRODUCTION.md § CORS](PRODUCTION.md#cors-local-vs-production).
 - **Privy:** Same app as iOS where possible; configure Web client + allowed origins. Server still holds `PRIVY_APP_SECRET` / auth key. Client only embeds public app id.
-- **Geo:** Worker `/geo` sees the real client IP (Railway alone does not). Web must call `/geo` from the browser (or a Worker-fronted path), not assume the API’s egress IP. Restricted / close-only behavior should match iOS intent — Peak does not circumvent Polymarket geoblocks. See README Regions + [polymarket-builder-geoblock-email.md](polymarket-builder-geoblock-email.md) for server-side nuance.
+- **Geo:** Worker `/geo` sees the real client IP (Railway alone does not). Web must call `/geo` from the browser (or a Worker-fronted path), not assume the API’s egress IP. For `/api/peak/*`, set matching `PEAK_WEB_PROXY_SECRET` on Pages + Worker so prepare/submit region headers use the browser country. Restricted / close-only behavior should match iOS intent — Peak does not circumvent Polymarket geoblocks. See README Regions + [polymarket-builder-geoblock-email.md](polymarket-builder-geoblock-email.md) for server-side nuance.
 
 ## Out of scope / risks
 

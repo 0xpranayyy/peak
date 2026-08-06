@@ -42,6 +42,11 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
 4. Optional Railway: `CORS_ORIGINS=https://app.peakapp.site` — only needed if
    something calls the API from the browser without the `/api/peak/*` proxy.
    The Next app does not need this.
+5. **Geo through proxy (recommended):** generate a long random secret, set
+   `PEAK_WEB_PROXY_SECRET` on Pages (`peak-web` Production + Preview) **and**
+   as a Worker secret on `peak-edge` (`wrangler secret put PEAK_WEB_PROXY_SECRET`),
+   then `cd worker && npx wrangler deploy`. Without this, prepare/submit may
+   see the Pages colo country instead of the trader’s.
 
 ## Verify
 
@@ -52,7 +57,10 @@ npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch
 | `https://peakapp.site/invite/TESTCODE` | 200 (Pages Function) |
 | `https://peakapp.site/.well-known/apple-app-site-association` | `Content-Type: application/json` |
 | `https://app.peakapp.site/markets` | 200, live markets |
-| `https://app.peakapp.site/event/<slug>` | 200, trade UI |
+| `https://app.peakapp.site/event/<slug>` | 200, trade UI with bid/ask |
+| `https://app.peakapp.site/portfolio` | Sign-in → cash / orders / positions |
+
+Full trading smoke: [WEB_CLIENT.md § Smoke test](WEB_CLIENT.md#smoke-test-checklist-web).
 
 Landing “Launch app” buttons must open `https://app.peakapp.site`.
 

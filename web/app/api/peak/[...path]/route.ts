@@ -6,12 +6,18 @@
  * Why not call the API from the browser? Railway CORS is intentionally off for
  * the iOS-only default (`CORS_ORIGINS` empty). Proxying keeps the web client
  * working without widening the API allow-list, and still hits the Worker-fronted
- * `api.peakapp.site` host so region headers / edge secret stay intact.
+ * `api.peakapp.site` host so the edge secret stays intact.
+ *
+ * Geo caveat: the Worker would otherwise stamp `x-peak-country` from *this*
+ * Pages fetch (colo IP), not the trader. When `PEAK_WEB_PROXY_SECRET` matches
+ * the Worker secret, we forward the browser's CF country as
+ * `x-peak-client-country` so the region gate stays honest.
  */
 
 export const runtime = "edge";
 
 const UPSTREAM = process.env.PEAK_API_URL ?? "https://api.peakapp.site";
+const WEB_PROXY_SECRET = process.env.PEAK_WEB_PROXY_SECRET ?? "";
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -28,6 +34,18 @@ const HOP_BY_HOP = new Set([
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
+function clientCountry(request: Request): string | null {
+  const cf = (request as Request & { cf?: { country?: string } }).cf;
+  if (cf?.country && /^[A-Z]{2}$/i.test(cf.country)) {
+    return cf.country.toUpperCase();
+  }
+  const header = request.headers.get("cf-ipcountry");
+  if (header && header !== "XX" && /^[A-Z]{2}$/i.test(header)) {
+    return header.toUpperCase();
+  }
+  return null;
+}
+
 async function forward(request: Request, ctx: Ctx): Promise<Response> {
   const { path } = await ctx.params;
   if (!path?.length) {
@@ -43,9 +61,25 @@ async function forward(request: Request, ctx: Ctx): Promise<Response> {
     if (HOP_BY_HOP.has(key.toLowerCase())) continue;
     // Drop browser Origin so upstream CORS middleware does not reject us.
     if (key.toLowerCase() === "origin") continue;
+    // Never let the browser spoof region / proxy claims — we set those below.
+    if (
+      key.toLowerCase() === "x-peak-client-country" ||
+      key.toLowerCase() === "x-peak-web-proxy-secret" ||
+      key.toLowerCase() === "x-peak-country" ||
+      key.toLowerCase() === "x-peak-region-status" ||
+      key.toLowerCase() === "x-peak-edge-secret"
+    ) {
+      continue;
+    }
     headers.set(key, value);
   }
   headers.set("accept", "application/json");
+
+  const country = clientCountry(request);
+  if (WEB_PROXY_SECRET && country) {
+    headers.set("x-peak-client-country", country);
+    headers.set("x-peak-web-proxy-secret", WEB_PROXY_SECRET);
+  }
 
   const method = request.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "HEAD";

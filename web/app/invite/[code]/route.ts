@@ -16,7 +16,8 @@
 
 export const runtime = "edge";
 
-const API_BASE = process.env.PEAK_API_BASE ?? "https://api.peakapp.site";
+const API_BASE =
+  process.env.PEAK_API_URL ?? process.env.PEAK_API_BASE ?? "https://api.peakapp.site";
 
 function escapeHtml(value: string): string {
   return value

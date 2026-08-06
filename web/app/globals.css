@@ -861,6 +861,43 @@ a {
   color: #ffb36b;
 }
 
+.ticket__book {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+}
+
+.ticket__book b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.field__link {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--teal-bright);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+}
+
+.seg--on:not(.seg--buy):not(.seg--sell) {
+  background: rgba(61, 220, 190, 0.12);
+  border-color: var(--teal-bright);
+  color: var(--text);
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
@@ -871,6 +908,12 @@ a {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+
+.portfolio__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .portfolio__head h1,
@@ -929,6 +972,18 @@ a {
   font-size: 12px;
 }
 
+.stat__copy {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal-bright);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
 .positions {
   margin-top: 16px;
   display: flex;
@@ -945,6 +1000,10 @@ a {
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
+}
+
+.position--row {
+  align-items: center;
 }
 
 .position:hover {
@@ -987,9 +1046,52 @@ a {
   font-weight: 600;
 }
 
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 28px 0 64px;
+}
+
+.pager__label {
+  font-size: 13px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
 button.chip {
   cursor: pointer;
   background: transparent;
   font: inherit;
+}
+
+.session-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid rgba(255, 107, 132, 0.35);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.session-toast button {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal-bright);
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 

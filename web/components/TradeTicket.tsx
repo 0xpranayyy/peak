@@ -1,25 +1,37 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Market } from "@/lib/gamma";
 import { usePeakSession } from "@/lib/session";
 import {
   PeakApiError,
+  isMissingPrepareEndpoint,
   placeOrderDirect,
   prepareOrder,
   submitPreparedOrder,
 } from "@/lib/api";
+import { fetchTopOfBook, type TopOfBook } from "@/lib/clob";
 import { cents } from "@/lib/format";
 
 type Side = "BUY" | "SELL";
+type OrderKind = "market" | "limit";
 
 type Props = {
   market: Market;
   /** Prefer a specific outcome label when multi-outcome. */
   preferredOutcome?: string;
+  /** Pre-fill sell size when opening from a portfolio position. */
+  initialShares?: number;
+  /** Force sell when closing a position. */
+  initialSide?: Side;
 };
 
-export function TradeTicket({ market, preferredOutcome }: Props) {
+export function TradeTicket({
+  market,
+  preferredOutcome,
+  initialShares,
+  initialSide = "BUY",
+}: Props) {
   const { authenticated, login, getToken, session, geo, syncing, runSetup } =
     usePeakSession();
 
@@ -30,13 +42,18 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
       : outcomes[0];
 
   const [outcome, setOutcome] = useState(initialOutcome);
-  const [side, setSide] = useState<Side>("BUY");
+  const [side, setSide] = useState<Side>(initialSide);
+  const [orderKind, setOrderKind] = useState<OrderKind>("limit");
   const [amountUsd, setAmountUsd] = useState("10");
+  const [shares, setShares] = useState(
+    initialShares != null && initialShares > 0 ? String(initialShares) : "10"
+  );
   const [limitCents, setLimitCents] = useState(() => {
     const idx = Math.max(0, outcomes.indexOf(initialOutcome));
     const p = market.outcomePrices[idx] ?? market.yesPrice ?? 0.5;
     return String(Math.round(p * 100));
   });
+  const [book, setBook] = useState<TopOfBook | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,22 +63,66 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
     return market.clobTokenIds[idx] ?? market.clobTokenIds[0] ?? null;
   }, [market.clobTokenIds, outcome, outcomes]);
 
-  const price = useMemo(() => {
-    const n = Number(limitCents);
-    if (!Number.isFinite(n)) return null;
-    const p = n / 100;
-    return p > 0 && p < 1 ? Math.round(p * 1000) / 1000 : null;
-  }, [limitCents]);
+  useEffect(() => {
+    if (!tokenID || market.closed || !market.active) {
+      setBook(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const next = await fetchTopOfBook(tokenID);
+      if (!cancelled) setBook(next);
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 8_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tokenID, market.closed, market.active]);
+
+  const quotePrice = useMemo(() => {
+    if (orderKind === "limit") {
+      const n = Number(limitCents);
+      if (!Number.isFinite(n)) return null;
+      const p = n / 100;
+      return p > 0 && p < 1 ? Math.round(p * 1000) / 1000 : null;
+    }
+    // Market: buy at ask, sell at bid; fall back to mid / last SSR price.
+    const idx = outcomes.indexOf(outcome);
+    const last = market.outcomePrices[idx] ?? market.yesPrice ?? 0.5;
+    if (side === "BUY") {
+      return book?.ask ?? book?.mid ?? (last > 0 && last < 1 ? last : 0.5);
+    }
+    return book?.bid ?? book?.mid ?? (last > 0 && last < 1 ? last : 0.5);
+  }, [orderKind, limitCents, side, book, outcomes, outcome, market.outcomePrices, market.yesPrice]);
 
   const size = useMemo(() => {
+    if (!quotePrice) return null;
+    if (side === "SELL") {
+      const s = Number(shares);
+      if (!Number.isFinite(s) || s <= 0) return null;
+      return Math.round(s * 100) / 100;
+    }
     const usd = Number(amountUsd);
-    if (!price || !Number.isFinite(usd) || usd <= 0) return null;
-    return Math.round((usd / price) * 100) / 100;
-  }, [amountUsd, price]);
+    if (!Number.isFinite(usd) || usd <= 0) return null;
+    return Math.round((usd / quotePrice) * 100) / 100;
+  }, [side, shares, amountUsd, quotePrice]);
+
+  const apiOrderType = useMemo(() => {
+    if (orderKind === "limit") return "GTC";
+    // Market sells are FAK (partial fill OK); buys stay FOK — matches iOS.
+    return side === "SELL" ? "FAK" : "FOK";
+  }, [orderKind, side]);
 
   const geoBlocksBuy = geo?.status === "blocked" || geo?.status === "close_only";
   const geoBlocksSell = geo?.status === "blocked";
   const geoBlocked = (side === "BUY" && geoBlocksBuy) || (side === "SELL" && geoBlocksSell);
+
+  function applyQuoteToLimit() {
+    const p = side === "BUY" ? book?.ask ?? book?.mid : book?.bid ?? book?.mid;
+    if (p != null) setLimitCents(String(Math.round(p * 100)));
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -76,8 +137,12 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
       setError("This market has no tradeable token ids yet.");
       return;
     }
-    if (!price || !size) {
-      setError("Enter a valid USD amount and a price between 1¢ and 99¢.");
+    if (!quotePrice || !size) {
+      setError(
+        side === "SELL"
+          ? "Enter a valid share size and a price between 1¢ and 99¢."
+          : "Enter a valid USD amount and a price between 1¢ and 99¢."
+      );
       return;
     }
     if (geoBlocked) {
@@ -99,33 +164,43 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
 
       const order = {
         tokenID,
-        price,
+        price: Math.round(quotePrice * 1000) / 1000,
         size,
         side,
-        amount: side === "BUY" ? Math.round(Number(amountUsd) * 100) / 100 : undefined,
-        orderType: "GTC",
+        amount:
+          side === "BUY" && orderKind === "market"
+            ? Math.round(Number(amountUsd) * 100) / 100
+            : side === "BUY"
+              ? Math.round(Number(amountUsd) * 100) / 100
+              : undefined,
+        orderType: apiOrderType,
         negRisk: market.negRisk,
       };
 
       try {
         const prepared = await prepareOrder(token, order);
         const result = await submitPreparedOrder(prepared);
-        const ok = result.success !== false;
+        const orderId =
+          (typeof result.orderID === "string" && result.orderID) ||
+          (typeof result.id === "string" && result.id) ||
+          null;
         setMessage(
-          ok
-            ? `Order ${side === "BUY" ? "bought" : "sold"} · ${size} shares @ ${cents(price)}`
-            : typeof result.errorMsg === "string"
-              ? result.errorMsg
-              : "Order submitted."
+          orderId
+            ? `Order submitted · ${size} shares @ ${cents(quotePrice)} · ${orderId.slice(0, 10)}…`
+            : `Order submitted · ${size} shares @ ${cents(quotePrice)}`
         );
       } catch (err) {
-        if (err instanceof PeakApiError && err.status === 404) {
+        if (isMissingPrepareEndpoint(err)) {
           const result = await placeOrderDirect(token, order);
-          setMessage(
-            result.success === false
-              ? String(result.error ?? "Order failed")
-              : `Order placed · ${size} shares @ ${cents(price)}`
-          );
+          if (result.success === false) {
+            throw new PeakApiError(
+              String(result.error ?? result.errorMsg ?? "Order failed"),
+              400,
+              typeof result.code === "string" ? result.code : null,
+              result
+            );
+          }
+          setMessage(`Order placed · ${size} shares @ ${cents(quotePrice)}`);
           return;
         }
         throw err;
@@ -171,6 +246,23 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
         </button>
       </div>
 
+      <div className="ticket__sides" role="group" aria-label="Order type">
+        <button
+          type="button"
+          className={orderKind === "market" ? "seg seg--on" : "seg"}
+          onClick={() => setOrderKind("market")}
+        >
+          Market
+        </button>
+        <button
+          type="button"
+          className={orderKind === "limit" ? "seg seg--on" : "seg"}
+          onClick={() => setOrderKind("limit")}
+        >
+          Limit
+        </button>
+      </div>
+
       {outcomes.length > 1 ? (
         <div className="ticket__outcomes" role="group" aria-label="Outcome">
           {outcomes.map((label, idx) => {
@@ -195,36 +287,88 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
         </div>
       ) : null}
 
-      <label className="field">
-        <span>Amount (USD)</span>
-        <input
-          inputMode="decimal"
-          value={amountUsd}
-          onChange={(e) => setAmountUsd(e.target.value)}
-          placeholder="10"
-        />
-      </label>
+      <div className="ticket__book" aria-live="polite">
+        <span>
+          Bid <b>{book?.bid != null ? cents(book.bid) : "—"}</b>
+        </span>
+        <span>
+          Ask <b>{book?.ask != null ? cents(book.ask) : "—"}</b>
+        </span>
+        <span>
+          Spread{" "}
+          <b>
+            {book?.spread != null ? `${Math.round(book.spread * 100)}¢` : "—"}
+          </b>
+        </span>
+      </div>
 
-      <label className="field">
-        <span>Limit price (¢)</span>
-        <input
-          inputMode="numeric"
-          value={limitCents}
-          onChange={(e) => setLimitCents(e.target.value)}
-          placeholder="50"
-        />
-      </label>
+      {side === "SELL" ? (
+        <label className="field">
+          <span>Shares</span>
+          <input
+            inputMode="decimal"
+            value={shares}
+            onChange={(e) => setShares(e.target.value)}
+            placeholder="10"
+          />
+        </label>
+      ) : (
+        <label className="field">
+          <span>Amount (USD)</span>
+          <input
+            inputMode="decimal"
+            value={amountUsd}
+            onChange={(e) => setAmountUsd(e.target.value)}
+            placeholder="10"
+          />
+        </label>
+      )}
+
+      {orderKind === "limit" ? (
+        <label className="field">
+          <span>
+            Limit price (¢){" "}
+            {book?.bid != null || book?.ask != null ? (
+              <button type="button" className="field__link" onClick={applyQuoteToLimit}>
+                Use {side === "BUY" ? "ask" : "bid"}
+              </button>
+            ) : null}
+          </span>
+          <input
+            inputMode="numeric"
+            value={limitCents}
+            onChange={(e) => setLimitCents(e.target.value)}
+            placeholder="50"
+          />
+        </label>
+      ) : (
+        <p className="ticket__hint">
+          Market {side === "BUY" ? "buy" : "sell"} · fills at best{" "}
+          {side === "BUY" ? "ask" : "bid"}
+          {quotePrice != null ? ` (~${cents(quotePrice)})` : ""}.{" "}
+          {side === "SELL" ? "Partial fills allowed (FAK)." : "All-or-nothing (FOK)."}
+        </p>
+      )}
 
       <div className="ticket__meta">
         <span>
-          Est. shares{" "}
-          <b>{size != null ? size.toFixed(2) : "—"}</b>
+          {side === "SELL" ? (
+            <>
+              Est. proceeds{" "}
+              <b>
+                {size != null && quotePrice != null
+                  ? `$${(size * quotePrice).toFixed(2)}`
+                  : "—"}
+              </b>
+            </>
+          ) : (
+            <>
+              Est. shares <b>{size != null ? size.toFixed(2) : "—"}</b>
+            </>
+          )}
         </span>
         <span>
-          Token{" "}
-          <b className="mono">
-            {tokenID ? `${tokenID.slice(0, 8)}…` : "missing"}
-          </b>
+          Type <b>{apiOrderType}</b>
         </span>
       </div>
 
@@ -245,12 +389,19 @@ export function TradeTicket({ market, preferredOutcome }: Props) {
       {geoBlocked ? (
         <p className="ticket__status ticket__status--warn">
           {geo?.status === "close_only"
-            ? "New buys are blocked in your region."
-            : "Trading is blocked in your region."}
+            ? "New buys are blocked in your region. You can still sell to close."
+            : "Trading is blocked in your region. You can still browse markets."}
         </p>
       ) : null}
       {error ? <p className="ticket__status ticket__status--err">{error}</p> : null}
-      {message ? <p className="ticket__status ticket__status--ok">{message}</p> : null}
+      {message ? (
+        <p className="ticket__status ticket__status--ok">
+          {message}{" "}
+          <a href="/portfolio" style={{ color: "inherit", textDecoration: "underline" }}>
+            View portfolio
+          </a>
+        </p>
+      ) : null}
     </form>
   );
 }
