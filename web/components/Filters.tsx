@@ -1,4 +1,5 @@
-import { DEFAULT_SORT, type Tag, type SortKey } from "@/lib/gamma";
+import { DEFAULT_SORT, type SortKey } from "@/lib/gamma";
+import { CATEGORIES } from "@/lib/categories";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "volume", label: "Volume" },
@@ -8,14 +9,13 @@ const SORTS: { key: SortKey; label: string }[] = [
 ];
 
 /**
- * Filters are plain links. Every combination is a shareable URL.
+ * Filters are plain links. Categories are curated (iOS MarketCategory),
+ * not the raw Gamma tag dump.
  */
 export function Filters({
-  tags,
   activeTag,
   activeSort,
 }: {
-  tags: Tag[];
   activeTag?: string;
   activeSort: SortKey;
 }) {
@@ -41,25 +41,25 @@ export function Filters({
         ))}
       </nav>
 
-      {tags.length > 0 ? (
-        <nav className="chips chips--scroll" aria-label="Filter by category">
+      <nav className="chips chips--scroll" aria-label="Filter by category">
+        <a
+          className={`chip${!activeTag ? " chip--on" : ""}`}
+          href={href(undefined, activeSort)}
+        >
+          All
+        </a>
+        {CATEGORIES.map((cat) => (
           <a
-            className={`chip${!activeTag ? " chip--on" : ""}`}
-            href={href(undefined, activeSort)}
+            key={cat.id}
+            className={`chip${
+              cat.slug === activeTag || cat.id === activeTag ? " chip--on" : ""
+            }`}
+            href={href(cat.slug, activeSort)}
           >
-            All
+            {cat.label}
           </a>
-          {tags.map((tag) => (
-            <a
-              key={tag.id}
-              className={`chip${tag.slug === activeTag ? " chip--on" : ""}`}
-              href={href(tag.slug, activeSort)}
-            >
-              {tag.label}
-            </a>
-          ))}
-        </nav>
-      ) : null}
+        ))}
+      </nav>
     </div>
   );
 }

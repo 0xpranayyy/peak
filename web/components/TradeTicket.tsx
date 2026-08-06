@@ -27,6 +27,13 @@ type Props = {
   initialShares?: number;
   /** Force sell when closing a position. */
   initialSide?: Side;
+  /**
+   * Live top-of-book from the terminal OrderBook panel.
+   * When provided (including null while loading), skip the ticket's own poll.
+   */
+  externalBook?: TopOfBook | null;
+  /** Sync outcome chips with the terminal selector. */
+  onOutcomeChange?: (outcome: string) => void;
 };
 
 export function TradeTicket({
@@ -35,6 +42,8 @@ export function TradeTicket({
   preferredTokenID,
   initialShares,
   initialSide = "BUY",
+  externalBook,
+  onOutcomeChange,
 }: Props) {
   const { authenticated, login, getToken, session, geo, syncing, runSetup } =
     usePeakSession();
@@ -63,26 +72,54 @@ export function TradeTicket({
     const p = market.outcomePrices[idx] ?? market.yesPrice ?? 0.5;
     return String(Math.round(p * 100));
   });
-  const [book, setBook] = useState<TopOfBook | null>(null);
+  const [localBook, setLocalBook] = useState<TopOfBook | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const useExternal = externalBook !== undefined;
+  const book = useExternal ? externalBook : localBook;
 
   const tokenID = useMemo(() => {
     const idx = outcomes.indexOf(outcome);
     return market.clobTokenIds[idx] ?? market.clobTokenIds[0] ?? null;
   }, [market.clobTokenIds, outcome, outcomes]);
 
+  // Keep ticket outcome in sync with terminal selector / deep-links.
   useEffect(() => {
+    if (preferredTokenID) {
+      const idx = market.clobTokenIds.indexOf(preferredTokenID);
+      if (idx >= 0 && outcomes[idx] && outcomes[idx] !== outcome) {
+        setOutcome(outcomes[idx]);
+        const p = market.outcomePrices[idx];
+        if (typeof p === "number" && p > 0 && p < 1) {
+          setLimitCents(String(Math.round(p * 100)));
+        }
+      }
+      return;
+    }
+    if (preferredOutcome && outcomes.includes(preferredOutcome) && preferredOutcome !== outcome) {
+      setOutcome(preferredOutcome);
+      const idx = outcomes.indexOf(preferredOutcome);
+      const p = market.outcomePrices[idx];
+      if (typeof p === "number" && p > 0 && p < 1) {
+        setLimitCents(String(Math.round(p * 100)));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to external prefs
+  }, [preferredOutcome, preferredTokenID, market.clobTokenIds, market.outcomePrices, outcomes]);
+
+  useEffect(() => {
+    if (useExternal) return;
     if (!tokenID || market.closed || !market.active) {
-      setBook(null);
+      setLocalBook(null);
       return;
     }
     let cancelled = false;
     const load = async () => {
       if (typeof document !== "undefined" && document.hidden) return;
       const next = await fetchTopOfBook(tokenID);
-      if (!cancelled) setBook(next);
+      if (!cancelled) setLocalBook(next);
     };
     void load();
     const timer = window.setInterval(() => void load(), 8_000);
@@ -95,7 +132,7 @@ export function TradeTicket({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [tokenID, market.closed, market.active]);
+  }, [tokenID, market.closed, market.active, useExternal]);
 
   const quotePrice = useMemo(() => {
     if (orderKind === "limit") {
@@ -291,6 +328,7 @@ export function TradeTicket({
                 className={outcome === label ? "chip chip--on" : "chip"}
                 onClick={() => {
                   setOutcome(label);
+                  onOutcomeChange?.(label);
                   if (typeof p === "number" && p > 0 && p < 1) {
                     setLimitCents(String(Math.round(p * 100)));
                   }

@@ -22,6 +22,7 @@
   --radius: 6px;
   --radius-sm: 4px;
   --page: 1120px;
+  --page-wide: 1320px;
   --nav-h: 56px;
   --focus: 0 0 0 2px var(--ink), 0 0 0 4px rgba(45, 212, 191, 0.55);
 }
@@ -77,6 +78,10 @@ select {
   margin: 0 auto;
   padding: 0 24px;
   width: 100%;
+}
+
+.shell--wide {
+  max-width: var(--page-wide);
 }
 
 .mono {
@@ -822,6 +827,13 @@ button.chip {
   color: var(--text);
 }
 
+.seg--xs {
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .ticket__outcomes {
   display: flex;
   flex-wrap: wrap;
@@ -946,6 +958,408 @@ button.chip {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* ---------------------------------------------------------- trading terminal */
+
+.terminal {
+  padding: 20px 0 64px;
+}
+
+.terminal__header {
+  margin-top: 14px;
+}
+
+.terminal__title-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.terminal__title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal__title-block h1 {
+  font-size: clamp(20px, 2.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.terminal__header-actions {
+  flex: none;
+  padding-top: 4px;
+}
+
+.terminal__markets {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.outcome-sel {
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 12px 10px;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  color: var(--text-2);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.outcome-sel:hover {
+  border-color: var(--hairline-strong);
+  color: var(--text);
+}
+
+.outcome-sel--on {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.06);
+  color: var(--text);
+}
+
+.outcome-sel__q {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+
+.outcome-sel__price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.outcome-sel__bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+}
+
+.terminal__outcomes {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.terminal__grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+.terminal__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 300px);
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.terminal__aside {
+  position: sticky;
+  top: calc(var(--nav-h) + 12px);
+}
+
+.terminal__about {
+  margin-top: 28px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.terminal__about summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  list-style: none;
+}
+
+.terminal__about summary::-webkit-details-marker {
+  display: none;
+}
+
+.terminal__about[open] summary {
+  margin-bottom: 10px;
+  color: var(--text-2);
+}
+
+.terminal__about p {
+  white-space: pre-wrap;
+}
+
+/* ------------------------------------------------------------------- chart */
+
+.chart {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 14px 14px 10px;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.chart__label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.chart__last {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.chart__last.is-up {
+  color: var(--buy);
+}
+
+.chart__last.is-down {
+  color: var(--sell);
+}
+
+.chart__delta {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.chart__intervals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.chart__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 13px;
+  min-height: 200px;
+}
+
+.chart__plot {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+}
+
+.chart__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  cursor: crosshair;
+}
+
+.chart__grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.chart__tick {
+  fill: var(--text-3);
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.chart__cross {
+  stroke: var(--text-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart__tooltip {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  pointer-events: none;
+  background: rgba(9, 9, 11, 0.82);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+}
+
+.chart__tooltip span {
+  color: var(--text-3);
+}
+
+/* -------------------------------------------------------------- order book */
+
+.book {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  font-size: 12px;
+}
+
+.book__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 4px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.book__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.book__stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.book__stats b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.book__cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.book__cols span:nth-child(2),
+.book__cols span:nth-child(3) {
+  text-align: right;
+}
+
+.book__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 24px 8px;
+  text-align: center;
+}
+
+.book__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.book__spread {
+  display: flex;
+  justify-content: center;
+  padding: 7px 4px;
+  margin: 2px 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--ink);
+}
+
+.book__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  padding: 3px 6px;
+  font-variant-numeric: tabular-nums;
+  z-index: 0;
+}
+
+.book__depth {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.18;
+}
+
+.book__row--ask .book__depth {
+  background: var(--sell);
+}
+
+.book__row--bid .book__depth {
+  background: var(--buy);
+}
+
+.book__row--ask .book__price {
+  color: var(--sell);
+  font-weight: 700;
+}
+
+.book__row--bid .book__price {
+  color: var(--buy);
+  font-weight: 700;
+}
+
+.book__size,
+.book__total {
+  text-align: right;
+  color: var(--text-2);
 }
 
 /* ---------------------------------------------------------------- portfolio */
@@ -1364,6 +1778,24 @@ button.chip {
 
   .shell {
     padding: 0 16px;
+  }
+
+  .terminal__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal__main {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal__aside {
+    position: static;
+  }
+}
+
+@media (max-width: 1100px) {
+  .terminal__main {
+    grid-template-columns: 1fr;
   }
 }
 

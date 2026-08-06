@@ -230,6 +230,11 @@ asset as iOS `PeakLogo.imageset`). Wired into nav, Privy modal, invite page,
 favicon / apple-touch, and `og.png`. Keep `PeakLogo.png` as an alias for
 older references.
 
+**Markets browse:** Curated categories (Politics, Elections, Crypto, Sports,
+Finance, Tech, AI, Culture, Science, World) mapped to Gamma `tag_slug` — same
+taxonomy as iOS `MarketCategory`. Sort by volume / trending / liquidity /
+ending. Ended / past-`endDate` junk filtered client-side.
+
 ### 2 — Auth — **done in `web/`**
 
 1. Privy Dashboard: add web origins (`https://app.peakapp.site`, Pages preview,
@@ -259,6 +264,26 @@ older references.
    reachable via the app origin.
 7. Smoke in allowed regions still required before marketing web trading.
 
+### Event page = trading terminal
+
+Desktop-first layout on `/event/[slug]`:
+
+| Surface | Data source |
+| --- | --- |
+| Header (title, volume, liquidity, end) | Gamma event via edge `/gamma/events?slug=` |
+| Multi-market + outcome selector | Gamma nested markets / `clobTokenIds` |
+| Price chart (line/area, interval chips) | CLOB `/prices-history` via edge (`market`, `interval`, `fidelity`) — same as iOS |
+| Order book (depth, mid, spread) | CLOB `/book?token_id=` via edge — real levels only |
+| Trade ticket | Peak API prepare→submit (or direct place); quotes from book |
+
+Browse + book + chart are public GETs through `edge.peakapp.site` (no
+`*.polymarket.com` SNI). Submit remains geo-gated; India may block CLOB POST
+while GETs still work.
+
+**Still missing vs Polymarket.com (intentional for v1):** live WebSocket book,
+trade tape / last-trade stream, advanced order types (stop, iceberg), portfolio
+charts, comments, creator profiles, mobile-first parity.
+
 ### 4 — Polish
 
 1. Landing “Launch app” → `https://app.peakapp.site`; iOS share/QR market links
@@ -271,10 +296,11 @@ older references.
 Run against `https://app.peakapp.site` (or local `npm run dev`) from an
 **allowed** region. Skip live order submit if geo-blocked.
 
-1. **Browse** — `/markets` loads live rows; category + sort change URL; pagination
-   works; search returns events.
-2. **Detail** — open an event; bid/ask/spread refresh on the ticket; Watch adds
-   a real event id to the local watchlist.
+1. **Browse** — `/markets` loads live rows; curated category + sort change URL;
+   pagination works; search returns events.
+2. **Terminal** — open an event; chart shows real `/prices-history` (or empty
+   state); order book shows live depth + mid/spread; outcome chips switch
+   token; Watch adds a real event id to the local watchlist.
 3. **Auth** — Sign in (email or Google); Positions shows signer; geo banner
    matches `/geo` if restricted.
 4. **Setup** — if “Needs setup”, Finish setup succeeds (Builder/Relayer live).

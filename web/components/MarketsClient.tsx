@@ -4,11 +4,10 @@ import { useEffect, useState } from "react";
 import {
   DEFAULT_SORT,
   fetchEvents,
-  fetchTags,
   type PeakEvent,
   type SortKey,
-  type Tag,
 } from "@/lib/gamma";
+import { categoryFromSlug } from "@/lib/categories";
 import { MarketCard } from "@/components/MarketCard";
 import { Filters } from "@/components/Filters";
 
@@ -31,7 +30,8 @@ type Props = {
  * reads CLOB can read the feed without burning the SSR isolate.
  */
 export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
-  const activeTag = tag?.trim() || undefined;
+  const category = categoryFromSlug(tag);
+  const activeTag = category?.slug;
   const activeSort: SortKey = SORTS.includes(sort as SortKey)
     ? (sort as SortKey)
     : DEFAULT_SORT;
@@ -39,7 +39,6 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
   const offset = (page - 1) * PAGE_SIZE;
 
   const [events, setEvents] = useState<PeakEvent[] | null>(null);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -48,18 +47,14 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
     setError(false);
     (async () => {
       try {
-        const [nextEvents, nextTags] = await Promise.all([
-          fetchEvents({
-            limit: PAGE_SIZE,
-            offset,
-            sort: activeSort,
-            tagSlug: activeTag,
-          }),
-          fetchTags(24).catch((): Tag[] => []),
-        ]);
+        const nextEvents = await fetchEvents({
+          limit: PAGE_SIZE,
+          offset,
+          sort: activeSort,
+          tagSlug: activeTag,
+        });
         if (cancelled) return;
         setEvents(nextEvents);
-        setTags(nextTags);
       } catch {
         if (cancelled) return;
         setEvents([]);
@@ -92,7 +87,7 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
         </form>
       </div>
 
-      <Filters tags={tags} activeTag={activeTag} activeSort={activeSort} />
+      <Filters activeTag={activeTag} activeSort={activeSort} />
 
       {events == null ? (
         <p className="empty">Loading markets…</p>
