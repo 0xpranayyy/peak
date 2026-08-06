@@ -9,7 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "pages:build": "NPM_CONFIG_LEGACY_PEER_DEPS=true npx --yes @cloudflare/next-on-pages@1",
-    "pages:deploy": "npm run pages:build && npx wrangler pages deploy .vercel/output/static --project-name peak-web"
+    "pages:deploy": "npm run pages:build && npx wrangler pages deploy .vercel/output/static --project-name peak-web --branch main"
   },
   "dependencies": {
     "@privy-io/react-auth": "^2.25.0",
