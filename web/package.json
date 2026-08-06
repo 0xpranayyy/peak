@@ -1,0 +1,26 @@
+{
+  "name": "peak-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Peak web client — browse markets and trade via Privy + Peak API.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "pages:build": "npx --yes @cloudflare/next-on-pages@1",
+    "pages:deploy": "npm run pages:build && npx wrangler pages deploy .vercel/output/static --project-name peak-web"
+  },
+  "dependencies": {
+    "@privy-io/react-auth": "^2.25.0",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}

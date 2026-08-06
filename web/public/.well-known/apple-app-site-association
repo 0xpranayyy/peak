@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["49BZ7S974W.com.pranay.peak"],
+        "components": [
+          { "/": "/invite/*", "comment": "Referral invite links open directly in the app" }
+        ]
+      }
+    ]
+  }
+}

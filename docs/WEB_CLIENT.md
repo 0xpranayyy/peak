@@ -4,6 +4,33 @@ Plan for a browser landing page and exchange UI that share the existing Railway 
 
 Credentials, CORS env details, and E2E paths live in [PRODUCTION.md](PRODUCTION.md). Release cadence: [RELEASE.md](RELEASE.md). Store packaging: [APP_STORE.md](APP_STORE.md). Static site today: [`website/`](../website/).
 
+## Decisions (locked 2026-08-05)
+
+| Question the earlier draft left open | Decision |
+| --- | --- |
+| Framework | **Next.js**, for SSR. Market pages are search-discoverable content; an SPA would leave that traffic on the table. |
+| Hosting | **Cloudflare Pages**, same account and deploy flow as `website/`. |
+| v1 scope | **Browse + Privy trade.** Markets SSR from the edge Worker; auth/orders via Peak API (`web/`). |
+| Private key / seed import on web | **Never. Not in v1, not later.** See below. |
+
+### Web is Privy-only. No key import, ever.
+
+On iOS the import path is defensible: the binary is signed, Apple distributes
+it, and impersonating it is hard. None of that holds in a browser.
+
+- A malicious extension can read the page's DOM, including a seed input.
+- One XSS bug anywhere on the origin reaches the same field.
+- A visually identical clone of this domain costs an attacker almost nothing,
+  and users cannot tell the difference. Most crypto theft is this, not broken
+  cryptography.
+
+So the web client offers Privy sign-in only. A user who wants to trade an
+existing Polymarket wallet uses the iOS app. The upside is that the web client
+is then genuinely non-custodial — Peak's servers never hold a signing key for a
+web user, which is a simpler and stronger story than the one we can tell on iOS.
+
+If this is ever revisited, it needs its own threat model, not a parity argument.
+
 ## Goals / when to start
 
 | Goal | Notes |
@@ -69,29 +96,31 @@ Do **not** put Builder keys, Relayer keys, `PRIVY_APP_SECRET`, or `PEAK_PRIVY_AU
 
 ## Phased plan
 
-### 0 — SSL + landing shell
+### 0 — SSL + landing shell — **done (2026-08-05)**
 
-1. Fix Cloudflare custom-domain SSL for `peakapp.site` / `www` (clear 525).
-2. Point Pages custom domain; restore `WEBSITE_ORIGIN` + Info.plist legal URLs to apex.
-3. Ship a minimal apex landing (brand, one CTA to App Store / later web). Keep legal paths as today.
+1. ~~Fix Cloudflare custom-domain SSL~~ — apex resolves; the 525 is gone.
+2. ~~Point Pages custom domain; restore `WEBSITE_ORIGIN` + Info.plist legal URLs~~ — both on the apex.
+3. Apex serves marketing, `/legal/*`, and `/.well-known/apple-app-site-association`.
 
-### 1 — Browse (read-only web)
+### 1 — Browse (read-only web) — **done in `web/`**
 
-1. Stand up `app.peakapp.site` shell; markets list, event, chart / book via `worker/` (or same public paths iOS uses).
-2. No auth required. Geo banner optional (informational).
-3. Leave `CORS_ORIGINS` empty until the SPA calls the API with credentials.
+Live at the Next app under `web/`: markets list, event detail with SSR metadata,
+search, invite route, legal + AASA. Reads Worker only (`edge.peakapp.site`).
 
-### 2 — Auth
+### 2 — Auth — **in progress (`web/`)**
 
-1. Privy Dashboard: add web origin `https://app.peakapp.site` (+ localhost for dev).
-2. Set host `CORS_ORIGINS` to that HTTPS origin (comma-separate with local if needed). Keep empty for iOS-only until then — see PRODUCTION.md CORS table.
-3. Email / Google / Apple / wallet SIWE via Privy Web; API continues to verify Privy JWT. No secrets in browser.
+1. Privy Dashboard: add web origins (`https://peakapp.site`, Pages preview,
+   `http://localhost:3000`).
+2. Optional: set host `CORS_ORIGINS` for direct browser→API. The web app
+   proxies via `/api/peak/*` so CORS is not required for the Next client.
+3. Email / Google / Apple / wallet SIWE via Privy Web; API verifies Privy JWT.
 
-### 3 — Trade
+### 3 — Trade — **in progress (`web/`)**
 
-1. Wire portfolio, path choice (new vs existing), setup, place / cancel through existing `backend/` routes.
-2. Enforce geo gate in UI from Worker `/geo` before enabling order actions (CLOB rejection remains authoritative).
-3. Smoke A/B paths from PRODUCTION.md on desktop browsers in allowed regions.
+1. Portfolio, setup, prepare/submit order path wired in `web/` (Privy path
+   `new` only — no seed import).
+2. Geo gate from Worker `/geo` disables buy/sell in the ticket UI.
+3. Smoke in allowed regions still recommended before marketing web trading.
 
 ### 4 — Polish
 
