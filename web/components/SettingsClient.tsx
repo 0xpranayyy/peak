@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { usePeakSession } from "@/lib/session";
+import { SignInSheet } from "@/components/SignInSheet";
 
 const LANDING = "https://peakapp.site";
 
@@ -15,7 +17,6 @@ export function SettingsClient() {
     ready,
     authenticated,
     privyConfigured,
-    login,
     logout,
     eoa,
     session,
@@ -23,6 +24,7 @@ export function SettingsClient() {
     syncing,
     userId,
   } = usePeakSession();
+  const [signInOpen, setSignInOpen] = useState(false);
 
   if (!ready) {
     return <p className="empty">Loading…</p>;
@@ -58,7 +60,7 @@ export function SettingsClient() {
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={login}
+                onClick={() => setSignInOpen(true)}
                 disabled={!privyConfigured}
               >
                 Sign in
@@ -164,6 +166,8 @@ export function SettingsClient() {
           About Peak
         </a>
       </nav>
+
+      <SignInSheet open={signInOpen} onClose={() => setSignInOpen(false)} />
     </div>
   );
 }

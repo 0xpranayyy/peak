@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { fetchTopOfBook, type TopOfBook } from "@/lib/clob";
 import { cents } from "@/lib/format";
+import { SignInSheet } from "@/components/SignInSheet";
 
 type Side = "BUY" | "SELL";
 type OrderKind = "market" | "limit";
@@ -45,8 +46,9 @@ export function TradeTicket({
   externalBook,
   onOutcomeChange,
 }: Props) {
-  const { authenticated, login, getToken, session, geo, syncing, runSetup } =
+  const { authenticated, getToken, session, geo, syncing, runSetup } =
     usePeakSession();
+  const [signInOpen, setSignInOpen] = useState(false);
 
   const outcomes = market.outcomes.length ? market.outcomes : ["Yes", "No"];
   const initialOutcome = (() => {
@@ -187,7 +189,7 @@ export function TradeTicket({
     setError(null);
 
     if (!authenticated) {
-      login();
+      setSignInOpen(true);
       return;
     }
     if (!tokenID) {
@@ -462,7 +464,11 @@ export function TradeTicket({
       </div>
 
       {!authenticated ? (
-        <button type="button" className="btn btn--primary ticket__submit" onClick={login}>
+        <button
+          type="button"
+          className="btn btn--primary ticket__submit"
+          onClick={() => setSignInOpen(true)}
+        >
           Sign in to trade
         </button>
       ) : (
@@ -488,6 +494,12 @@ export function TradeTicket({
           <a href="/positions">View positions</a>
         </p>
       ) : null}
+
+      <SignInSheet
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+        reason="trade"
+      />
     </form>
   );
 }

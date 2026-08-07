@@ -10,6 +10,7 @@ import {
 import { categoryFromSlug } from "@/lib/categories";
 import { MarketCard } from "@/components/MarketCard";
 import { Filters } from "@/components/Filters";
+import { WelcomePanel } from "@/components/WelcomePanel";
 
 const SORTS: SortKey[] = ["volume24hr", "volume", "liquidity", "endDate"];
 const PAGE_SIZE = 24;
@@ -77,6 +78,8 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
 
   return (
     <div className="shell page-body">
+      <WelcomePanel />
+
       <div className="page-head page-head--markets">
         <div>
           <h1>Markets</h1>

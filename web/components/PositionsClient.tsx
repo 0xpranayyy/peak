@@ -13,6 +13,7 @@ import {
   type PortfolioSnapshot,
 } from "@/lib/api";
 import { cents } from "@/lib/format";
+import { SignInSheet } from "@/components/SignInSheet";
 
 function formatActivityWhen(ts: number | null): string {
   if (ts == null) return "";
@@ -31,7 +32,6 @@ export function PositionsClient() {
   const {
     ready,
     authenticated,
-    login,
     getToken,
     session,
     syncing,
@@ -48,6 +48,7 @@ export function PositionsClient() {
   const [loading, setLoading] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -126,9 +127,18 @@ export function PositionsClient() {
           Sign in to see your Polymarket cash, open positions, orders, and recent
           activity — synced through Peak to your real account.
         </p>
-        <button type="button" className="btn btn--primary" onClick={login}>
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={() => setSignInOpen(true)}
+        >
           Sign in
         </button>
+        <SignInSheet
+          open={signInOpen}
+          onClose={() => setSignInOpen(false)}
+          reason="positions"
+        />
       </div>
     );
   }

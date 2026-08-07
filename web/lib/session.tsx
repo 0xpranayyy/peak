@@ -17,6 +17,9 @@ import {
 } from "@/lib/api";
 import { fetchGeo, type GeoStatus } from "@/lib/geo";
 
+/** The subset of Privy's login methods this app offers. */
+export type SignInMethod = "email" | "google" | "apple" | "wallet";
+
 type PeakSessionValue = {
   ready: boolean;
   authenticated: boolean;
@@ -28,7 +31,12 @@ type PeakSessionValue = {
   geo: GeoStatus | null;
   syncing: boolean;
   error: string | null;
-  login: () => void;
+  /**
+   * Opens Privy. Pass `loginMethods` to jump straight to one method — the
+   * sign-in sheet uses this so picking "Google" goes to Google rather than to
+   * another menu with Google on it.
+   */
+  login: (options?: { loginMethods?: SignInMethod[] }) => void;
   logout: () => Promise<void>;
   getToken: () => Promise<string | null>;
   refreshSession: () => Promise<void>;
@@ -160,7 +168,7 @@ function PeakSessionInner({ children }: { children: React.ReactNode }) {
     geo,
     syncing,
     error,
-    login,
+    login: (options) => login(options ? { loginMethods: options.loginMethods } : {}),
     logout,
     getToken,
     refreshSession,
