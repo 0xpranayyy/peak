@@ -24,9 +24,13 @@ const UNKNOWN_OPEN: GeoStatus = {
 
 export async function fetchGeo(): Promise<GeoStatus> {
   try {
+    // Every other call in this client carries a deadline; this one did not, so
+    // a hung edge left `geo` null for the whole session instead of falling back
+    // to the open default.
     const response = await fetch(`${EDGE}/geo`, {
       cache: "no-store",
       headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) return UNKNOWN_OPEN;
     const json = (await response.json()) as Record<string, unknown>;

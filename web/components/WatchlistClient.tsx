@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useWatchlist } from "@/lib/watchlist-hook";
-import { fetchEventById, headlineOdds, type PeakEvent } from "@/lib/gamma";
+import { fetchEventsByIds, headlineOdds, type PeakEvent } from "@/lib/gamma";
 import { EventThumb } from "@/components/MarketCard";
 import { compactUsd, endsIn, percent } from "@/lib/format";
 
@@ -13,44 +13,31 @@ export function WatchlistClient() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     if (ids.length === 0) {
       setEvents([]);
       setError(null);
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     (async () => {
-      const results = await Promise.all(
-        ids.map((id) =>
-          fetchEventById(id)
-            .then((event) => ({ id, event }))
-            .catch(() => ({ id, event: null as PeakEvent | null }))
-        )
-      );
-      if (cancelled) return;
-      let failures = 0;
-      const map = new Map<string, PeakEvent>();
-      for (const row of results) {
-        if (row.event) map.set(row.id, row.event);
-        else failures += 1;
-      }
+      const found = await fetchEventsByIds(ids, controller.signal);
+      if (controller.signal.aborted) return;
+      // Keep the saved order rather than upstream's.
       const ordered = ids
-        .map((id) => map.get(id))
+        .map((id) => found.get(id))
         .filter((e): e is PeakEvent => Boolean(e));
       setEvents(ordered);
       setError(
-        ordered.length === 0 && failures > 0
+        ordered.length === 0
           ? "Couldn’t load watchlist markets. Try again."
           : null
       );
       setLoading(false);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [ids]);
 
   return (

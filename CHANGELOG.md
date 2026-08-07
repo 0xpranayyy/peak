@@ -96,11 +96,30 @@ remembering six months from now.
 - Opening the sign-in sheet focused its close button, i.e. the app suggesting
   you leave. Focus goes to the dialog.
 - Event tab titles rendered the raw slug ("fed decision in september 762").
+- **The watchlist fired one full-event request per saved market, in parallel.**
+  Each of those carries every nested leg of its event, so a modest watchlist
+  opened with tens of megabytes in flight at once. Gamma accepts a repeated `id`
+  parameter — it is one chunked request now.
+- The geo probe had no timeout, the only call in the client without one. A hung
+  edge left `geo` null for the whole session instead of falling back to the open
+  default.
 - Two call sites passed React's `MouseEvent` straight into Privy's `login`.
 
 ### Removed
 
 - Numbered page links on the markets feed, replaced by incremental loading.
+- `fetchEventById`, superseded by the batched `fetchEventsByIds`.
+
+### Known, not yet fixed
+
+- **The feed's payload is far larger than what it renders.** Gamma inlines every
+  leg of every event, so one 24-row window is ~3.2 MB of JSON — three of those
+  rows are 128-leg election markets. Compression hides most of it (~340 KB over
+  the wire), and the remaining cost is parse time on low-end phones rather than
+  bandwidth. Gamma ignores every field-selection parameter tried
+  (`fields`, `include_markets`, …), so trimming has to happen in the edge Worker
+  — which also serves iOS, so it wants its own change and deploy rather than
+  riding along with a web commit.
 
 ---
 

@@ -434,17 +434,57 @@ export async function fetchEventBySlug(slug: string): Promise<PeakEvent | null> 
   return mapEvent(raw[0]);
 }
 
-/** One event by Gamma id — used by the local watchlist. */
-export async function fetchEventById(id: string): Promise<PeakEvent | null> {
-  const trimmed = id.trim();
-  if (!trimmed) return null;
-  const url = new URL(`${EDGE}/gamma/events/${encodeURIComponent(trimmed)}`);
-  const response = await fetch(url.toString(), {
-    headers: { accept: "application/json" },
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) return null;
-  const raw = (await response.json()) as Record<string, unknown>;
-  return mapEvent(raw);
+/**
+ * Several events in one request.
+ *
+ * Gamma accepts a repeated `id` parameter, so a watchlist of twenty markets is
+ * one call rather than twenty. It used to fan out one request per saved market,
+ * in parallel — and each of those carries every nested leg of its event, so a
+ * modest watchlist opened with tens of megabytes in flight at once.
+ *
+ * Chunked because the query string is not unbounded, and because a single
+ * oversized request failing would take the whole list with it.
+ */
+export async function fetchEventsByIds(
+  ids: string[],
+  signal?: AbortSignal
+): Promise<Map<string, PeakEvent>> {
+  const clean = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  const found = new Map<string, PeakEvent>();
+  if (clean.length === 0) return found;
+
+  const CHUNK = 20;
+  const chunks: string[][] = [];
+  for (let i = 0; i < clean.length; i += CHUNK) {
+    chunks.push(clean.slice(i, i + CHUNK));
+  }
+
+  const results = await Promise.all(
+    chunks.map(async (chunk) => {
+      const url = new URL(`${EDGE}/gamma/events`);
+      for (const id of chunk) url.searchParams.append("id", id);
+      url.searchParams.set("limit", String(chunk.length));
+      const timeout = AbortSignal.timeout(20_000);
+      try {
+        const response = await fetch(url.toString(), {
+          cache: "no-store",
+          headers: { accept: "application/json" },
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+        });
+        if (!response.ok) return [];
+        const raw = (await response.json()) as unknown;
+        return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+      } catch {
+        // One bad chunk drops its own rows; the rest of the list still renders.
+        return [];
+      }
+    })
+  );
+
+  for (const raw of results.flat()) {
+    const event = mapEvent(raw);
+    if (event) found.set(event.id, event);
+  }
+  return found;
 }
+
