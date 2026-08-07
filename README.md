@@ -1,152 +1,328 @@
+<div align="center">
+
+<img src="website/assets/peak-logo.png" alt="Peak" width="96" height="96">
+
 # Peak
 
-Native SwiftUI iOS app for [Polymarket](https://polymarket.com) prediction markets.
+**Prediction markets, without the noise.**
 
-Minimal, clean, Apple HIG / Liquid Glass (iOS 26 gated with `#available`).
+A native iPhone client and a web exchange for [Polymarket](https://polymarket.com) —
+live odds, real order books, and self-custodial trading.
 
-## Tabs
+[![iOS](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](Peak.xcodeproj)
+[![Swift](https://img.shields.io/badge/Swift-SwiftUI-F05138?logo=swift&logoColor=white)](Peak)
+[![Web](https://img.shields.io/badge/Web-Next.js%2015-000000?logo=nextdotjs&logoColor=white)](web)
+[![Edge](https://img.shields.io/badge/Edge-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](worker)
+[![API](https://img.shields.io/badge/API-Node%2022-339933?logo=nodedotjs&logoColor=white)](backend)
+[![Chain](https://img.shields.io/badge/Chain-Polygon-8247E5?logo=polygon&logoColor=white)](https://polygon.technology)
 
-Markets · Search · Portfolio · Watchlist · Settings
+[Landing](https://peakapp.site) · [Web app](https://app.peakapp.site) · [Changelog](CHANGELOG.md) · [Docs](docs)
 
-## Status (honest)
+</div>
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Browse markets / charts / order book | Ready | Gamma + CLOB via the `worker/` edge proxy |
-| Connect wallet + Privy SIWE | Code ready | Needs Reown `WALLETCONNECT_PROJECT_ID` + Privy Dashboard **Wallet** login |
-| Email / Apple / Google sign-in | Ready | Privy; native SIWA entitlement still omitted (re-add on paid team when needed — `docs/APP_STORE.md`) |
-| Path choice (new vs existing) | Ready | Links account wallet via Gamma profile |
-| Magic / social Polymarket (no key) | View-only | Paste profile address — no live trading without a key |
-| Live buy / sell / cancel (per user) | Works where permitted | Verified against production Builder + Relayer; blocked regions are gated client-side (see Regions) |
-| Deposit wallet deploy | Credentials live | Builder / Relayer / RPC configured on the hosted API |
-| Production HTTPS backend | Live | Railway behind `api.peakapp.site`; legal URLs point at `peakapp.site/legal/*` |
-| App Store packaging | Ready to archive | Paid team `49BZ7S974W`; see [docs/APP_STORE.md](docs/APP_STORE.md). Device E2E / TestFlight upload still required |
+---
 
-**Not claimed live yet:** an end-to-end MetaMask / social *order* has not been placed from this repo. Sign-in, wallet import, account linking, portfolio and live balance are verified against production.
+## What this is
 
-## Regions
+Peak is an **independent client**. It does not run a market, hold your money, or
+take the other side of your trade. Orders rest on Polymarket's own central limit
+order book and settle on Polygon; Peak is the interface and the plumbing that
+gets you there quickly from a phone or a browser.
 
-Polymarket geoblocks restricted regions and rejects their orders. Peak resolves
-eligibility up front via the edge Worker's `/geo` (Cloudflare sees the real
-client IP; the API backend only ever sees its own) and disables the affected
-actions with an explanation, instead of letting an order fail after a round
-trip. Close-only regions can still exit positions.
+The repository holds five deployable surfaces that share one edge:
 
-The country list in `worker/src/index.js` is a point-in-time snapshot and will
-drift as regulators move — CLOB's own rejection stays authoritative. Peak does
-not attempt to circumvent these restrictions.
+| Surface | Lives in | Runs at | Deployed with |
+| --- | --- | --- | --- |
+| **iPhone app** | [`Peak/`](Peak) · [`PeakWidget/`](PeakWidget) | TestFlight / App Store | Xcode Archive → Transporter |
+| **Web exchange** | [`web/`](web) | [app.peakapp.site](https://app.peakapp.site) | `npm run pages:deploy` |
+| **Landing page** | [`website/`](website) | [peakapp.site](https://peakapp.site) | `wrangler pages deploy website` |
+| **Edge proxy** | [`worker/`](worker) | `edge.peakapp.site` · `api.peakapp.site` | `wrangler deploy` |
+| **Trading API** | [`backend/`](backend) | `api.peakapp.site` (Railway) | `railway up` |
 
-## Open in Xcode
+> **Nothing deploys on push.** There is no CI in this repository — every surface
+> ships by hand, deliberately. `main` is the source of truth, not a release
+> trigger.
 
-1. Open `Peak.xcodeproj` in Xcode 16+ (iOS 18+).
-2. Copy `Peak/PrivySecrets.local.example.plist` → `Peak/PrivySecrets.local.plist` and fill Privy + `WALLETCONNECT_PROJECT_ID` (Reown Cloud). Keep secrets out of tracked `Info.plist`.
-3. Select a simulator or device → set Development Team → ⌘R.
-4. Local trading API (DEBUG only): `cd backend && cp .env.example .env && npm start` — simulator may default to `http://127.0.0.1:8080`; **physical device** must use `http://<Mac-LAN-IP>:8080` under Portfolio → Account → Trading backend.
+---
 
-Device smoke (5 steps): [docs/PRODUCTION.md](docs/PRODUCTION.md#device-smoke-in-5-steps-debug-local-api) · [backend/README.md](backend/README.md#device-smoke-in-5-steps).
+## Architecture
 
-## Sign in & trading
+Everything a client reads goes through **one Cloudflare Worker**. That is not a
+performance flourish — Indian ISPs block `*.polymarket.com` at the TLS layer, so
+the browser and the app must never send that SNI at all. The Worker terminates
+the connection on a domain that resolves, then talks to Polymarket itself.
 
-1. **Connect wallet** (primary) — WalletConnect → Privy SIWE for existing MetaMask / Rainbow users.
-2. **Email / Apple / Google** — Privy embedded wallet for new traders.
-3. After sign-in, choose **new** or **existing** Polymarket path (or import a key/seed as fallback).
-4. Portfolio sync uses the Polymarket **account wallet** (Proxy / Safe / Deposit), not just the EOA.
-5. Magic / Google-only Polymarket accounts without an exportable key: **view-only** via pasted profile address.
+```mermaid
+graph TD
+    IOS["📱 iPhone app<br/><small>SwiftUI</small>"]
+    WEB["🌐 Web exchange<br/><small>Next.js 15 on Pages</small>"]
 
-When you have Builder / Relayer / API secrets, drop them in `backend/.env` (see `backend/.env.example`). No App Store resubmit needed for server-only secrets.
+    W{{"⚡ edge.peakapp.site<br/><b>Cloudflare Worker</b><br/><small>path allowlist · cache · geo</small>"}}
+    API["🔐 api.peakapp.site<br/><small>Node 22 · Railway</small>"]
+    DB[("SQLite<br/><small>sessions · referrals</small>")]
 
-Release builds do **not** auto-use localhost (code rejects `127.0.0.1` / `localhost` outside DEBUG). Set `PEAK_BACKEND_URL` (HTTPS) in `Peak/Info.plist`.
+    READS["Gamma · CLOB<br/>Data · Leaderboard<br/><small>public reads</small>"]
+    CLOB["Polymarket CLOB<br/><small>order book</small>"]
+    POLY["Polygon<br/><small>settlement</small>"]
 
-## External blockers (before “production ready”)
+    IOS ==>|"all reads"| W
+    WEB ==>|"all reads"| W
+    W --> READS
 
-- Privy + Reown on device; Builder + Relayer + RPC on the server (host secrets)
-- Manual E2E / TestFlight smoke A+B (+ B2) against hosted API — [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md)
-- ~~Paid Apple Developer team; legal counsel on `/legal/*`~~ — both done (2026-07-27)
-- Cloudflare: fix apex `peakapp.site` SSL (currently 525); legal links temporarily use Pages hostname
+    IOS -.->|"sign in · prepare order"| API
+    WEB -.->|"sign in · prepare order"| API
+    W -->|"also fronts"| API
+    API --> DB
 
-## Production checklist
+    IOS ==>|"submit signed order"| CLOB
+    WEB ==>|"submit signed order"| CLOB
+    CLOB --> POLY
 
-See [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/APP_STORE.md](docs/APP_STORE.md), and [docs/RELEASE.md](docs/RELEASE.md) (ongoing TestFlight / release cadence). Post–iOS web landing + client plan: [docs/WEB_CLIENT.md](docs/WEB_CLIENT.md).
-
-## Shipping a build
-
-On an Xcode **beta** Mac, use [docs/XCODE_CLOUD.md](docs/XCODE_CLOUD.md) to Archive with a public/GM Xcode for TestFlight.
-
-Signing is configured (team `49BZ7S974W`, `com.pranay.peak` + `.widget`,
-automatic). A Release archive builds clean.
-
-**Bump the build number first.** App Store Connect rejects a build number it
-has already accepted, and `ExportOptions.plist` deliberately does not let Xcode
-rewrite it:
-
+    classDef client fill:#0f172a,stroke:#334155,color:#f1f5f9
+    classDef cf fill:#7c2d12,stroke:#f97316,color:#ffedd5
+    classDef peak fill:#064e3b,stroke:#10b981,color:#d1fae5
+    classDef ext fill:#1e293b,stroke:#64748b,color:#e2e8f0
+    class IOS,WEB client
+    class W cf
+    class API,DB peak
+    class READS,CLOB,POLY ext
 ```
-CURRENT_PROJECT_VERSION   # in Peak.xcodeproj — bump for every upload
-MARKETING_VERSION         # 1.1 — bump only for a user-visible release
+
+Two paths, and the difference matters. **Every read** goes through the Worker.
+**Order submission does not** — the client posts the signed order straight to
+Polymarket, for the reason in the sequence below.
+
+### Why the Worker exists
+
+It solves four problems at once, which is why it is not optional:
+
+1. **Reachability.** `*.polymarket.com` and `*.up.railway.app` fail to resolve on
+   Indian ISP resolvers. `edge.peakapp.site` and `api.peakapp.site` are custom
+   domains on a zone that does.
+2. **CORS.** Polymarket's endpoints do not send permissive CORS headers. The
+   Worker does, so a browser can read the same data the app does with no
+   server-side rendering in the path.
+3. **Caching.** Fat `/events` payloads are collapsed per-path (2s for top-of-book,
+   60s for market lists), so a thundering herd hits Polymarket once.
+4. **Geo.** Cloudflare sees the real client IP; the API backend only ever sees
+   its own. Eligibility has to be resolved where the truth is.
+
+Reads are **path-allowlisted** — the Worker is a narrow proxy, not an open one.
+
+### Placing an order — Peak signs, your device posts
+
+The order is **signed on Peak's server but submitted from your own device**.
+That split is deliberate, and it is the single most load-bearing decision in the
+trading path: Polymarket's geoblock reads the IP of whoever posts the order. If
+the server submitted, every order would carry Railway's IP and be judged on the
+server's location rather than yours.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Trader
+    participant C as Client<br/>(iOS / web)
+    participant P as Privy
+    participant A as api.peakapp.site
+    participant X as Polymarket CLOB
+
+    U->>C: Pick outcome, size, price
+    C->>P: Sign in (email / Google / Apple / wallet)
+    P-->>C: Access token + self-custodial wallet
+    C->>A: POST orders/prepare (token)
+    A->>A: Build + sign against your<br/>Polymarket account wallet
+    A-->>C: { url, headers, body }<br/>signed, not yet submitted
+    C->>X: POST the prepared bytes directly
+    Note over C,X: Your IP, not Railway's —<br/>the geoblock judges you, not the server
+    X-->>C: Fill / partial fill / reject
+    C-->>U: Result, with the real filled size
 ```
 
-Then:
+Two consequences that look like quirks until you know why:
+
+- **The prepared body is sent verbatim.** It is never re-serialized, because the
+  L2 HMAC covers the exact bytes. Re-encoding identical JSON breaks the
+  signature.
+- **Partial fills are reported as partial fills.** Where a number cannot be
+  resolved honestly, the client reports nothing rather than a plausible-looking
+  figure.
+
+---
+
+## The iPhone app
+
+<div align="center">
+  <img src="website/assets/markets.png" alt="Markets" width="200">
+  <img src="website/assets/market-detail.png" alt="Market detail" width="200">
+  <img src="website/assets/portfolio.png" alt="Portfolio" width="200">
+  <img src="website/assets/watchlist.png" alt="Watchlist" width="200">
+</div>
+
+67 Swift files, SwiftUI throughout, Apple HIG with iOS 26 Liquid Glass gated
+behind `#available`. Five tabs: **Markets · Search · Portfolio · Watchlist ·
+Settings**, plus a leaderboard sourced from the same host that backs
+polymarket.com/leaderboard.
 
 ```bash
-xcodebuild archive -project Peak.xcodeproj -scheme Peak \
-  -destination 'generic/platform=iOS' -archivePath build/Peak.xcarchive
+# 1. Secrets stay out of tracked Info.plist
+cp Peak/PrivySecrets.local.example.plist Peak/PrivySecrets.local.plist
+#    → fill Privy app id + WALLETCONNECT_PROJECT_ID (Reown Cloud)
 
-xcodebuild -exportArchive -archivePath build/Peak.xcarchive \
-  -exportOptionsPlist ExportOptions.plist -exportPath build/export
+# 2. Open, set your Development Team, run
+open Peak.xcodeproj
 ```
 
-The archive signs "Apple Development"; the export step re-signs it with the
-Apple Distribution certificate. That is the step that needs the paid account,
-and it will prompt for App Store Connect credentials the first time.
+Xcode 16+ / iOS 18+. For a local backend during DEBUG, see
+[`backend/README.md`](backend/README.md); a physical device must point at your
+Mac's LAN IP, not `127.0.0.1`.
 
-Upload with Transporter, or:
+**Shipping a build:** bump `CURRENT_PROJECT_VERSION` first — App Store Connect
+rejects a build number it has already accepted. Full archive, export and upload
+steps, plus the two vendor workarounds this app carries (PrivySDK's unsigned
+XCFramework, Sentry dSYM linking), are in
+**[docs/APP_STORE.md](docs/APP_STORE.md)** and
+**[docs/RELEASE.md](docs/RELEASE.md)**.
+
+---
+
+## The web exchange
+
+Next.js 15 App Router on Cloudflare Pages via `@cloudflare/next-on-pages`.
+Markets browse two levels deep — Sports opens into Soccer, Cricket, NFL,
+Basketball and nine more — with incremental loading, a live order book, a price
+chart, and a trade ticket.
 
 ```bash
-xcrun altool --upload-app -f build/export/Peak.ipa -t ios \
-  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+cd web
+cp .env.example .env.local        # NEXT_PUBLIC_PRIVY_APP_ID, edge URL
+npm install
+npm run dev                       # http://localhost:3000
 ```
 
-An app record for **`com.pranay.peak`** must already exist in App Store Connect —
-upload fails with an unhelpful error if it does not. When creating the New App,
-pick that bundle ID (not Asteria / not the widget).
+| Task | Command |
+| --- | --- |
+| Type check | `npm run typecheck` |
+| Production build | `npm run build` |
+| Pages build (what actually ships) | `npm run pages:build` |
+| Deploy | `npm run pages:deploy` |
 
-If Connect rejects with **TMS-91065** (PrivySDK / SwiftyJSON missing signature),
-see [docs/APP_STORE.md](docs/APP_STORE.md#tms-91065--privysdk--swiftyjson-missing-signature).
-Peak’s **Sign PrivySDK XCFramework** build phase + `scripts/sign-privy-xcframework.sh`
-work around Privy 2.14.0 shipping an unsigned XCFramework.
+> **Build with `pages:build` before deploying.** It is a different code path
+> from `next build` and is where edge-runtime and browser-support problems
+> surface. A plain `next build` passing is not evidence the deploy is safe.
 
-### Sentry symbols
+Three routes must not break, and are checked after every deploy:
+`/.well-known/apple-app-site-association` (universal links), `/invite/[code]`
+(referrals), and the `peakapp.site/legal/*` links (App Store review).
 
-Peak links the SPM product **`Sentry-Dynamic`** (sentry-cocoa ≥ 8.x), not the
-static `Sentry` binary. The static XCFramework ships **no** `dSYMs/`; Xcode 16+
-then warns *"The archive did not include a dSYM for the Sentry.framework"* on
-upload. That message is a **warning** (TestFlight / App Store upload still
-proceeds). Dynamic linking embeds `Sentry.framework` and its matching
-`Sentry.framework.dSYM` in the archive so Apple’s symbol upload and the
-scheme post-action both see it.
+---
 
-`uploadSymbols` (in `ExportOptions.plist`) sends dSYMs to Apple, not to
-Sentry — those are two separate destinations. The Peak scheme's Archive action
-has a **Post-action** ("Upload Debug Symbols to Sentry") that handles the
-Sentry side automatically on every Release archive. One-time local setup:
+## The edge Worker
 
 ```bash
-brew install getsentry/tools/sentry-cli
-cp sentry.properties.example sentry.properties   # gitignored, holds a real auth token
+cd worker
+npx wrangler dev --port 8787 --local
+npx wrangler deploy
 ```
 
-Fill in `defaults.org`, `defaults.project` (from your Sentry project URL) and
-`auth.token` (sentry.io → Settings → Auth Tokens, scoped to `project:releases`
-or the newer "Debug Files: Write"). Nothing else to run — the next `Product →
-Archive` uploads dSYMs as part of the build.
+Fronts four Polymarket hosts plus Peak's own API. Adding an upstream means
+adding it to both `UPSTREAMS` and the `ROUTES` allowlist in
+[`worker/src/index.js`](worker/src/index.js) — an unlisted path is refused, by
+design.
 
-The phase is deliberately non-fatal: missing `sentry.properties`, missing
-`sentry-cli`, or an upload failure all print a warning and let the build
-continue rather than blocking a release over a symbolication gap. Reporting
-itself is Release-only by design (`CrashReporting.start` disables itself in
-DEBUG), so an empty Sentry dashboard after a Debug run is expected, not a
-fault.
+## The trading API
 
-## APIs
+```bash
+cd backend
+cp .env.example .env              # Builder / Relayer / RPC credentials
+npm start                         # :8080
+npm test                          # node --test
+npm run check                     # syntax + alignment + trading smoke
+```
 
-- Gamma / CLOB public reads (`/prices-history`, `/book`, `/midpoint`, `/price`) / Data API / market WebSocket
-- Authenticated CLOB via `backend/` proxy only
+Node 22, no build step. Persistence is `node:sqlite` from Node core rather than
+`better-sqlite3` — the Dockerfile is `node:22-alpine` with no build toolchain,
+and a native module would not compile there.
+
+---
+
+## Custody and safety
+
+- **Peak never holds funds.** Email and social sign-in create a self-custodial
+  wallet through Privy; orders settle to your own Polymarket account wallet.
+- **Server-side signing is scoped.** The backend signs orders you asked for
+  against your own account, and nothing else. It is not a hot wallet.
+- **The web client never touches private keys.** No key or seed-phrase input
+  exists on web, and that is a standing rule rather than an unbuilt feature.
+- **Geoblocks are respected, not routed around.** Restricted regions are
+  disabled up front with an explanation instead of failing after a round trip;
+  close-only regions can still exit. The country list in the Worker is a
+  point-in-time snapshot — CLOB's own rejection stays authoritative.
+
+---
+
+## Repository layout
+
+```
+Peak/                 iOS app — SwiftUI, 67 files
+├─ Features/          Markets, Search, Portfolio, Watchlist, Settings, Leaderboard, Share
+├─ Services/          Trading, referrals, crash reporting
+├─ Networking/        Gamma / CLOB / Data / leaderboard clients
+├─ Models/            Domain types, flexible decoders for Gamma's loose shapes
+└─ DesignSystem/      Themes, colour ramps, contrast helpers
+
+PeakWidget/           Home-screen widget
+web/                  Next.js 15 web exchange
+├─ app/               App Router pages + the /invite and /api proxy routes
+├─ components/        Market rows, event terminal, trade ticket, order book
+└─ lib/               Gamma / CLOB clients, taxonomy, session, theme
+
+website/              Static landing page + legal pages
+worker/               Cloudflare Worker — the shared edge
+backend/              Node trading API, sessions, referrals
+docs/                 Production, App Store, release and web-client runbooks
+scripts/              Build-time helpers (PrivySDK signing)
+```
+
+---
+
+## Documentation
+
+| Document | What it covers |
+| --- | --- |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Environment, hosted config, the production checklist |
+| [docs/APP_STORE.md](docs/APP_STORE.md) | Submission, vendor workarounds, Sentry symbols |
+| [docs/RELEASE.md](docs/RELEASE.md) | TestFlight and release cadence |
+| [docs/XCODE_CLOUD.md](docs/XCODE_CLOUD.md) | Archiving from a beta-Xcode Mac |
+| [docs/WEB_CLIENT.md](docs/WEB_CLIENT.md) | Web landing + client plan and deploys |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, and which failure each fix addressed |
+
+---
+
+## Status
+
+Honest, not aspirational.
+
+| Area | Status |
+| --- | --- |
+| Browse markets, charts, order book (iOS + web) | **Live** |
+| Web exchange on `app.peakapp.site` | **Live** |
+| Sign-in — email, Google, Apple, wallet | **Live** |
+| Portfolio, positions, open orders, activity | **Live** |
+| Buy / sell / cancel | **Works where permitted** — verified against production Builder + Relayer |
+| Referrals and invite links | **Live** — universal links land in the app |
+| Leaderboard | **Live** — matches polymarket.com's own board |
+| App Store | **Not yet released** — archive is clean; device E2E and TestFlight remain |
+
+**Not claimed:** an end-to-end order has not been placed from this repository by
+a MetaMask or social login. Sign-in, wallet import, account linking, portfolio
+and live balances are verified against production.
+
+---
+
+<div align="center">
+
+Peak is an independent client and is **not affiliated with Polymarket, Inc.**
+
+Prediction markets carry real financial risk. Nothing here is financial advice.
+
+</div>

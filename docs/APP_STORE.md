@@ -36,9 +36,37 @@ warning only means Apple (not Sentry) lacks symbols for the Sentry SDK binary.
 **In-repo fix:** Peak depends on SPM product **`Sentry-Dynamic`** so the
 prebuilt XCFramework’s `ios-arm64/.../dSYMs/Sentry.framework.dSYM` is copied
 into the archive. Keep linking `Sentry-Dynamic` (not static `Sentry`) unless
-you intentionally accept the warning again. App crash stacks still need the
-scheme post-action / `sentry-cli` upload of `*.xcarchive/dSYMs` (README
-**Sentry symbols**).
+you intentionally accept the warning again. The static `Sentry` product ships
+**no** `dSYMs/` at all; dynamic linking embeds both `Sentry.framework` and its
+matching dSYM so Apple’s symbol upload and the scheme post-action can see it.
+
+### Sending symbols to Sentry (separate from Apple)
+
+`uploadSymbols` in `ExportOptions.plist` sends dSYMs to **Apple**, not to
+Sentry. Those are two different destinations. The Peak scheme’s Archive action
+carries a **Post-action** ("Upload Debug Symbols to Sentry") that handles the
+Sentry side on every Release archive. One-time local setup:
+
+```bash
+brew install getsentry/tools/sentry-cli
+cp sentry.properties.example sentry.properties   # gitignored, holds a real auth token
+```
+
+Fill in `defaults.org` and `defaults.project` (from your Sentry project URL) and
+`auth.token` (sentry.io → Settings → Auth Tokens, scoped to `project:releases`
+or the newer "Debug Files: Write"). Nothing else to run — the next
+**Product → Archive** uploads dSYMs as part of the build.
+
+The phase is deliberately **non-fatal**: a missing `sentry.properties`, a
+missing `sentry-cli`, or a failed upload each print a warning and let the build
+continue, rather than blocking a release over a symbolication gap. Reporting is
+Release-only by design (`CrashReporting.start` disables itself in DEBUG), so an
+empty Sentry dashboard after a Debug run is expected, not a fault.
+
+The post-action lives on the scheme rather than in a build phase because
+`ENABLE_USER_SCRIPT_SANDBOXING` denies a build phase `subpath` access to
+`DWARF_DSYM_FOLDER_PATH`, which broke archives outright. `xcodebuild archive`
+does run scheme post-actions — verified empirically, not assumed.
 
 ## TMS-91065 — PrivySDK / SwiftyJSON missing signature
 
