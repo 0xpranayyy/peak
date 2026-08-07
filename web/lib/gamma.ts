@@ -248,7 +248,8 @@ function isListEligible(raw: Record<string, unknown>): boolean {
 async function getGamma<T>(
   path: string,
   query: Record<string, string | number | undefined>,
-  _revalidate: number
+  _revalidate: number,
+  signal?: AbortSignal
 ): Promise<T> {
   const url = new URL(`${EDGE}/gamma/${path}`);
   for (const [key, value] of Object.entries(query)) {
@@ -259,10 +260,13 @@ async function getGamma<T>(
   // Next’s `next.revalidate` Cache API on large Gamma payloads (multi‑MB
   // `/events` lists), and the Worker already applies its own edge TTL.
   // Event-detail SSR stays small (`?slug=` / `/events/:id`).
+  // Caller's abort (navigation, filter change) plus a hard timeout, so a stalled
+  // request can never pin the feed on its skeleton forever.
+  const timeout = AbortSignal.timeout(20_000);
   const response = await fetch(url.toString(), {
     cache: "no-store",
     headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(20_000),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
 
   if (!response.ok) {
@@ -278,15 +282,39 @@ export type SortKey = "volume24hr" | "volume" | "liquidity" | "endDate";
 /** Default browse sort — all-time volume surfaces markets with live books. */
 export const DEFAULT_SORT: SortKey = "volume24hr";
 
-/** Paginated live events for the browse feed. */
-export async function fetchEvents(options?: {
+export interface EventPage {
+  events: PeakEvent[];
+  /** Whether Gamma has more rows after this window. */
+  hasMore: boolean;
+  /** Total matching events upstream, when Gamma reports it. */
+  total: number | null;
+}
+
+/**
+ * One window of the browse feed.
+ *
+ * Uses `/events/pagination` rather than `/events` — same rows, but it also
+ * returns `{hasMore, totalResults}`. Without those the client can only guess
+ * from "did I get a full page?", which is wrong exactly when the last page is
+ * full: you get a Next button that leads to nothing, and a count that reads
+ * "24+" when 24 is the whole set.
+ *
+ * `signal` matters as much as the data. Switching category twice quickly fires
+ * two requests, and the slower one must not be allowed to land on top of the
+ * faster one.
+ */
+export async function fetchEventPage(options?: {
   limit?: number;
   offset?: number;
   sort?: SortKey;
   tagSlug?: string;
-}): Promise<PeakEvent[]> {
-  const raw = await getGamma<Record<string, unknown>[]>(
-    "events",
+  signal?: AbortSignal;
+}): Promise<EventPage> {
+  const body = await getGamma<{
+    data?: Record<string, unknown>[];
+    pagination?: { hasMore?: boolean; totalResults?: number };
+  }>(
+    "events/pagination",
     {
       limit: options?.limit ?? 24,
       offset: options?.offset ?? 0,
@@ -295,14 +323,41 @@ export async function fetchEvents(options?: {
       tag_slug: options?.tagSlug,
       ...SHOWCASE,
     },
-    60
+    60,
+    options?.signal
   );
 
-  if (!Array.isArray(raw)) return [];
-  return raw
+  const raw = Array.isArray(body?.data) ? body.data : [];
+  const events = raw
     .filter(isListEligible)
     .map(mapEvent)
     .filter((e): e is PeakEvent => e !== null);
+
+  const total =
+    typeof body?.pagination?.totalResults === "number"
+      ? body.pagination.totalResults
+      : null;
+
+  return {
+    events,
+    // `isListEligible` drops rows Gamma still calls open (finished games with a
+    // past endDate), so a window can come back short while more remain. Trust
+    // upstream's flag, and fall back to the raw — not filtered — length.
+    hasMore: body?.pagination?.hasMore ?? raw.length >= (options?.limit ?? 24),
+    total,
+  };
+}
+
+/** Paginated live events for the browse feed. */
+export async function fetchEvents(options?: {
+  limit?: number;
+  offset?: number;
+  sort?: SortKey;
+  tagSlug?: string;
+  signal?: AbortSignal;
+}): Promise<PeakEvent[]> {
+  const page = await fetchEventPage(options);
+  return page.events;
 }
 
 export interface Tag {

@@ -828,6 +828,39 @@ select {
   border-color: var(--accent-hover);
 }
 
+/* Second-level sections. Deliberately quieter than the row above — same shape
+   would read as ten more top-level categories rather than "inside Sports". */
+.chips--sub {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--hairline);
+}
+
+.chip--sm {
+  font-size: 12px;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--text-3);
+}
+
+.chip--sm:hover {
+  background: var(--surface-2);
+}
+
+/* The active sub-chip is outlined rather than filled, so the filled chip in the
+   row above still reads as the section you are in. */
+.chip--sm.chip--on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.chip--sm.chip--on:hover {
+  color: var(--accent);
+  background: var(--accent-soft-strong);
+  border-color: var(--accent);
+}
+
 button.chip {
   font: inherit;
 }
@@ -1092,6 +1125,31 @@ button.chip {
   color: var(--text-3);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* Replaces numbered paging: the feed appends, so the control sits under the
+   last row and the rows above it stay put. */
+.feed-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 48px;
+}
+
+.feed-more .btn {
+  min-width: 200px;
+}
+
+.feed-more__error {
+  font-size: 12px;
+  color: var(--sell);
+}
+
+.feed-more__end {
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
 }
 
 /* ------------------------------------------------------------------ detail */
