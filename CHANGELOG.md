@@ -16,6 +16,16 @@ remembering six months from now.
 
 ### Added
 
+- **A Max button on the sell side, backed by the real holding.** Selling used to
+  offer fixed share presets (5/10/25/50/100) and a free-text box, so closing a
+  position meant remembering how many shares you owned or going to look it up.
+  The ticket now reads your actual position for the selected outcome and offers
+  **25% · 50% · 75% · Max**, a `Max` shortcut on the field label, and a line
+  showing what you hold and roughly what the sale is worth. Signed out, or with
+  no position, it falls back to the old fixed presets.
+- **An oversell guard.** Asking for more shares than you hold is caught before
+  the order is sent, instead of round-tripping to the backend and coming back as
+  `insufficient_shares`.
 - **Two-level market taxonomy.** Every top-level section now has subsections:
   Sports splits into Soccer, Basketball, NFL, Baseball, Cricket, Tennis,
   Esports, UFC, Golf, Rugby, NHL and F1; Crypto into Bitcoin/Ethereum/Solana/

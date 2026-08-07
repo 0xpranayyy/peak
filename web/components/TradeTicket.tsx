@@ -5,6 +5,7 @@ import type { Market } from "@/lib/gamma";
 import { usePeakSession } from "@/lib/session";
 import {
   PeakApiError,
+  fetchPortfolio,
   friendlyClientError,
   isMissingPrepareEndpoint,
   placeOrderDirect,
@@ -17,6 +18,26 @@ import { SignInSheet } from "@/components/SignInSheet";
 
 type Side = "BUY" | "SELL";
 type OrderKind = "market" | "limit";
+
+const SELL_FRACTIONS = [
+  { label: "25%", fraction: 0.25 },
+  { label: "50%", fraction: 0.5 },
+  { label: "75%", fraction: 0.75 },
+  { label: "Max", fraction: 1 },
+] as const;
+
+/**
+ * Format a share count for the input box.
+ *
+ * Rounds *down* to two decimals, never up: rounding a fraction of a holding
+ * upward can land above the real balance and get the order rejected for
+ * insufficient shares — which is exactly what a Max button is supposed to stop
+ * happening. Trailing zeroes are dropped so the field reads "12" not "12.00".
+ */
+function trimShares(value: number): string {
+  const floored = Math.floor(Math.max(0, value) * 100) / 100;
+  return String(floored);
+}
 
 type Props = {
   market: Market;
@@ -78,6 +99,15 @@ export function TradeTicket({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Shares of the selected outcome this account actually holds.
+   *
+   * `null` means "not known" — signed out, still loading, or the lookup failed
+   * — and is deliberately different from `0`, which means "known to hold
+   * nothing". Only a known figure may drive a Max button or an oversell
+   * warning; guessing at either would be worse than not offering them.
+   */
+  const [holding, setHolding] = useState<number | null>(null);
 
   const useExternal = externalBook !== undefined;
   const book = useExternal ? externalBook : localBook;
@@ -140,6 +170,42 @@ export function TradeTicket({
     };
   }, [tokenID, market.closed, market.active, useExternal]);
 
+  /**
+   * Look up the holding for the selected outcome.
+   *
+   * The portfolio is the only place that knows it — `initialShares` covers the
+   * case where you arrived from the positions page, but someone who opens a
+   * market directly and hits Sell has no idea what they own, and previously had
+   * to guess or go and look it up.
+   *
+   * Only fetched on the sell side, and not polled: it is read once per outcome,
+   * and a fill refreshes it. Buyers never need it, and making every event page
+   * pull a full portfolio for a button they will not see is exactly the kind of
+   * eager loading this client is trying not to do.
+   */
+  useEffect(() => {
+    if (!authenticated || !tokenID || side !== "SELL") {
+      setHolding(null);
+      return;
+    }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token || controller.signal.aborted) return;
+        const snapshot = await fetchPortfolio(token);
+        if (controller.signal.aborted) return;
+        const match = snapshot.positions.find((p) => p.asset === tokenID);
+        setHolding(match ? match.size : 0);
+      } catch {
+        // Leave it unknown rather than claiming zero — a failed lookup must not
+        // render as "you hold nothing".
+        if (!controller.signal.aborted) setHolding(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [authenticated, tokenID, side, getToken, message]);
+
   const quotePrice = useMemo(() => {
     if (orderKind === "limit") {
       const n = Number(limitCents);
@@ -165,6 +231,33 @@ export function TradeTicket({
     if (!Number.isFinite(usd) || usd <= 0) return null;
     return Math.round((usd / quotePrice) * 100) / 100;
   }, [side, shares, amountUsd, quotePrice]);
+
+  /**
+   * Only flag an oversell when the holding is actually known. An unknown
+   * balance must not produce a warning — the backend's `insufficient_shares`
+   * remains the authority either way; this just saves the round trip.
+   */
+  const oversell =
+    side === "SELL" &&
+    holding != null &&
+    Number(shares) > 0 &&
+    Number(shares) > holding;
+
+  /** What this sell is worth at the quoted price, when both are known. */
+  const sellProceeds =
+    side === "SELL" && quotePrice != null && size != null
+      ? size * quotePrice
+      : null;
+
+  /**
+   * The sellable maximum, as the exact string the input will receive.
+   *
+   * Label and action share this one value on purpose. Formatting the label
+   * separately let them disagree — `toFixed(2)` rounds up where `trimShares`
+   * floors, so a 0.005 holding advertised "Max 0.01" and then filled in 0.
+   */
+  const maxShares = holding != null && holding > 0 ? trimShares(holding) : null;
+  const canMax = maxShares != null && Number(maxShares) > 0;
 
   const apiOrderType = useMemo(() => {
     if (orderKind === "limit") return "GTC";
@@ -205,6 +298,12 @@ export function TradeTicket({
         side === "SELL"
           ? "Enter a valid share size and a price between 1¢ and 99¢."
           : "Enter a valid USD amount and a price between 1¢ and 99¢."
+      );
+      return;
+    }
+    if (oversell) {
+      setError(
+        `You hold ${maxShares} ${outcome}. Reduce the size, or use Max.`
       );
       return;
     }
@@ -371,7 +470,18 @@ export function TradeTicket({
 
       {side === "SELL" ? (
         <label className="field">
-          <span>Shares</span>
+          <span>
+            Shares
+            {canMax ? (
+              <button
+                type="button"
+                className="field__link"
+                onClick={() => setShares(maxShares)}
+              >
+                Max {maxShares}
+              </button>
+            ) : null}
+          </span>
           <input
             inputMode="decimal"
             value={shares}
@@ -391,29 +501,70 @@ export function TradeTicket({
         </label>
       )}
 
+      {/* Selling a known holding is measured in fractions of it — "half my
+          position", not "25 shares". Fixed share counts only make sense when
+          nobody knows what you own, so they stay as the fallback. */}
       <div className="ticket__presets" role="group" aria-label="Size presets">
-        {(side === "SELL" ? [5, 10, 25, 50, 100] : [5, 10, 25, 50, 100]).map(
-          (n) => {
-            const active =
-              side === "SELL"
-                ? Number(shares) === n
-                : Number(amountUsd) === n;
-            return (
-              <button
-                key={n}
-                type="button"
-                className={active ? "preset preset--on" : "preset"}
-                onClick={() => {
-                  if (side === "SELL") setShares(String(n));
-                  else setAmountUsd(String(n));
-                }}
-              >
-                {side === "SELL" ? n : `$${n}`}
-              </button>
-            );
-          }
-        )}
+        {side === "SELL" && canMax && holding != null
+          ? SELL_FRACTIONS.map(({ label, fraction }) => {
+              const target =
+                fraction === 1 ? maxShares : trimShares(holding * fraction);
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  className={shares === target ? "preset preset--on" : "preset"}
+                  onClick={() => setShares(target)}
+                >
+                  {label}
+                </button>
+              );
+            })
+          : (side === "SELL" ? [5, 10, 25, 50, 100] : [5, 10, 25, 50, 100]).map(
+              (n) => {
+                const active =
+                  side === "SELL"
+                    ? Number(shares) === n
+                    : Number(amountUsd) === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    className={active ? "preset preset--on" : "preset"}
+                    onClick={() => {
+                      if (side === "SELL") setShares(String(n));
+                      else setAmountUsd(String(n));
+                    }}
+                  >
+                    {side === "SELL" ? n : `$${n}`}
+                  </button>
+                );
+              }
+            )}
       </div>
+
+      {side === "SELL" && holding != null ? (
+        <p className="ticket__holding">
+          {canMax ? (
+            <>
+              You hold <b>{maxShares}</b> {outcome}
+              {sellProceeds != null ? (
+                <>
+                  {" · "}selling {shares || "0"} ≈ <b>${sellProceeds.toFixed(2)}</b>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>No {outcome} shares in this account to sell.</>
+          )}
+        </p>
+      ) : null}
+
+      {oversell ? (
+        <p className="ticket__status ticket__status--warn" role="alert">
+          That is more than you hold. Max is {maxShares}.
+        </p>
+      ) : null}
 
       {orderKind === "limit" ? (
         <label className="field">
@@ -475,7 +626,7 @@ export function TradeTicket({
         <button
           type="submit"
           className="btn btn--primary ticket__submit"
-          disabled={busy || syncing || !tokenID || marketNeedsBook}
+          disabled={busy || syncing || !tokenID || marketNeedsBook || oversell}
         >
           {busy ? "Submitting…" : `${side === "BUY" ? "Buy" : "Sell"} ${outcome}`}
         </button>

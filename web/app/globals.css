@@ -1364,6 +1364,21 @@ button.chip {
   background: var(--surface-2);
 }
 
+/* What you actually hold, under the size presets. Quiet — it is a fact you
+   glance at to size the order, not something to compete with the numbers. */
+.ticket__holding {
+  margin-top: -2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket__holding b {
+  color: var(--text-2);
+  font-weight: 700;
+}
+
 .ticket__sides {
   display: grid;
   grid-template-columns: 1fr 1fr;
