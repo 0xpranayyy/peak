@@ -42,9 +42,17 @@ remembering six months from now.
 
 ### Changed
 
-- **Multi-market rows show the leading outcome**, not a bare leg count. "NRFI
-  100%", "No change 49%" instead of "28 markets", via a shared `headlineOdds`
-  helper that ranks legs by price.
+- **Multi-market rows show a real outcome**, not a bare leg count — "No change
+  64%", "JD Vance 21%" instead of "28 markets", via a shared `headlineOdds`
+  helper.
+- **Ladder markets no longer render as a wall of 100%.** `headlineOdds` picks
+  the cheapest leg the market still favours, falling back to the front-runner
+  when it favours nothing. "Bitcoin above ___" lists a strike per level with
+  every strike under spot at 100%, so ranking on price alone always surfaced a
+  foregone one; the new rule surfaces the strike nearest the money — "above
+  64,000 · 100%" — which is the one number on the row that says where Bitcoin
+  is. Fields of rivals are unaffected. It still selects among real legs and
+  shows each one's real price against its own name.
 - **Event leg chips use `groupItemTitle`** rather than `question`, which repeats
   the full event title on every leg — the strip used to read as the same
   truncated sentence five times over.

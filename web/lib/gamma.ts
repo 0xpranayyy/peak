@@ -96,11 +96,31 @@ export interface PeakEvent {
  * The headline number for an event row.
  *
  * A binary event has one obvious answer — its Yes price. A multi-market event
- * does not, and showing a bare leg count ("28 markets") tells a scanner nothing
- * about the event. So rank the legs by price and surface the leader, captioned
- * with that leg's own short name. Gamma's leg order is arbitrary, so the ranking
- * matters: `displayProbability` alone would show whichever leg happened to be
- * first.
+ * does not, and a bare leg count ("28 markets") tells a scanner nothing. So pick
+ * one leg and caption it with that leg's own short name. Gamma's leg order is
+ * arbitrary, so the choice matters: `displayProbability` alone shows whichever
+ * leg happened to be listed first.
+ *
+ * The rule: **the cheapest leg the market still favours** — the lowest price at
+ * or above 50% — falling back to the most-favoured leg when the market favours
+ * nothing at all.
+ *
+ * Highest price alone is wrong, because many events are ladders rather than a
+ * field of rivals. "Bitcoin above ___ on August 7" lists a strike per level and
+ * every strike under spot sits at 100%, so a page of them renders as a wall of
+ * identical 100%s. The cheapest favoured leg is the strike nearest the money —
+ * the one number on the row that tells you where Bitcoin actually is.
+ *
+ * It also reads correctly at both extremes:
+ *
+ *  - A field of rivals (Fed decision: 1¢, 2¢, 49¢, 49¢, 1¢) favours nothing, so
+ *    the fallback gives the front-runner, 49%.
+ *  - A ladder that has already resolved is all 100s and 0s; the cheapest
+ *    favoured leg is the boundary strike, so the row says "above 64,000 · 100%"
+ *    — where the price ended up — rather than "above 66,000 · 0%".
+ *
+ * This selects among real legs and shows each one's real price against its own
+ * name. It never blends, rounds toward a story, or invents a number.
  */
 export function headlineOdds(event: PeakEvent): {
   probability: number | null;
@@ -110,15 +130,31 @@ export function headlineOdds(event: PeakEvent): {
     return { probability: event.displayProbability, caption: "chance" };
   }
 
-  let leader: Market | null = null;
+  let cheapestFavoured: Market | null = null;
+  let mostFavoured: Market | null = null;
+
   for (const market of event.markets) {
-    if (market.yesPrice === null) continue;
-    if (leader === null || market.yesPrice > (leader.yesPrice ?? 0)) leader = market;
+    const price = market.yesPrice;
+    if (price === null) continue;
+
+    if (mostFavoured === null || price > (mostFavoured.yesPrice ?? -1)) {
+      mostFavoured = market;
+    }
+    // `<=`, not `<`: a resolved ladder has several legs pegged at exactly 100%,
+    // and Gamma lists them in ladder order, so the last of the tied ones is the
+    // boundary strike — "above 64,000" rather than "above 52,000".
+    if (
+      price >= 0.5 &&
+      (cheapestFavoured === null || price <= (cheapestFavoured.yesPrice ?? 2))
+    ) {
+      cheapestFavoured = market;
+    }
   }
 
+  const pick = cheapestFavoured ?? mostFavoured;
   return {
-    probability: leader?.yesPrice ?? null,
-    caption: leader?.shortTitle ?? `${event.markets.length} markets`,
+    probability: pick?.yesPrice ?? null,
+    caption: pick?.shortTitle ?? `${event.markets.length} markets`,
   };
 }
 
