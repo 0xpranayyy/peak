@@ -15,6 +15,9 @@ type Props = {
   }) => void;
 };
 
+/** Levels shown per side. The rest of the book is still counted in "Total". */
+const DEPTH = 8;
+
 function formatSize(size: number): string {
   if (size >= 1_000_000) return `${(size / 1_000_000).toFixed(1)}M`;
   if (size >= 1_000) return `${(size / 1_000).toFixed(1)}K`;
@@ -35,8 +38,13 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
       return;
     }
     let cancelled = false;
-    const load = async () => {
-      if (typeof document !== "undefined" && document.hidden) return;
+    // `skipWhenHidden` applies to the poll, never the first fetch: a page opened
+    // in a background tab is still a page, and bailing out of the initial load
+    // left the book stuck on "Loading book…" until the tab was focused.
+    const load = async (skipWhenHidden = false) => {
+      if (skipWhenHidden && typeof document !== "undefined" && document.hidden) {
+        return;
+      }
       const next = await fetchOrderBook(tokenID);
       if (cancelled) return;
       setBook(next);
@@ -48,7 +56,7 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
       });
     };
     void load();
-    const timer = window.setInterval(() => void load(), 5_000);
+    const timer = window.setInterval(() => void load(true), 5_000);
     const onVisibility = () => {
       if (!document.hidden) void load();
     };
@@ -60,20 +68,47 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
     };
   }, [tokenID, onTopOfBook]);
 
-  const maxSize = useMemo(() => {
-    if (!book) return 1;
-    let m = 0;
-    for (const l of book.bids) m = Math.max(m, l.size);
-    for (const l of book.asks) m = Math.max(m, l.size);
-    return m || 1;
+  // Asks display high→low (top of book nearest mid), bids high→low.
+  //
+  // Cumulative totals are computed over the *whole* book and only then trimmed
+  // for display, so the "Total" column still means total resting size — the
+  // trimming is a layout decision, not a change to the numbers. Deep books run
+  // to 30+ levels a side; rendering all of them turned the panel into a page.
+  const asks = useMemo(() => {
+    if (!book) return [];
+    const desc = [...book.asks].sort((a, b) => b.price - a.price);
+    let running = 0;
+    const rows = desc
+      .slice()
+      .reverse()
+      .map((level) => {
+        running += level.size;
+        return { level, total: running };
+      });
+    rows.reverse();
+    return rows.slice(-DEPTH);
   }, [book]);
 
-  // Asks display high→low (top of book nearest mid), bids high→low.
-  const asksDesc = useMemo(
-    () => (book ? [...book.asks].sort((a, b) => b.price - a.price) : []),
-    [book]
-  );
-  const bids = book?.bids ?? [];
+  const bids = useMemo(() => {
+    if (!book) return [];
+    let running = 0;
+    return book.bids
+      .map((level) => {
+        running += level.size;
+        return { level, total: running };
+      })
+      .slice(0, DEPTH);
+  }, [book]);
+
+  // Scale the depth bars to the widest *visible* level. Scaling to the whole
+  // book would flatten every rendered bar against one deep resting order well
+  // outside the displayed range.
+  const maxSize = useMemo(() => {
+    let m = 0;
+    for (const r of asks) m = Math.max(m, r.level.size);
+    for (const r of bids) m = Math.max(m, r.level.size);
+    return m || 1;
+  }, [asks, bids]);
 
   return (
     <div className="book">
@@ -105,36 +140,31 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
         <p className="book__empty">Select an outcome to see the book.</p>
       ) : book == null ? (
         <p className="book__empty">Loading book…</p>
-      ) : asksDesc.length === 0 && bids.length === 0 ? (
+      ) : asks.length === 0 && bids.length === 0 ? (
         <p className="book__empty">No resting liquidity on this book.</p>
       ) : (
         <div className="book__body">
           <div className="book__side-label book__side-label--ask">Ask</div>
           <div className="book__side book__side--asks">
-            {asksDesc.length === 0 ? (
+            {asks.length === 0 ? (
               <p className="book__empty book__empty--inline">No asks</p>
             ) : (
-              asksDesc.map((level, i) => {
-                const total = asksDesc
-                  .slice(i)
-                  .reduce((s, l) => s + l.size, 0);
-                return (
-                  <div
-                    key={`a-${level.price}`}
-                    className="book__row book__row--ask"
-                  >
-                    <i
-                      className="book__depth"
-                      style={{ width: `${(level.size / maxSize) * 100}%` }}
-                    />
-                    <span className="book__price">{cents(level.price)}</span>
-                    <span className="book__size mono">
-                      {formatSize(level.size)}
-                    </span>
-                    <span className="book__total mono">{formatSize(total)}</span>
-                  </div>
-                );
-              })
+              asks.map(({ level, total }) => (
+                <div
+                  key={`a-${level.price}`}
+                  className="book__row book__row--ask"
+                >
+                  <i
+                    className="book__depth"
+                    style={{ width: `${(level.size / maxSize) * 100}%` }}
+                  />
+                  <span className="book__price">{cents(level.price)}</span>
+                  <span className="book__size mono">
+                    {formatSize(level.size)}
+                  </span>
+                  <span className="book__total mono">{formatSize(total)}</span>
+                </div>
+              ))
             )}
           </div>
 
@@ -151,25 +181,22 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
             {bids.length === 0 ? (
               <p className="book__empty book__empty--inline">No bids</p>
             ) : (
-              bids.map((level, i) => {
-                const total = bids.slice(0, i + 1).reduce((s, l) => s + l.size, 0);
-                return (
-                  <div
-                    key={`b-${level.price}`}
-                    className="book__row book__row--bid"
-                  >
-                    <i
-                      className="book__depth"
-                      style={{ width: `${(level.size / maxSize) * 100}%` }}
-                    />
-                    <span className="book__price">{cents(level.price)}</span>
-                    <span className="book__size mono">
-                      {formatSize(level.size)}
-                    </span>
-                    <span className="book__total mono">{formatSize(total)}</span>
-                  </div>
-                );
-              })
+              bids.map(({ level, total }) => (
+                <div
+                  key={`b-${level.price}`}
+                  className="book__row book__row--bid"
+                >
+                  <i
+                    className="book__depth"
+                    style={{ width: `${(level.size / maxSize) * 100}%` }}
+                  />
+                  <span className="book__price">{cents(level.price)}</span>
+                  <span className="book__size mono">
+                    {formatSize(level.size)}
+                  </span>
+                  <span className="book__total mono">{formatSize(total)}</span>
+                </div>
+              ))
             )}
           </div>
         </div>

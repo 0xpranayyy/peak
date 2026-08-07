@@ -111,6 +111,7 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
           </div>
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="market-row market-row--skeleton" aria-hidden="true">
+              <div className="skel skel--thumb" />
               <div className="skel skel--title" />
               <div className="skel skel--num" />
               <div className="skel skel--num" />

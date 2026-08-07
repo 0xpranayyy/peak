@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useWatchlist } from "@/lib/watchlist-hook";
-import { fetchEventById, type PeakEvent } from "@/lib/gamma";
+import { fetchEventById, headlineOdds, type PeakEvent } from "@/lib/gamma";
+import { EventThumb } from "@/components/MarketCard";
 import { compactUsd, endsIn, percent } from "@/lib/format";
 
 export function WatchlistClient() {
@@ -91,12 +92,12 @@ export function WatchlistClient() {
             <span />
           </div>
           {events.map((event) => {
-            const probability = event.displayProbability;
+            const { probability, caption } = headlineOdds(event);
             const ends = endsIn(event.endDate);
             const href = event.slug ? `/event/${event.slug}` : null;
-            const isMulti = event.markets.length > 1;
             return (
               <div key={event.id} className="market-row market-row--watch">
+                <EventThumb event={event} />
                 {href ? (
                   <a href={href} className="market-row__main">
                     <div className="market-row__title">{event.title}</div>
@@ -119,15 +120,10 @@ export function WatchlistClient() {
                   {event.volume24hr > 0 ? compactUsd(event.volume24hr) : "—"}
                 </div>
                 <div className="market-row__price">
-                  {isMulti ? (
-                    <>
-                      <b className="market-row__multi">{event.markets.length}</b>
-                      <span>mkts</span>
-                    </>
-                  ) : probability != null ? (
+                  {probability !== null ? (
                     <>
                       <b>{percent(probability)}</b>
-                      <span>chance</span>
+                      <span title={caption}>{caption}</span>
                     </>
                   ) : (
                     <span className="market-row__na">—</span>

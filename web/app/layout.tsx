@@ -15,9 +15,22 @@ const sans = DM_Sans({
 });
 
 export const viewport: Viewport = {
-  themeColor: "#09090b",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0c" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f7f9" },
+  ],
+  colorScheme: "dark light",
 };
+
+/**
+ * Applies the saved theme before first paint.
+ *
+ * This has to be a blocking inline script in <head>: anything that waits for
+ * React to hydrate renders one frame of the wrong theme, which reads as a
+ * white flash for dark-mode users. Falls back to the OS preference when
+ * nothing is stored, and to dark if storage throws (private mode).
+ */
+const THEME_INIT = `(function(){try{var t=localStorage.getItem("peak-theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}document.documentElement.setAttribute("data-theme",t);}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -68,7 +81,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={sans.variable}>
+    <html lang="en" className={sans.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+      </head>
       <body>
         <Providers>
           <header className="masthead">

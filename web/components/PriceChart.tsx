@@ -26,7 +26,33 @@ export function PriceChart({ tokenID, livePrice }: Props) {
     null
   );
   const svgRef = useRef<SVGSVGElement>(null);
+  const plotRef = useRef<HTMLDivElement>(null);
   const gradId = useId().replace(/:/g, "");
+
+  /**
+   * The viewBox tracks the plot's real pixel box instead of a fixed 640×220.
+   * With a fixed aspect the SVG could only ever letterbox inside its panel, and
+   * next to a full-height order book that left a third of the card empty. One
+   * unit of the viewBox is now one CSS pixel, which also makes the hover
+   * hit-test exact rather than approximately right.
+   */
+  const [box, setBox] = useState({ w: 640, h: 220 });
+
+  useEffect(() => {
+    const node = plotRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width < 1 || height < 1) return;
+      setBox((prev) =>
+        Math.abs(prev.w - width) < 1 && Math.abs(prev.h - height) < 1
+          ? prev
+          : { w: Math.round(width), h: Math.round(height) }
+      );
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [points]);
 
   useEffect(() => {
     if (!tokenID) {
@@ -62,8 +88,8 @@ export function PriceChart({ tokenID, livePrice }: Props) {
   }, [points, livePrice]);
 
   const layout = useMemo(() => {
-    const W = 640;
-    const H = 220;
+    const W = box.w;
+    const H = box.h;
     const padL = 8;
     const padR = 44;
     const padT = 16;
@@ -95,7 +121,7 @@ export function PriceChart({ tokenID, livePrice }: Props) {
     const path = `M ${coords.join(" L ")}`;
     const area = `${path} L ${xs[xs.length - 1].toFixed(2)},${(H - padB).toFixed(2)} L ${xs[0].toFixed(2)},${(H - padB).toFixed(2)} Z`;
     return { W, H, padL, padR, padT, padB, path, area, min, max, xs, ys };
-  }, [series]);
+  }, [series, box]);
 
   const last = series.length ? series[series.length - 1] : null;
   const first = series.length ? series[0] : null;
@@ -159,7 +185,7 @@ export function PriceChart({ tokenID, livePrice }: Props) {
       ) : series.length < 2 ? (
         <div className="chart__empty">No price history for this outcome yet.</div>
       ) : (
-        <div className="chart__plot">
+        <div className="chart__plot" ref={plotRef}>
           <svg
             ref={svgRef}
             viewBox={`0 0 ${layout.W} ${layout.H}`}

@@ -116,13 +116,17 @@ export function TradeTicket({
       return;
     }
     let cancelled = false;
-    const load = async () => {
-      if (typeof document !== "undefined" && document.hidden) return;
+    // Same rule as OrderBookPanel: skip the poll while hidden, never the first
+    // fetch — otherwise the ticket opens with no bid/ask to quote against.
+    const load = async (skipWhenHidden = false) => {
+      if (skipWhenHidden && typeof document !== "undefined" && document.hidden) {
+        return;
+      }
       const next = await fetchTopOfBook(tokenID);
       if (!cancelled) setLocalBook(next);
     };
     void load();
-    const timer = window.setInterval(() => void load(), 8_000);
+    const timer = window.setInterval(() => void load(true), 8_000);
     const onVisibility = () => {
       if (!document.hidden) void load();
     };

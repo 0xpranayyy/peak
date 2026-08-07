@@ -52,6 +52,12 @@ function flexStringArray(value: unknown): string[] {
 export interface Market {
   id: string;
   question: string;
+  /**
+   * Gamma's `groupItemTitle` — the short leg name inside a multi-market event
+   * ("August 31", "Match Winner"). `question` repeats the whole event title on
+   * every leg, so this is the only label short enough to put in a list row.
+   */
+  shortTitle: string | null;
   slug: string | null;
   outcomes: string[];
   /** Aligned with `outcomes`, 0...1. */
@@ -86,6 +92,36 @@ export interface PeakEvent {
   displayProbability: number | null;
 }
 
+/**
+ * The headline number for an event row.
+ *
+ * A binary event has one obvious answer — its Yes price. A multi-market event
+ * does not, and showing a bare leg count ("28 markets") tells a scanner nothing
+ * about the event. So rank the legs by price and surface the leader, captioned
+ * with that leg's own short name. Gamma's leg order is arbitrary, so the ranking
+ * matters: `displayProbability` alone would show whichever leg happened to be
+ * first.
+ */
+export function headlineOdds(event: PeakEvent): {
+  probability: number | null;
+  caption: string;
+} {
+  if (event.markets.length <= 1) {
+    return { probability: event.displayProbability, caption: "chance" };
+  }
+
+  let leader: Market | null = null;
+  for (const market of event.markets) {
+    if (market.yesPrice === null) continue;
+    if (leader === null || market.yesPrice > (leader.yesPrice ?? 0)) leader = market;
+  }
+
+  return {
+    probability: leader?.yesPrice ?? null,
+    caption: leader?.shortTitle ?? `${event.markets.length} markets`,
+  };
+}
+
 // ------------------------------------------------------------------ mapping
 
 function mapMarket(raw: Record<string, unknown>): Market | null {
@@ -116,6 +152,10 @@ function mapMarket(raw: Record<string, unknown>): Market | null {
   return {
     id,
     question,
+    shortTitle:
+      typeof raw.groupItemTitle === "string" && raw.groupItemTitle.trim()
+        ? raw.groupItemTitle.trim()
+        : null,
     slug: typeof raw.slug === "string" ? raw.slug : null,
     outcomes: resolvedOutcomes,
     outcomePrices: resolvedPrices,

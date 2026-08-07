@@ -1,33 +1,108 @@
-/* Peak web exchange — charcoal terminal, teal accent, semantic green/red.
-   No gradients-as-decoration, no glow, no pill chrome. */
+/* Peak web exchange — teal accent, semantic green/red, dark and light.
+   Rounded, elevated surfaces; pill controls. Every colour is a token so the
+   two themes stay in lockstep: add a variable here, not a hard-coded hex in a
+   component, or light mode silently breaks. */
 
 :root {
-  --ink: #09090b;
-  --surface: #111114;
-  --surface-2: #18181c;
-  --surface-3: #1f1f24;
-  --surface-hover: rgba(255, 255, 255, 0.035);
-  --surface-active: rgba(255, 255, 255, 0.055);
-  --hairline: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+
+  --ink: #0a0a0c;
+  --surface: #121216;
+  --surface-2: #17171c;
+  --surface-3: #1f1f26;
+  --surface-hover: rgba(255, 255, 255, 0.04);
+  --surface-active: rgba(255, 255, 255, 0.07);
+  --hairline: rgba(255, 255, 255, 0.07);
   --hairline-strong: rgba(255, 255, 255, 0.14);
 
+  /* Translucent sticky chrome — must match --ink or the blur shows a seam. */
+  --chrome: rgba(10, 10, 12, 0.82);
+
   --text: #f4f4f5;
-  --text-2: #a1a1aa;
-  --text-3: #71717a;
+  --text-2: #a8a8b3;
+  --text-3: #74747f;
 
   --accent: #2dd4bf;
-  --accent-ink: #042f2e;
+  --accent-hover: #5eead4;
+  --accent-ink: #04211f;
+  --accent-soft: rgba(45, 212, 191, 0.14);
+  --accent-soft-strong: rgba(45, 212, 191, 0.22);
   --buy: #34d399;
   --sell: #f87171;
   --warn: #fbbf24;
+  --buy-soft: rgba(52, 211, 153, 0.13);
+  --sell-soft: rgba(248, 113, 113, 0.13);
+  --sell-soft-hover: rgba(248, 113, 113, 0.09);
+  --sell-line: rgba(248, 113, 113, 0.35);
+  --sell-line-strong: rgba(248, 113, 113, 0.55);
+  --track: rgba(255, 255, 255, 0.09);
+  --mark-bg: #000;
 
-  --radius: 6px;
-  --radius-sm: 4px;
+  /* Inverted surface — the "solid" CTA. Flips with the theme. */
+  --invert-bg: #fafafa;
+  --invert-bg-hover: #e6e6ea;
+  --invert-text: #0a0a0c;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px -12px rgba(0, 0, 0, 0.65);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
   --page: 1180px;
   --page-wide: 1360px;
-  --nav-h: 52px;
+  --nav-h: 60px;
   --space: 8px;
-  --focus: 0 0 0 2px var(--ink), 0 0 0 4px rgba(45, 212, 191, 0.55);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --focus: 0 0 0 2px var(--ink), 0 0 0 4px rgba(45, 212, 191, 0.6);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ink: #f7f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f1f4;
+  --surface-3: #e7e7ec;
+  --surface-hover: rgba(9, 9, 11, 0.035);
+  --surface-active: rgba(9, 9, 11, 0.06);
+  --hairline: rgba(9, 9, 11, 0.09);
+  --hairline-strong: rgba(9, 9, 11, 0.18);
+
+  --chrome: rgba(247, 247, 249, 0.82);
+
+  --text: #101014;
+  --text-2: #52525b;
+  --text-3: #71717a;
+
+  /* Darker teal: the dark-mode accent fails contrast on white. */
+  --accent: #0d9488;
+  --accent-hover: #0f766e;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(13, 148, 136, 0.1);
+  --accent-soft-strong: rgba(13, 148, 136, 0.16);
+  --buy: #059669;
+  --sell: #dc2626;
+  --warn: #b45309;
+  --buy-soft: rgba(5, 150, 105, 0.11);
+  --sell-soft: rgba(220, 38, 38, 0.1);
+  --sell-soft-hover: rgba(220, 38, 38, 0.07);
+  --sell-line: rgba(220, 38, 38, 0.3);
+  --sell-line-strong: rgba(220, 38, 38, 0.5);
+  --track: rgba(9, 9, 11, 0.09);
+  --mark-bg: #101014;
+
+  --invert-bg: #101014;
+  --invert-bg-hover: #26262e;
+  --invert-text: #fafafa;
+
+  --shadow-sm: 0 1px 2px rgba(9, 9, 11, 0.06);
+  --shadow: 0 4px 16px -4px rgba(9, 9, 11, 0.1);
+  --shadow-lg: 0 16px 40px -12px rgba(9, 9, 11, 0.16);
+
+  --focus: 0 0 0 2px var(--ink), 0 0 0 4px rgba(13, 148, 136, 0.5);
 }
 
 * {
@@ -36,8 +111,27 @@
   padding: 0;
 }
 
-html {
-  color-scheme: dark;
+/* Theme changes are instant everywhere except the large background planes,
+   where an abrupt flip is jarring. Interactive states keep their own faster
+   transitions; this only covers the theme swap itself. */
+body,
+.masthead,
+.browse-bar,
+.card,
+.market-row {
+  transition: background-color 0.2s var(--ease), border-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
@@ -110,7 +204,7 @@ select {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(9, 9, 11, 0.92);
+  background: var(--chrome);
   backdrop-filter: blur(12px) saturate(1.15);
 }
 
@@ -140,7 +234,7 @@ select {
   border-radius: var(--radius-sm);
   display: block;
   border: 1px solid var(--hairline);
-  background: #000;
+  background: var(--mark-bg);
   object-fit: cover;
 }
 
@@ -155,18 +249,18 @@ select {
 .masthead__nav {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
 }
 
 .masthead__nav a {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
-  padding: 7px 12px;
-  border-radius: var(--radius);
-  transition: color 0.12s ease, background 0.12s ease;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  transition: color 0.16s var(--ease), background 0.16s var(--ease);
 }
 
 .masthead__nav a:hover {
@@ -175,15 +269,46 @@ select {
 }
 
 .masthead__nav a.is-active {
-  color: var(--text);
-  background: var(--surface-2);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .masthead__end {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 0.16s var(--ease), background 0.16s var(--ease),
+    border-color 0.16s var(--ease);
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--hairline-strong);
+}
+
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.theme-toggle svg {
+  display: block;
 }
 
 /* ------------------------------------------------------------------- buttons */
@@ -195,19 +320,25 @@ select {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 14px;
-  border-radius: var(--radius);
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--hairline-strong);
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease,
-    color 0.12s ease;
+  transition: border-color 0.16s var(--ease), background 0.16s var(--ease),
+    opacity 0.16s var(--ease), color 0.16s var(--ease),
+    transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
 }
 
 .btn:hover:not(:disabled) {
   border-color: var(--text-3);
   background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .btn:disabled {
@@ -228,11 +359,13 @@ select {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #5eead4;
-  border-color: #5eead4;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: var(--shadow);
 }
 
 .btn--ghost {
@@ -249,28 +382,36 @@ select {
 
 .btn--danger {
   color: var(--sell);
-  border-color: rgba(248, 113, 113, 0.35);
+  border-color: var(--sell-line);
 }
 
 .btn--danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.08);
-  border-color: rgba(248, 113, 113, 0.55);
+  background: var(--sell-soft-hover);
+  border-color: var(--sell-line-strong);
 }
 
 .cta {
   font-size: 13px;
   font-weight: 600;
-  padding: 7px 14px;
-  border-radius: var(--radius);
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
   border: 1px solid transparent;
-  background: var(--text);
-  color: var(--ink);
+  background: var(--invert-bg);
+  color: var(--invert-text);
   cursor: pointer;
-  transition: background 0.12s ease, opacity 0.12s ease;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.16s var(--ease), opacity 0.16s var(--ease),
+    transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
 }
 
 .cta:hover:not(:disabled) {
-  background: #e4e4e7;
+  background: var(--invert-bg-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+
+.cta:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .cta:disabled {
@@ -385,13 +526,14 @@ select {
 
 .search input {
   flex: 1;
-  background: var(--ink);
+  background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  padding: 9px 12px;
+  border-radius: var(--radius-pill);
+  padding: 11px 18px;
   color: var(--text);
   outline: none;
-  transition: border-color 0.12s ease;
+  transition: border-color 0.16s var(--ease), background 0.16s var(--ease),
+    box-shadow 0.16s var(--ease);
   min-width: 0;
 }
 
@@ -404,8 +546,9 @@ select {
 }
 
 .search input:focus {
-  border-color: var(--text-3);
-  box-shadow: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .search input:focus-visible {
@@ -413,21 +556,28 @@ select {
 }
 
 .search button {
-  border: 1px solid var(--hairline-strong);
-  background: var(--surface-2);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 9px 14px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius-pill);
+  padding: 11px 20px;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.16s var(--ease), transform 0.16s var(--ease),
+    box-shadow 0.16s var(--ease);
   flex: none;
 }
 
 .search button:hover {
-  background: var(--surface-3);
-  border-color: var(--text-3);
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+
+.search button:active {
+  transform: translateY(0);
 }
 
 /* ----------------------------------------------------------------- filters */
@@ -436,14 +586,14 @@ select {
   position: sticky;
   top: var(--nav-h);
   z-index: 12;
-  margin: 0 -4px 4px;
-  padding: 10px 4px 12px;
-  background: rgba(9, 9, 11, 0.92);
-  backdrop-filter: blur(12px) saturate(1.15);
+  margin: 0 -4px 12px;
+  padding: 14px 4px 16px;
+  background: var(--chrome);
+  backdrop-filter: blur(14px) saturate(1.2);
   border-bottom: 1px solid var(--hairline);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .filters {
@@ -452,13 +602,20 @@ select {
   gap: 10px;
 }
 
+/* Segmented control rather than underlined tabs — reads as one grouped
+   switch, and the pill thumb matches the rest of the chrome. */
 .tabs {
-  display: flex;
-  gap: 0;
+  display: inline-flex;
+  gap: 2px;
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
-  border-bottom: 1px solid var(--hairline);
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  align-self: flex-start;
+  max-width: 100%;
 }
 
 .tabs::-webkit-scrollbar {
@@ -471,13 +628,14 @@ select {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-3);
-  padding: 8px 12px;
+  padding: 7px 15px;
   border: none;
   background: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+  transition: color 0.16s var(--ease), background 0.16s var(--ease),
+    box-shadow 0.16s var(--ease);
 }
 
 .tabs a:hover,
@@ -488,7 +646,8 @@ select {
 .tabs a.is-on,
 .tabs button.is-on {
   color: var(--text);
-  border-bottom-color: var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .chips {
@@ -513,27 +672,35 @@ select {
 
 .chip {
   flex: none;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 5px 10px;
-  border-radius: var(--radius);
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--hairline);
-  color: var(--text-3);
+  color: var(--text-2);
   white-space: nowrap;
-  background: transparent;
+  background: var(--surface);
   cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  transition: color 0.16s var(--ease), border-color 0.16s var(--ease),
+    background 0.16s var(--ease);
 }
 
 .chip:hover {
   color: var(--text);
   border-color: var(--hairline-strong);
+  background: var(--surface-2);
 }
 
 .chip--on {
-  color: var(--text);
-  border-color: var(--text-3);
-  background: var(--surface-2);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.chip--on:hover {
+  color: var(--accent-ink);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.chip {
@@ -542,24 +709,28 @@ button.chip {
 
 /* --------------------------------------------------------------- market list */
 
+/* Rows are separated cards rather than table lines: at a glance you see
+   discrete markets, not a spreadsheet. The grid columns still line up across
+   rows, so volume and odds stay comparable down the page. */
 .market-list {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--hairline);
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .market-list__head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 72px 88px;
+  grid-template-columns: minmax(0, 1fr) 88px 88px 108px;
   gap: 12px 16px;
-  padding: 10px 10px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  /* Left padding clears the row thumbnail (40px + its 16px gap) so the
+     "Market" label sits over the title, not over the artwork. */
+  padding: 0 18px 4px 74px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-3);
-  border-bottom: 1px solid var(--hairline);
 }
 
 .market-list__head > span:nth-child(2),
@@ -569,24 +740,25 @@ button.chip {
 }
 
 .market-list__head--watch {
-  grid-template-columns: minmax(0, 1fr) 72px 72px 88px auto;
+  grid-template-columns: minmax(0, 1fr) 88px 88px 108px auto;
 }
 
 .market-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 72px 88px;
+  grid-template-columns: 40px minmax(0, 1fr) 88px 88px 108px;
   gap: 12px 16px;
   align-items: center;
-  padding: 13px 10px;
-  border-bottom: 1px solid var(--hairline);
-  transition: background 0.1s ease;
-  border-left: 2px solid transparent;
-  margin-left: -2px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
   cursor: pointer;
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease),
+    transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
 }
 
 .market-row--watch {
-  grid-template-columns: minmax(0, 1fr) 72px 72px 88px auto;
+  grid-template-columns: 40px minmax(0, 1fr) 88px 88px 108px auto;
   cursor: default;
 }
 
@@ -596,24 +768,43 @@ button.chip {
 }
 
 .market-row:hover {
-  background: var(--surface-hover);
-  border-left-color: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 
 .market-row:focus-visible {
-  background: var(--surface-active);
-  border-left-color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--focus);
 }
 
 .market-row--skeleton {
   pointer-events: none;
   cursor: default;
-  border-left-color: transparent;
 }
 
 .market-row--skeleton:hover {
-  background: transparent;
-  border-left-color: transparent;
+  transform: none;
+  box-shadow: none;
+  border-color: var(--hairline);
+}
+
+/* Event artwork is the fastest way to tell rows apart while scrolling —
+   Polymarket ships an icon for nearly every event, and the empty variant keeps
+   the grid from shifting on the few that lack one. */
+.market-row__thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  display: block;
+  flex: none;
+}
+
+.market-row__thumb--empty {
+  background: var(--surface-3);
 }
 
 .market-row__main {
@@ -621,31 +812,48 @@ button.chip {
 }
 
 .market-row__title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.015em;
-  line-height: 1.35;
+  line-height: 1.4;
+  color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition: color 0.16s var(--ease);
+}
+
+.market-row:hover .market-row__title {
+  color: var(--accent);
 }
 
 .market-row__meta {
-  margin-top: 4px;
+  margin-top: 6px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  align-items: center;
+  gap: 6px 10px;
   font-size: 12px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
+/* Meta items read as separate facts, so they get dot separators rather than
+   relying on gap alone. */
+.market-row__meta > span + span::before {
+  content: "·";
+  margin-right: 10px;
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
 .market-row__cell {
   text-align: right;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .market-row__price {
@@ -656,37 +864,40 @@ button.chip {
 
 .market-row__price b {
   display: block;
-  font-size: 16px;
+  font-size: 21px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
   color: var(--accent);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
-.market-row__price b.market-row__multi {
-  color: var(--text);
-}
-
+/* On multi-market rows this caption is the leading leg's own name, which can be
+   arbitrarily long ("Match Winner", a team name, a date) — clamp it to one line
+   so it never pushes the column wider than the header it sits under. */
 .market-row__price span {
+  display: block;
   font-size: 10px;
   color: var(--text-3);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .market-row__na {
   color: var(--text-3);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .bar {
-  height: 3px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--track);
   overflow: hidden;
-  margin-top: 6px;
-  width: 64px;
+  margin-top: 7px;
+  width: 100%;
   margin-left: auto;
 }
 
@@ -694,7 +905,8 @@ button.chip {
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 1px;
+  border-radius: var(--radius-pill);
+  transition: width 0.3s var(--ease);
 }
 
 .skel {
@@ -708,6 +920,12 @@ button.chip {
   );
   background-size: 200% 100%;
   animation: skel 1.2s ease-in-out infinite;
+}
+
+.skel--thumb {
+  height: 40px;
+  width: 40px;
+  border-radius: 10px;
 }
 
 .skel--title {
@@ -987,13 +1205,13 @@ button.chip {
 }
 
 .seg--on.seg--buy {
-  background: rgba(52, 211, 153, 0.12);
+  background: var(--buy-soft);
   border-color: var(--buy);
   color: var(--buy);
 }
 
 .seg--on.seg--sell {
-  background: rgba(248, 113, 113, 0.12);
+  background: var(--sell-soft);
   border-color: var(--sell);
   color: var(--sell);
 }
@@ -1178,6 +1396,11 @@ button.chip {
   align-items: start;
 }
 
+/* Full-width row above both columns — see the note in EventClient. */
+.terminal__header {
+  grid-column: 1 / -1;
+}
+
 .terminal__stage {
   display: flex;
   flex-direction: column;
@@ -1255,7 +1478,7 @@ button.chip {
 
 .strip-chip--on {
   border-color: var(--accent);
-  background: rgba(45, 212, 191, 0.07);
+  background: var(--accent-soft);
   color: var(--text);
 }
 
@@ -1405,9 +1628,13 @@ button.chip {
   min-height: 200px;
 }
 
+/* Absolute so the SVG measures the box rather than defining it — otherwise the
+   ResizeObserver in PriceChart would feed its own output back in as input. */
 .chart__svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
   cursor: crosshair;
 }
@@ -1438,7 +1665,7 @@ button.chip {
   font-size: 12px;
   color: var(--text-2);
   pointer-events: none;
-  background: rgba(9, 9, 11, 0.82);
+  background: var(--chrome);
   padding: 4px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--hairline);
@@ -1918,7 +2145,7 @@ button.chip {
   align-items: flex-start;
   padding: 12px 14px;
   background: var(--surface);
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  border: 1px solid var(--sell-line);
   border-radius: var(--radius);
   font-size: 12px;
   color: var(--text);
@@ -1967,7 +2194,7 @@ button.chip {
   border: 1px solid var(--hairline);
   flex: none;
   object-fit: cover;
-  background: #000;
+  background: var(--mark-bg);
 }
 
 .footer__nav {
@@ -2033,6 +2260,12 @@ button.chip {
     grid-template-columns: 1fr;
   }
 
+  /* Ticket first so trading is reachable without scrolling past the chart —
+     but the title still outranks it, hence -2. */
+  .terminal__header {
+    order: -2;
+  }
+
   .terminal__aside {
     position: static;
     order: -1;
@@ -2056,44 +2289,66 @@ button.chip {
 
   .market-row,
   .market-row--watch {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 14px 16px;
   }
 
+  .market-row__thumb {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+  }
+
+  /* Volume columns go rather than shrink — on a phone the title and the odds
+     are what you scan; two more tiny numbers just crowd them. Both are still
+     on the event page. */
   .market-row__cell {
     display: none;
   }
 
   .market-row--watch .market-row__price {
-    grid-column: 2;
+    grid-column: 3;
   }
 
   .market-row--watch .btn {
-    grid-column: 1 / -1;
+    grid-column: 2 / -1;
     justify-self: start;
   }
 
   .market-row__price {
     text-align: right;
+    min-width: 76px;
   }
 
-  .bar {
-    margin-left: auto;
+  .market-row__price b {
+    font-size: 19px;
   }
 }
 
 @media (max-width: 640px) {
   .masthead__nav {
     gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .masthead__nav::-webkit-scrollbar {
+    display: none;
   }
 
   .masthead__nav a {
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    white-space: nowrap;
   }
 
   .wordmark__name {
     display: none;
+  }
+
+  .search {
+    flex-wrap: wrap;
   }
 
   .page-head {

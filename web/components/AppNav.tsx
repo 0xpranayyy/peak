@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthButton } from "@/components/AuthButton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const LINKS = [
   { href: "/markets", label: "Markets" },
@@ -54,6 +55,7 @@ export function AppNav() {
         ))}
       </nav>
       <div className="masthead__end">
+        <ThemeToggle />
         <AuthButton />
       </div>
     </div>
