@@ -2,15 +2,15 @@ import { DEFAULT_SORT, type SortKey } from "@/lib/gamma";
 import { CATEGORIES } from "@/lib/categories";
 
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: "volume", label: "Volume" },
   { key: "volume24hr", label: "Trending" },
+  { key: "volume", label: "Volume" },
   { key: "liquidity", label: "Liquidity" },
   { key: "endDate", label: "Ending" },
 ];
 
 /**
  * Filters are plain links. Categories are curated (iOS MarketCategory),
- * not the raw Gamma tag dump.
+ * not the raw Gamma tag dump — horizontal scroll, never wrap chaos.
  */
 export function Filters({
   activeTag,

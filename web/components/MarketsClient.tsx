@@ -68,43 +68,88 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
 
   const hasMore = (events?.length ?? 0) >= PAGE_SIZE;
   const hasPrev = page > 1;
+  const countLabel =
+    events == null
+      ? null
+      : events.length === 0
+        ? null
+        : `${events.length}${hasMore ? "+" : ""} markets`;
 
   return (
     <div className="shell page-body">
-      <div className="page-head">
+      <div className="page-head page-head--markets">
         <div>
           <h1>Markets</h1>
-          <p>Live odds from Polymarket. Sign in to trade.</p>
+          <p>Browse live prediction markets. Open a row to trade.</p>
         </div>
-        <form className="search" action="/search" role="search">
+        {countLabel ? (
+          <span className="result-meta result-meta--inline">{countLabel}</span>
+        ) : null}
+      </div>
+
+      <div className="browse-bar">
+        <form className="search search--bar" action="/search" role="search">
           <input
             type="search"
             name="q"
-            placeholder="Search markets"
+            placeholder="Search markets…"
             aria-label="Search markets"
+            autoComplete="off"
           />
           <button type="submit">Search</button>
         </form>
+        <Filters activeTag={activeTag} activeSort={activeSort} />
       </div>
 
-      <Filters activeTag={activeTag} activeSort={activeSort} />
-
       {events == null ? (
-        <p className="empty">Loading markets…</p>
+        <div className="market-list" aria-busy="true" aria-label="Loading markets">
+          <div className="market-list__head" aria-hidden="true">
+            <span>Market</span>
+            <span>Vol</span>
+            <span>24h</span>
+            <span>Chance</span>
+          </div>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="market-row market-row--skeleton" aria-hidden="true">
+              <div className="skel skel--title" />
+              <div className="skel skel--num" />
+              <div className="skel skel--num" />
+              <div className="skel skel--price" />
+            </div>
+          ))}
+        </div>
       ) : events.length === 0 ? (
-        <p className="empty">
-          {error
-            ? "Markets are unavailable right now. Try again in a moment."
-            : activeTag
-              ? "No live markets in this category right now."
-              : page > 1
-                ? "No more markets on this page."
-                : "Markets are unavailable right now. Try again in a moment."}
-        </p>
+        <div className="empty-state">
+          <p className="empty-state__title">
+            {error
+              ? "Markets unavailable"
+              : activeTag
+                ? "No markets in this category"
+                : page > 1
+                  ? "No more markets"
+                  : "Markets unavailable"}
+          </p>
+          <p className="empty-state__body">
+            {error
+              ? "The feed didn’t load. Try again in a moment."
+              : activeTag
+                ? "Try All, or another category."
+                : page > 1
+                  ? "Go back to the previous page."
+                  : "The feed didn’t load. Try again in a moment."}
+          </p>
+          {activeTag || page > 1 ? (
+            <a className="btn" href="/markets">
+              Reset filters
+            </a>
+          ) : null}
+        </div>
       ) : (
         <div className="market-list">
           <div className="market-list__head" aria-hidden="true">
             <span>Market</span>
+            <span>Vol</span>
+            <span>24h</span>
             <span>Chance</span>
           </div>
           {events.map((event) => (
@@ -113,7 +158,7 @@ export function MarketsClient({ tag, sort, page: pageRaw }: Props) {
         </div>
       )}
 
-      {(hasPrev || hasMore) && events != null ? (
+      {(hasPrev || hasMore) && events != null && events.length > 0 ? (
         <nav className="pager" aria-label="Markets pages">
           {hasPrev ? (
             <a

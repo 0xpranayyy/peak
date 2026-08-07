@@ -57,26 +57,36 @@ export function WatchlistClient() {
       <div className="page-head">
         <div>
           <h1>Watchlist</h1>
-          <p>Markets you save on this device. Empty until you add real markets.</p>
+          <p>Markets you save on this device.</p>
         </div>
       </div>
 
       {ids.length === 0 ? (
-        <p className="empty">
-          Nothing saved yet. Open a market and tap Watch, or{" "}
-          <a href="/markets" className="text-link">
-            browse markets
+        <div className="empty-state">
+          <p className="empty-state__title">Nothing saved yet</p>
+          <p className="empty-state__body">
+            Open a market and tap Watch to save it here.
+          </p>
+          <a className="btn btn--primary" href="/markets">
+            Browse markets
           </a>
-          .
-        </p>
+        </div>
       ) : loading && events.length === 0 ? (
         <p className="empty empty--compact">Loading watchlist…</p>
       ) : error && events.length === 0 ? (
-        <p className="empty">{error}</p>
+        <div className="empty-state">
+          <p className="empty-state__title">Couldn’t load</p>
+          <p className="empty-state__body">{error}</p>
+        </div>
       ) : (
         <div className="market-list">
-          <div className="market-list__head market-list__head--watch" aria-hidden="true">
+          <div
+            className="market-list__head market-list__head--watch"
+            aria-hidden="true"
+          >
             <span>Market</span>
+            <span>Vol</span>
+            <span>24h</span>
             <span>Chance</span>
             <span />
           </div>
@@ -84,13 +94,13 @@ export function WatchlistClient() {
             const probability = event.displayProbability;
             const ends = endsIn(event.endDate);
             const href = event.slug ? `/event/${event.slug}` : null;
+            const isMulti = event.markets.length > 1;
             return (
               <div key={event.id} className="market-row market-row--watch">
                 {href ? (
                   <a href={href} className="market-row__main">
                     <div className="market-row__title">{event.title}</div>
                     <div className="market-row__meta">
-                      <span>{compactUsd(event.volume24hr)} 24h</span>
                       {ends ? <span>{ends}</span> : null}
                     </div>
                   </a>
@@ -98,16 +108,21 @@ export function WatchlistClient() {
                   <div className="market-row__main">
                     <div className="market-row__title">{event.title}</div>
                     <div className="market-row__meta">
-                      <span>{compactUsd(event.volume24hr)} 24h</span>
                       {ends ? <span>{ends}</span> : null}
                     </div>
                   </div>
                 )}
+                <div className="market-row__cell mono">
+                  {compactUsd(event.volume)}
+                </div>
+                <div className="market-row__cell mono">
+                  {event.volume24hr > 0 ? compactUsd(event.volume24hr) : "—"}
+                </div>
                 <div className="market-row__price">
-                  {event.markets.length > 1 ? (
+                  {isMulti ? (
                     <>
-                      <b>{event.markets.length}</b>
-                      <span>outcomes</span>
+                      <b className="market-row__multi">{event.markets.length}</b>
+                      <span>mkts</span>
                     </>
                   ) : probability != null ? (
                     <>
@@ -115,7 +130,7 @@ export function WatchlistClient() {
                       <span>chance</span>
                     </>
                   ) : (
-                    <span>—</span>
+                    <span className="market-row__na">—</span>
                   )}
                 </div>
                 <button

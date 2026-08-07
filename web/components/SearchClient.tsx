@@ -76,6 +76,8 @@ export function SearchClient({ query }: { query: string }) {
           <div className="market-list">
             <div className="market-list__head" aria-hidden="true">
               <span>Market</span>
+              <span>Vol</span>
+              <span>24h</span>
               <span>Chance</span>
             </div>
             {events.map((event) => (

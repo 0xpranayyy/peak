@@ -281,6 +281,12 @@ export function TradeTicket({
     <form className="ticket" onSubmit={onSubmit}>
       <div className="ticket__head">
         <h2>Trade</h2>
+        {outcome ? (
+          <p className="ticket__hint">
+            {outcome}
+            {quotePrice != null ? ` · ${cents(quotePrice)}` : ""}
+          </p>
+        ) : null}
       </div>
 
       <div className="ticket__sides" role="group" aria-label="Side">
@@ -303,17 +309,17 @@ export function TradeTicket({
       <div className="ticket__sides" role="group" aria-label="Order type">
         <button
           type="button"
-          className={orderKind === "market" ? "seg seg--on" : "seg"}
-          onClick={() => setOrderKind("market")}
-        >
-          Market
-        </button>
-        <button
-          type="button"
           className={orderKind === "limit" ? "seg seg--on" : "seg"}
           onClick={() => setOrderKind("limit")}
         >
           Limit
+        </button>
+        <button
+          type="button"
+          className={orderKind === "market" ? "seg seg--on" : "seg"}
+          onClick={() => setOrderKind("market")}
+        >
+          Market
         </button>
       </div>
 
@@ -378,6 +384,30 @@ export function TradeTicket({
           />
         </label>
       )}
+
+      <div className="ticket__presets" role="group" aria-label="Size presets">
+        {(side === "SELL" ? [5, 10, 25, 50, 100] : [5, 10, 25, 50, 100]).map(
+          (n) => {
+            const active =
+              side === "SELL"
+                ? Number(shares) === n
+                : Number(amountUsd) === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                className={active ? "preset preset--on" : "preset"}
+                onClick={() => {
+                  if (side === "SELL") setShares(String(n));
+                  else setAmountUsd(String(n));
+                }}
+              >
+                {side === "SELL" ? n : `$${n}`}
+              </button>
+            );
+          }
+        )}
+      </div>
 
       {orderKind === "limit" ? (
         <label className="field">

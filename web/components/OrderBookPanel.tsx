@@ -102,54 +102,75 @@ export function OrderBookPanel({ tokenID, onTopOfBook }: Props) {
       </div>
 
       {!tokenID ? (
-        <p className="book__empty">Select an outcome.</p>
+        <p className="book__empty">Select an outcome to see the book.</p>
       ) : book == null ? (
         <p className="book__empty">Loading book…</p>
       ) : asksDesc.length === 0 && bids.length === 0 ? (
         <p className="book__empty">No resting liquidity on this book.</p>
       ) : (
         <div className="book__body">
+          <div className="book__side-label book__side-label--ask">Ask</div>
           <div className="book__side book__side--asks">
-            {asksDesc.map((level, i) => {
-              const total = asksDesc
-                .slice(i)
-                .reduce((s, l) => s + l.size, 0);
-              return (
-                <div key={`a-${level.price}`} className="book__row book__row--ask">
-                  <i
-                    className="book__depth"
-                    style={{ width: `${(level.size / maxSize) * 100}%` }}
-                  />
-                  <span className="book__price">{cents(level.price)}</span>
-                  <span className="book__size mono">{formatSize(level.size)}</span>
-                  <span className="book__total mono">{formatSize(total)}</span>
-                </div>
-              );
-            })}
+            {asksDesc.length === 0 ? (
+              <p className="book__empty book__empty--inline">No asks</p>
+            ) : (
+              asksDesc.map((level, i) => {
+                const total = asksDesc
+                  .slice(i)
+                  .reduce((s, l) => s + l.size, 0);
+                return (
+                  <div
+                    key={`a-${level.price}`}
+                    className="book__row book__row--ask"
+                  >
+                    <i
+                      className="book__depth"
+                      style={{ width: `${(level.size / maxSize) * 100}%` }}
+                    />
+                    <span className="book__price">{cents(level.price)}</span>
+                    <span className="book__size mono">
+                      {formatSize(level.size)}
+                    </span>
+                    <span className="book__total mono">{formatSize(total)}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div className="book__spread mono">
             <span>
-              {book.bid != null ? cents(book.bid) : "—"} /{" "}
-              {book.ask != null ? cents(book.ask) : "—"}
+              Bid {book.bid != null ? cents(book.bid) : "—"}
+              {" · "}
+              Ask {book.ask != null ? cents(book.ask) : "—"}
             </span>
           </div>
 
+          <div className="book__side-label book__side-label--bid">Bid</div>
           <div className="book__side book__side--bids">
-            {bids.map((level, i) => {
-              const total = bids.slice(0, i + 1).reduce((s, l) => s + l.size, 0);
-              return (
-                <div key={`b-${level.price}`} className="book__row book__row--bid">
-                  <i
-                    className="book__depth"
-                    style={{ width: `${(level.size / maxSize) * 100}%` }}
-                  />
-                  <span className="book__price">{cents(level.price)}</span>
-                  <span className="book__size mono">{formatSize(level.size)}</span>
-                  <span className="book__total mono">{formatSize(total)}</span>
-                </div>
-              );
-            })}
+            {bids.length === 0 ? (
+              <p className="book__empty book__empty--inline">No bids</p>
+            ) : (
+              bids.map((level, i) => {
+                const total = bids.slice(0, i + 1).reduce((s, l) => s + l.size, 0);
+                return (
+                  <div
+                    key={`b-${level.price}`}
+                    className="book__row book__row--bid"
+                  >
+                    <i
+                      className="book__depth"
+                      style={{ width: `${(level.size / maxSize) * 100}%` }}
+                    />
+                    <span className="book__price">{cents(level.price)}</span>
+                    <span className="book__size mono">
+                      {formatSize(level.size)}
+                    </span>
+                    <span className="book__total mono">{formatSize(total)}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}

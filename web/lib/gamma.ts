@@ -236,7 +236,7 @@ const SHOWCASE = { active: "true", closed: "false", archived: "false" } as const
 export type SortKey = "volume24hr" | "volume" | "liquidity" | "endDate";
 
 /** Default browse sort — all-time volume surfaces markets with live books. */
-export const DEFAULT_SORT: SortKey = "volume";
+export const DEFAULT_SORT: SortKey = "volume24hr";
 
 /** Paginated live events for the browse feed. */
 export async function fetchEvents(options?: {

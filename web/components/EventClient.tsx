@@ -48,7 +48,9 @@ export function EventClient({ slug }: { slug: string }) {
         <a className="detail__back" href="/markets">
           ← Markets
         </a>
-        <p className="empty">Loading market…</p>
+        <div className="empty-state empty-state--terminal">
+          <p className="empty-state__body">Loading market…</p>
+        </div>
       </div>
     );
   }
@@ -74,7 +76,9 @@ export function EventClient({ slug }: { slug: string }) {
     <Suspense
       fallback={
         <div className="shell shell--wide terminal">
-          <p className="empty">Loading ticket…</p>
+          <div className="empty-state empty-state--terminal">
+            <p className="empty-state__body">Loading ticket…</p>
+          </div>
         </div>
       }
     >
@@ -172,85 +176,124 @@ function EventTerminal({ event }: { event: PeakEvent }) {
         ← Markets
       </a>
 
-      <header className="terminal__header">
-        <div className="terminal__title-row">
-          {event.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="detail__art" src={event.imageUrl} alt="" />
-          ) : null}
-          <div className="terminal__title-block">
-            <h1>{event.title}</h1>
-            <div className="detail__meta">
-              <span>{compactUsd(event.volume)} volume</span>
-              <span>{compactUsd(event.liquidity)} liquidity</span>
-              {event.volume24hr > 0 ? (
-                <span>{compactUsd(event.volume24hr)} 24h</span>
-              ) : null}
-              {ends ? <span>{ends}</span> : null}
-            </div>
-          </div>
-          <div className="terminal__header-actions">
-            <WatchlistToggle eventId={event.id} />
-          </div>
-        </div>
-      </header>
-
-      {event.markets.length > 1 ? (
-        <div className="terminal__markets" role="listbox" aria-label="Markets">
-          {event.markets.map((m, i) => {
-            const p = m.yesPrice;
-            const on = i === marketIndex;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                role="option"
-                aria-selected={on}
-                className={on ? "outcome-sel outcome-sel--on" : "outcome-sel"}
-                onClick={() => setMarketIndex(i)}
-              >
-                <span className="outcome-sel__q">
-                  {m.question.length > 64
-                    ? `${m.question.slice(0, 64)}…`
-                    : m.question}
-                </span>
-                <span className="outcome-sel__price">
-                  {p != null ? cents(p) : "—"}
-                </span>
-                {p != null ? (
-                  <div className="bar outcome-sel__bar">
-                    <i style={{ width: `${p * 100}%` }} />
-                  </div>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {outcomes.length > 1 ? (
-        <div className="terminal__outcomes" role="group" aria-label="Outcome">
-          {outcomes.map((label, idx) => {
-            const p = market.outcomePrices[idx];
-            return (
-              <button
-                key={label}
-                type="button"
-                className={outcomeIdx === idx ? "chip chip--on" : "chip"}
-                onClick={() => setOutcomeIdx(idx)}
-              >
-                {label}
-                {typeof p === "number" ? ` · ${cents(p)}` : ""}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
       <div className="terminal__grid">
-        <div className="terminal__main">
-          <PriceChart tokenID={tokenID} livePrice={displayPrice} />
-          <OrderBookPanel tokenID={tokenID} onTopOfBook={onTopOfBook} />
+        <div className="terminal__stage">
+          <header className="terminal__header">
+            <div className="terminal__title-row">
+              {event.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="detail__art" src={event.imageUrl} alt="" />
+              ) : null}
+              <div className="terminal__title-block">
+                <h1>{event.title}</h1>
+                <div className="detail__meta">
+                  <span>{compactUsd(event.volume)} vol</span>
+                  {event.volume24hr > 0 ? (
+                    <span>{compactUsd(event.volume24hr)} 24h</span>
+                  ) : null}
+                  <span>{compactUsd(event.liquidity)} liq</span>
+                  {ends ? <span>{ends}</span> : null}
+                  {displayPrice != null ? (
+                    <span className="detail__meta-price mono">
+                      {outcomeLabel} {percent(displayPrice)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="terminal__header-actions">
+                <WatchlistToggle eventId={event.id} />
+              </div>
+            </div>
+          </header>
+
+          <div className="terminal__panels">
+            <PriceChart tokenID={tokenID} livePrice={displayPrice} />
+            <OrderBookPanel tokenID={tokenID} onTopOfBook={onTopOfBook} />
+          </div>
+
+          {event.markets.length > 1 ? (
+            <div
+              className="terminal__strip"
+              role="listbox"
+              aria-label="Markets in this event"
+            >
+              <span className="terminal__strip-label">Markets</span>
+              <div className="terminal__strip-scroll">
+                {event.markets.map((m, i) => {
+                  const p = m.yesPrice;
+                  const on = i === marketIndex;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="option"
+                      aria-selected={on}
+                      className={
+                        on ? "strip-chip strip-chip--on" : "strip-chip"
+                      }
+                      onClick={() => setMarketIndex(i)}
+                    >
+                      <span className="strip-chip__q">
+                        {m.question.length > 48
+                          ? `${m.question.slice(0, 48)}…`
+                          : m.question}
+                      </span>
+                      <span className="strip-chip__px mono">
+                        {p != null ? cents(p) : "—"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {outcomes.length > 1 ? (
+            <div
+              className="terminal__strip"
+              role="group"
+              aria-label="Outcome"
+            >
+              <span className="terminal__strip-label">Outcome</span>
+              <div className="terminal__strip-scroll">
+                {outcomes.map((label, idx) => {
+                  const p = market.outcomePrices[idx];
+                  const on = outcomeIdx === idx;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className={on ? "strip-chip strip-chip--on" : "strip-chip"}
+                      onClick={() => setOutcomeIdx(idx)}
+                    >
+                      <span className="strip-chip__q">{label}</span>
+                      <span className="strip-chip__px mono">
+                        {typeof p === "number" ? cents(p) : "—"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {event.description ? (
+            <details className="terminal__about">
+              <summary>About</summary>
+              <p>{event.description}</p>
+            </details>
+          ) : null}
+
+          <p className="notice">
+            <b>Prices are live, not advice.</b> An outcome at 70¢ prices a ~70%
+            chance — it is not a prediction of what will happen, and it moves.
+            {displayPrice != null ? (
+              <>
+                {" "}
+                Current {outcomeLabel}: {percent(displayPrice)}.
+              </>
+            ) : null}
+          </p>
         </div>
 
         <aside className="terminal__aside">
@@ -269,24 +312,6 @@ function EventTerminal({ event }: { event: PeakEvent }) {
           />
         </aside>
       </div>
-
-      {event.description ? (
-        <details className="terminal__about">
-          <summary>About</summary>
-          <p>{event.description}</p>
-        </details>
-      ) : null}
-
-      <p className="notice">
-        <b>Prices are live, not advice.</b> An outcome at 70¢ prices a ~70%
-        chance — it is not a prediction of what will happen, and it moves.
-        {displayPrice != null ? (
-          <>
-            {" "}
-            Current {outcomeLabel}: {percent(displayPrice)}.
-          </>
-        ) : null}
-      </p>
     </div>
   );
 }
