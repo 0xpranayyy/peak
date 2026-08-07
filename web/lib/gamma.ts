@@ -281,6 +281,32 @@ function isListEligible(raw: Record<string, unknown>): boolean {
 
 // ----------------------------------------------------------------- requests
 
+/**
+ * A signal that aborts when the caller aborts, or when `ms` elapses.
+ *
+ * `AbortSignal.any` would do this in one line, but it is Safari 17.4+ and
+ * Chrome 116+ — recent enough that shipping it bare would throw a TypeError on
+ * every request for anyone on an older iPhone, taking the whole feed with it.
+ * `AbortSignal.timeout` is much older and safe to assume.
+ */
+function withDeadline(ms: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  if (!signal) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([signal, timeout]);
+  }
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal.aborted || timeout.aborted) {
+    controller.abort();
+  } else {
+    signal.addEventListener("abort", abort, { once: true });
+    timeout.addEventListener("abort", abort, { once: true });
+  }
+  return controller.signal;
+}
+
 async function getGamma<T>(
   path: string,
   query: Record<string, string | number | undefined>,
@@ -298,11 +324,10 @@ async function getGamma<T>(
   // Event-detail SSR stays small (`?slug=` / `/events/:id`).
   // Caller's abort (navigation, filter change) plus a hard timeout, so a stalled
   // request can never pin the feed on its skeleton forever.
-  const timeout = AbortSignal.timeout(20_000);
   const response = await fetch(url.toString(), {
     cache: "no-store",
     headers: { accept: "application/json" },
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    signal: withDeadline(20_000, signal),
   });
 
   if (!response.ok) {
@@ -500,12 +525,11 @@ export async function fetchEventsByIds(
       const url = new URL(`${EDGE}/gamma/events`);
       for (const id of chunk) url.searchParams.append("id", id);
       url.searchParams.set("limit", String(chunk.length));
-      const timeout = AbortSignal.timeout(20_000);
       try {
         const response = await fetch(url.toString(), {
           cache: "no-store",
           headers: { accept: "application/json" },
-          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+          signal: withDeadline(20_000, signal),
         });
         if (!response.ok) return [];
         const raw = (await response.json()) as unknown;
