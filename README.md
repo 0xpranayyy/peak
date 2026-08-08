@@ -308,14 +308,18 @@ Honest, not aspirational.
 | Web exchange on `app.peakapp.site` | **Live** |
 | Sign-in — email, Google, Apple, wallet | **Live** |
 | Portfolio, positions, open orders, activity | **Live** |
-| Buy / sell / cancel | **Works where permitted** — verified against production Builder + Relayer |
+| Buy / sell / cancel | **Live** — real orders filled end to end from a TestFlight build against production |
 | Referrals and invite links | **Live** — universal links land in the app |
 | Leaderboard | **Live** — matches polymarket.com's own board |
-| App Store | **Not yet released** — archive is clean; device E2E and TestFlight remain |
+| iPhone app on TestFlight | **Live** |
+| App Store | **Not yet submitted** — the archive and upload path are proven by TestFlight |
 
-**Not claimed:** an end-to-end order has not been placed from this repository by
-a MetaMask or social login. Sign-in, wallet import, account linking, portfolio
-and live balances are verified against production.
+Worth noting what the device fill confirms: orders are signed on Peak's server
+but **submitted from the device**, so Polymarket's geoblock reads the trader's
+IP rather than Railway's. A server-side submit would be judged on the server's
+location. That is the split drawn in
+[Placing an order](#placing-an-order--peak-signs-your-device-posts), and it is
+the reason a device can trade where the backend alone could not.
 
 ---
 
