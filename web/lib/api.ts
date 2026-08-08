@@ -513,6 +513,94 @@ export async function submitPreparedOrder(
   return json;
 }
 
+/** What actually happened to an order, as far as CLOB will tell us. */
+export type OrderOutcome = {
+  /**
+   * `filled` — matched in full. `partial` — some of it matched. `resting` — it
+   * is on the book, unmatched, and will sit there. `submitted` — accepted, but
+   * CLOB did not say enough to classify it.
+   */
+  kind: "filled" | "partial" | "resting" | "submitted";
+  orderId: string | null;
+  /** Shares matched, or `null` when it cannot be established with confidence. */
+  filledSize: number | null;
+  /** Shares asked for. */
+  requestedSize: number;
+  /** Raw CLOB status, for display when nothing better is known. */
+  status: string | null;
+};
+
+/**
+ * Shares filled, or `null` when it cannot be established with confidence.
+ *
+ * Ported from iOS `TradingService.normalizedFill`, including the reason it
+ * looks paranoid. CLOB returns these as decimal strings, and depending on the
+ * endpoint they may be human share counts *or* raw 1e6 base units. Guessing
+ * wrong does not crash — it prints a confidently wrong sentence, which is worse
+ * than saying nothing. An earlier iOS attempt to rescale turned a 12345-unit
+ * response into "0.01 of 50 shares filled": a plausible-looking lie.
+ *
+ * So anything that does not already read as a share count is reported as
+ * unknown, and the UI degrades to "submitted" — vague, but never false.
+ */
+export function normalizedFill(raw: unknown, requestedShares: number): number | null {
+  const value =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && raw.trim() !== ""
+        ? Number(raw)
+        : null;
+  if (value === null || !Number.isFinite(value) || value < 0) return null;
+  if (requestedShares <= 0) return null;
+  if (value === 0) return 0;
+  // Allow slight over-fill for tick rounding; reject anything beyond it, which
+  // is the signal that we are looking at base units rather than shares.
+  if (value > requestedShares * 1.05) return null;
+  return value;
+}
+
+/**
+ * Classify a CLOB submit response.
+ *
+ * Throwing is the caller's job — by the time this runs the request succeeded.
+ * This only decides how to describe it, and errs toward the vaguer answer.
+ */
+export function parseOrderOutcome(
+  result: Record<string, unknown>,
+  side: "BUY" | "SELL",
+  requestedSize: number
+): OrderOutcome {
+  const orderId =
+    (typeof result.orderID === "string" && result.orderID) ||
+    (typeof result.id === "string" && result.id) ||
+    null;
+  const status =
+    typeof result.status === "string" && result.status.trim()
+      ? result.status.trim()
+      : null;
+
+  // A sell makes shares and takes cash; a buy is the reverse.
+  const shareLeg = side === "SELL" ? result.makingAmount : result.takingAmount;
+  const filledSize = normalizedFill(shareLeg, requestedSize);
+
+  const lower = status?.toLowerCase() ?? "";
+  let kind: OrderOutcome["kind"] = "submitted";
+
+  if (filledSize != null && filledSize > 0) {
+    // Treat a hair under the request as complete — tick rounding, not a partial.
+    kind = filledSize >= requestedSize * 0.995 ? "filled" : "partial";
+  } else if (lower === "matched") {
+    // Matched, but the size did not survive the confidence check above.
+    kind = "filled";
+  } else if (lower === "live" || lower === "delayed") {
+    kind = "resting";
+  } else if (filledSize === 0) {
+    kind = "resting";
+  }
+
+  return { kind, orderId, filledSize, requestedSize, status };
+}
+
 /**
  * True only when the backend predates `/orders/prepare`.
  * Kept narrow on purpose — bare 404 must not silently resend via Railway IP

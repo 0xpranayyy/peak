@@ -20,6 +20,10 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: light)", color: "#f7f7f9" },
   ],
   colorScheme: "dark light",
+  // Required for `env(safe-area-inset-*)` to report anything. Without it an
+  // installed iPhone app draws its nav under the notch and its footer under the
+  // home indicator.
+  viewportFit: "cover",
 };
 
 /**
@@ -48,6 +52,18 @@ export const metadata: Metadata = {
       { url: "/peak-mark.png", sizes: "512x512", type: "image/png" },
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  manifest: "/manifest.webmanifest",
+  // iOS ignores the manifest's `display` and reads these instead. Without them
+  // "Add to Home Screen" produces a bookmark that opens in Safari with full
+  // chrome, rather than something that behaves like an app.
+  appleWebApp: {
+    capable: true,
+    title: "Peak",
+    // `default` keeps the status bar legible in both themes; `black-translucent`
+    // would draw content under it and needs the theme to be known up front,
+    // which it is not until the inline script runs.
+    statusBarStyle: "default",
   },
   openGraph: {
     siteName: "Peak",
@@ -83,6 +99,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={sans.variable} suppressHydrationWarning>
       <head>
+        {/* Next emits only the standardised `mobile-web-app-capable`, which iOS
+            honours from 17.4. Anything older still needs the legacy name to
+            launch full-screen instead of as a Safari bookmark — the same
+            audience the AbortSignal fallback in lib/gamma.ts exists for. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>
       <body>

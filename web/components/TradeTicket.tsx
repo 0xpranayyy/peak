@@ -8,6 +8,7 @@ import {
   fetchPortfolio,
   friendlyClientError,
   isMissingPrepareEndpoint,
+  parseOrderOutcome,
   placeOrderDirect,
   prepareOrder,
   submitPreparedOrder,
@@ -15,6 +16,7 @@ import {
 import { fetchTopOfBook, type TopOfBook } from "@/lib/clob";
 import { cents } from "@/lib/format";
 import { SignInSheet } from "@/components/SignInSheet";
+import { OrderResult, type OrderReceipt } from "@/components/OrderResult";
 
 type Side = "BUY" | "SELL";
 type OrderKind = "market" | "limit";
@@ -97,7 +99,8 @@ export function TradeTicket({
   });
   const [localBook, setLocalBook] = useState<TopOfBook | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  /** Bumped after a fill so the holding is re-read rather than left stale. */
+  const [holdingNonce, setHoldingNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /**
    * Shares of the selected outcome this account actually holds.
@@ -108,6 +111,8 @@ export function TradeTicket({
    * warning; guessing at either would be worse than not offering them.
    */
   const [holding, setHolding] = useState<number | null>(null);
+  /** Set once an order comes back; drives the confirmation. */
+  const [receipt, setReceipt] = useState<OrderReceipt | null>(null);
 
   const useExternal = externalBook !== undefined;
   const book = useExternal ? externalBook : localBook;
@@ -204,7 +209,7 @@ export function TradeTicket({
       }
     })();
     return () => controller.abort();
-  }, [authenticated, tokenID, side, getToken, message]);
+  }, [authenticated, tokenID, side, getToken, holdingNonce]);
 
   const quotePrice = useMemo(() => {
     if (orderKind === "limit") {
@@ -278,7 +283,7 @@ export function TradeTicket({
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    setMessage(null);
+    setReceipt(null);
     setError(null);
 
     if (!authenticated) {
@@ -339,18 +344,20 @@ export function TradeTicket({
         negRisk: market.negRisk,
       };
 
+      const show = (result: Record<string, unknown>) => {
+        setReceipt({
+          outcome: parseOrderOutcome(result, side, size),
+          side,
+          outcomeLabel: outcome,
+          marketTitle: market.question,
+          price: quotePrice,
+          isLimit: orderKind === "limit",
+        });
+      };
+
       try {
         const prepared = await prepareOrder(token, order);
-        const result = await submitPreparedOrder(prepared);
-        const orderId =
-          (typeof result.orderID === "string" && result.orderID) ||
-          (typeof result.id === "string" && result.id) ||
-          null;
-        setMessage(
-          orderId
-            ? `Order submitted · ${size} shares @ ${cents(quotePrice)} · ${orderId.slice(0, 10)}…`
-            : `Order submitted · ${size} shares @ ${cents(quotePrice)}`
-        );
+        show(await submitPreparedOrder(prepared));
       } catch (err) {
         if (isMissingPrepareEndpoint(err)) {
           const result = await placeOrderDirect(token, order);
@@ -362,7 +369,7 @@ export function TradeTicket({
               result
             );
           }
-          setMessage(`Order placed · ${size} shares @ ${cents(quotePrice)}`);
+          show(result);
           return;
         }
         throw err;
@@ -639,17 +646,19 @@ export function TradeTicket({
         </p>
       ) : null}
       {error ? <p className="ticket__status ticket__status--err">{error}</p> : null}
-      {message ? (
-        <p className="ticket__status ticket__status--ok">
-          {message}{" "}
-          <a href="/positions">View positions</a>
-        </p>
-      ) : null}
-
       <SignInSheet
         open={signInOpen}
         onClose={() => setSignInOpen(false)}
         reason="trade"
+      />
+
+      <OrderResult
+        receipt={receipt}
+        onDismiss={() => {
+          setReceipt(null);
+          // A fill just changed the balance — re-read it.
+          setHoldingNonce((n) => n + 1);
+        }}
       />
     </form>
   );

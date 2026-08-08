@@ -16,6 +16,19 @@ remembering six months from now.
 
 ### Added
 
+- **A real order confirmation.** Every result used to be one line of small text
+  reading "Order submitted" — the same sentence whether the order filled,
+  partially filled, or is sitting unmatched on the book. It now shows what
+  actually happened, in four distinct states: **filled**, **partially filled**,
+  **on the book** (nothing bought yet), and **submitted** when CLOB does not say
+  enough to classify it. Fill sizes are only shown when they can be trusted;
+  where they cannot, the wording degrades to the vaguer answer rather than
+  inventing one.
+- **Installable as an app.** A web manifest, iOS standalone meta, maskable
+  icons, and home-screen shortcuts to Markets, Positions and Watchlist. Launched
+  from the home screen it opens at `/markets` with no browser chrome. Safe-area
+  handling keeps the nav clear of the notch and the footer clear of the home
+  indicator.
 - **A Max button on the sell side, backed by the real holding.** Selling used to
   offer fixed share presets (5/10/25/50/100) and a free-text box, so closing a
   position meant remembering how many shares you owned or going to look it up.
